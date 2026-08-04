@@ -196,6 +196,15 @@ export function RegisterForm({ variant = "employee" }: RegisterFormProps) {
             Sign in
           </Link>
         </p>
+
+        {!isAdmin && (
+          <p className="text-muted-foreground text-center text-sm">
+            Have an invite key?{" "}
+            <Link href={ROUTES.adminRegister} className="text-primary font-medium hover:underline">
+              Register as an administrator
+            </Link>
+          </p>
+        )}
       </form>
     </Form>
   );

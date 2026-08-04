@@ -142,12 +142,22 @@ export function LoginForm({ variant = "employee" }: LoginFormProps) {
         </Button>
 
         {variant === "employee" && (
-          <p className="text-muted-foreground text-center text-sm">
-            Don&apos;t have an account?{" "}
-            <Link href={ROUTES.register} className="text-primary font-medium hover:underline">
-              Create one
-            </Link>
-          </p>
+          <>
+            <p className="text-muted-foreground text-center text-sm">
+              Don&apos;t have an account?{" "}
+              <Link href={ROUTES.register} className="text-primary font-medium hover:underline">
+                Create one
+              </Link>
+            </p>
+
+            {/* The admin screens link here, so the way back has to exist too. */}
+            <p className="text-muted-foreground text-center text-sm">
+              Are you an administrator?{" "}
+              <Link href={ROUTES.adminLogin} className="text-primary font-medium hover:underline">
+                Administrator sign in
+              </Link>
+            </p>
+          </>
         )}
       </form>
     </Form>
