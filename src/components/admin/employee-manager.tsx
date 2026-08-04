@@ -17,7 +17,6 @@ import {
 import { toast } from "sonner";
 
 import { EmployeeEditDialog } from "@/components/admin/employee-edit-dialog";
-import { initialsOf } from "@/components/layout/user-menu";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -39,6 +38,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useEmployeeTable } from "@/hooks/use-employee-table";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
+import { initialsOf } from "@/lib/utils";
 import { formatDate } from "@/lib/date";
 import { EMPLOYEE_STATUS } from "@/lib/enums";
 import type { EmployeeView } from "@/types";

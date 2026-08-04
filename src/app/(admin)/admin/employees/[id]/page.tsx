@@ -13,8 +13,8 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { initialsOf } from "@/components/layout/user-menu";
 import { PageHeader } from "@/components/layout/page-header";
+import { initialsOf } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LeaveStatusBadge } from "@/components/shared/leave-status-badge";
 import { StatCard } from "@/components/shared/stat-card";

@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { initialsOf } from "@/components/layout/user-menu";
+import { initialsOf } from "@/lib/utils";
 import type { useLeaveTable } from "@/hooks/use-leave-table";
 import { LEAVE_STATUS_VALUES } from "@/lib/enums";
 import { formatDate, relativeTime } from "@/lib/date";

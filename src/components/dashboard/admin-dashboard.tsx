@@ -15,7 +15,6 @@ import {
 import { DepartmentChart } from "@/components/charts/department-chart";
 import { LeaveTrendChart } from "@/components/charts/leave-trend-chart";
 import { PageHeader } from "@/components/layout/page-header";
-import { initialsOf } from "@/components/layout/user-menu";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LeaveStatusBadge } from "@/components/shared/leave-status-badge";
 import { StatCard, StatCardSkeleton } from "@/components/shared/stat-card";
@@ -25,6 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiResource } from "@/hooks/use-api-resource";
 import { ROUTES } from "@/lib/constants";
+import { initialsOf } from "@/lib/utils";
 import { formatDate, relativeTime } from "@/lib/date";
 import type { AdminDashboardView } from "@/types";
 

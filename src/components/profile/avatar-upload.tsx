@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { initialsOf } from "@/components/layout/user-menu";
+import { initialsOf } from "@/lib/utils";
 
 const MAX_BYTES = 1_000_000;
 const MAX_DIMENSION = 512;
