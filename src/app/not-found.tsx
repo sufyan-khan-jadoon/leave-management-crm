@@ -22,7 +22,7 @@ export default function NotFound() {
           </div>
 
           <Button asChild className="w-full">
-            <Link href={ROUTES.login}>Back to sign in</Link>
+            <Link href={ROUTES.home}>Back to home</Link>
           </Button>
         </CardContent>
       </Card>

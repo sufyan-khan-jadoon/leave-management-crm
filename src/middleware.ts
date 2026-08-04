@@ -9,6 +9,7 @@ const { auth } = NextAuth(authConfig);
 
 /** Routes reachable without a session. */
 const PUBLIC_PATHS = new Set<string>([
+  ROUTES.home,
   ROUTES.login,
   ROUTES.register,
   ROUTES.verifyEmail,
@@ -61,8 +62,8 @@ export default auth((request) => {
 
   const isAdmin = user.role === ROLE.ADMIN;
 
-  // Signed-in users have no reason to sit on an auth screen.
-  if (pathname === ROUTES.login || pathname === ROUTES.register || isAdminLogin) {
+  // Signed-in users have no reason to sit on an auth or role-selection screen.
+  if (pathname === ROUTES.home || pathname === ROUTES.login || pathname === ROUTES.register || isAdminLogin) {
     return NextResponse.redirect(new URL(isAdmin ? ROUTES.adminDashboard : ROUTES.dashboard, request.nextUrl));
   }
 
