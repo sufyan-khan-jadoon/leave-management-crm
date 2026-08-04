@@ -25,9 +25,9 @@ export const OTP_LENGTH = 6;
 /** Upper bound on a single request, so a slip of the tongue cannot book a year. */
 export const MAX_LEAVE_DAYS_PER_REQUEST = 31;
 
-/** Verbatim response required when an employee exceeds their monthly allowance. */
-export function quotaExceededMessage(hrPhone: string): string {
-  return `You have already used the maximum of ${MONTHLY_LEAVE_ALLOWANCE} approved leaves this month. Please contact HR at ${hrPhone} for further assistance.`;
+/** Sent whenever a request cannot fit inside the monthly allowance. */
+export function quotaExceededMessage(hrPhone: string, hrName: string): string {
+  return `I'm sorry — you can't have more than ${MONTHLY_LEAVE_ALLOWANCE} leaves per month. Please contact HR, ${hrName}, on ${hrPhone}.`;
 }
 
 export const DEPARTMENTS = [

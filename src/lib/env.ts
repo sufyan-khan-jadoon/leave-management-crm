@@ -27,6 +27,7 @@ const serverSchema = z.object({
     .transform((value) => value === "true"),
 
   HR_CONTACT_PHONE: z.string().default("+923145868205"),
+  HR_CONTACT_NAME: z.string().default("Sufyan Khan"),
   APP_NAME: z.string().default("Leave CRM"),
 });
 
@@ -55,4 +56,5 @@ export const appConfig = {
   name: process.env.APP_NAME ?? "Leave CRM",
   url: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
   hrPhone: process.env.HR_CONTACT_PHONE ?? "+923145868205",
+  hrName: process.env.HR_CONTACT_NAME ?? "Sufyan Khan",
 } as const;

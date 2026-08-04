@@ -1,4 +1,4 @@
-import { MONTHLY_LEAVE_ALLOWANCE } from "@/lib/constants";
+import { MONTHLY_LEAVE_ALLOWANCE, quotaExceededMessage } from "@/lib/constants";
 import { formatDate, formatDateRange, monthLabel, toIsoDate, toUtcDay, todayUtc } from "@/lib/date";
 import { serverEnv } from "@/lib/env";
 import { interpretLeaveChat, type ChatTurn } from "@/services/ai.service";
@@ -74,25 +74,39 @@ export const leaveChatService = {
       return { reply: intent.reply };
     }
 
-    // Anything still unknown is asked for by the model, which phrased the
-    // question with the conversation in view.
-    if (!intent.startDate || !intent.days || !intent.reason) {
+    const env = serverEnv();
+    const quotaMessage = quotaExceededMessage(env.HR_CONTACT_PHONE, env.HR_CONTACT_NAME);
+
+    // More days than a month can ever hold is refused on the spot. Asking for a
+    // reason first only to throw the request away wastes the employee's time.
+    if (intent.days && intent.days > MONTHLY_LEAVE_ALLOWANCE) {
+      return { reply: quotaMessage };
+    }
+
+    if (!intent.startDate || !intent.days) {
       return { reply: intent.reply };
     }
 
     const startDate = toUtcDay(intent.startDate);
-    const plan = await leaveService.planLeave(employeeId, startDate, intent.days, intent.reason);
+
+    // Checked before the reason is collected, for the same reason: a request
+    // that cannot be booked should be refused while the employee is still
+    // describing it. The reason plays no part in whether it fits.
+    const plan = await leaveService.planLeave(employeeId, startDate, intent.days, intent.reason ?? "");
 
     if (!plan.ok) {
-      // `problem` already states the shortfall, so the stock quota sentence
-      // would only repeat it — point at HR instead.
-      const exhausted = plan.months?.some((month) => month.used >= month.allowance);
+      const overAllowance = plan.months?.some((month) => month.used + month.requested > month.allowance);
 
       return {
-        reply: exhausted
-          ? `${plan.problem} Please contact HR at ${serverEnv().HR_CONTACT_PHONE} if you need more.`
+        reply: overAllowance
+          ? `${plan.problem} ${quotaMessage}`
           : `${plan.problem} Tell me a different date or a shorter stretch and I'll check again.`,
       };
+    }
+
+    // Only now is the reason worth asking for.
+    if (!intent.reason) {
+      return { reply: intent.reply };
     }
 
     return {
