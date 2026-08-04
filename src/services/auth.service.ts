@@ -10,11 +10,12 @@ import {
 } from "@/lib/constants";
 import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } from "@/lib/errors";
 import { OTP_PURPOSE } from "@/lib/enums";
+import type { ResetTicket } from "@/lib/auth/reset-ticket";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { employeeRepository, type EmployeeDto } from "@/repositories/employee.repository";
 import { otpRepository } from "@/repositories/otp.repository";
 import { emailService } from "@/services/email/email.service";
-import type { LoginInput, RegisterInput, ResetPasswordInput, VerifyOtpInput } from "@/validations/auth.schema";
+import type { LoginInput, RegisterInput, VerifyOtpInput } from "@/validations/auth.schema";
 
 export type AuthenticatedEmployee = {
   id: string;
@@ -43,11 +44,11 @@ function generateOtp(): string {
 }
 
 /**
- * Checks a submitted code against the active OTP of one purpose and consumes it.
- * Shared by email verification and password reset so both enforce the same
- * expiry, attempt cap and single-use semantics.
+ * Checks a submitted code against the active OTP of one purpose, returning its
+ * id. Wrong codes burn an attempt; the code is left usable so the caller
+ * decides when it is spent.
  */
-async function consumeOtp(employeeId: string, code: string, purpose: OtpPurpose): Promise<void> {
+async function assertOtp(employeeId: string, code: string, purpose: OtpPurpose): Promise<string> {
   const otp = await otpRepository.findActive(employeeId, purpose);
   if (!otp) {
     throw new ValidationError("That code has expired. Request a new one to continue.");
@@ -68,7 +69,16 @@ async function consumeOtp(employeeId: string, code: string, purpose: OtpPurpose)
     );
   }
 
-  await otpRepository.markConsumed(otp.id);
+  return otp.id;
+}
+
+/**
+ * Checks a code and spends it. Shared by email verification and password reset
+ * so both enforce the same expiry, attempt cap and single-use semantics.
+ */
+async function consumeOtp(employeeId: string, code: string, purpose: OtpPurpose): Promise<void> {
+  const otpId = await assertOtp(employeeId, code, purpose);
+  await otpRepository.markConsumed(otpId);
 }
 
 export const authService = {
@@ -190,8 +200,12 @@ export const authService = {
     await this.issueOtp(employee.id, employee.email, employee.name, OTP_PURPOSE.PASSWORD_RESET);
   },
 
-  /** Validates a reset code and stores the new password. */
-  async resetPassword(input: ResetPasswordInput): Promise<void> {
+  /**
+   * Confirms a reset code and returns what the password step needs to identify
+   * it again. The code is checked but not spent — it is consumed only when the
+   * new password is actually stored, so an abandoned attempt leaves it usable.
+   */
+  async verifyResetCode(input: VerifyOtpInput): Promise<ResetTicket> {
     const employee = await employeeRepository.findByEmail(input.email);
 
     // Mirrors the "expired code" wording used for a real account so a wrong
@@ -200,11 +214,34 @@ export const authService = {
       throw new ValidationError("That code has expired. Request a new one to continue.");
     }
 
-    await consumeOtp(employee.id, input.code, OTP_PURPOSE.PASSWORD_RESET);
+    const otpId = await assertOtp(employee.id, input.code, OTP_PURPOSE.PASSWORD_RESET);
 
-    const password = await hashPassword(input.password);
-    await employeeRepository.updatePassword(employee.id, password);
+    return { employeeId: employee.id, otpId, email: employee.email };
+  },
 
+  /**
+   * Stores the new password for a previously verified reset.
+   *
+   * The ticket is re-checked against the database rather than trusted: the code
+   * it names must still be the live one, so a reset cannot be completed after
+   * the code was spent, superseded by a newer request, or expired.
+   */
+  async resetPassword(ticket: ResetTicket, password: string): Promise<void> {
+    const employee = await employeeRepository.findById(ticket.employeeId);
+
+    if (!employee || employee.status === EmployeeStatus.SUSPENDED) {
+      throw new ValidationError("That code has expired. Request a new one to continue.");
+    }
+
+    const otp = await otpRepository.findActive(employee.id, OTP_PURPOSE.PASSWORD_RESET);
+
+    if (!otp || otp.id !== ticket.otpId) {
+      throw new ValidationError("That code has expired. Request a new one to continue.");
+    }
+
+    await otpRepository.markConsumed(otp.id);
+
+    await employeeRepository.updatePassword(employee.id, await hashPassword(password));
     await emailService.sendPasswordChanged(employee.email, employee.name);
   },
 

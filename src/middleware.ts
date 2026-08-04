@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 
 import { authConfig } from "@/lib/auth/auth.config";
-import { ROUTES } from "@/lib/constants";
+import { RESET_TICKET_COOKIE, ROUTES } from "@/lib/constants";
 import { EMPLOYEE_STATUS, ROLE } from "@/lib/enums";
 
 const { auth } = NextAuth(authConfig);
@@ -14,6 +14,7 @@ const PUBLIC_PATHS = new Set<string>([
   ROUTES.register,
   ROUTES.verifyEmail,
   ROUTES.forgotPassword,
+  ROUTES.verifyResetCode,
   ROUTES.resetPassword,
   ROUTES.adminLogin,
 ]);
@@ -37,6 +38,15 @@ export default auth((request) => {
   const user = request.auth?.user;
   const isAdminRoute = pathname === ADMIN_PREFIX || pathname.startsWith(`${ADMIN_PREFIX}/`);
   const isAdminLogin = pathname === ROUTES.adminLogin;
+
+  // The password step is only reachable once a code has been verified. Only the
+  // cookie's presence is checked here — validating the signature would pull jose
+  // and the env schema onto the Edge runtime, and the page and API both verify
+  // it properly anyway. This just turns the common "came here directly" case
+  // into a real redirect instead of a rendered page that redirects itself.
+  if (pathname === ROUTES.resetPassword && !request.cookies.has(RESET_TICKET_COOKIE)) {
+    return NextResponse.redirect(new URL(ROUTES.verifyResetCode, request.nextUrl));
+  }
 
   if (!user) {
     if (isPublic(pathname)) return NextResponse.next();

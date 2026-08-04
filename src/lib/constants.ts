@@ -44,12 +44,16 @@ export const DEPARTMENTS = [
   "Operations",
 ] as const;
 
+/** Cookie holding proof that a reset code was verified. */
+export const RESET_TICKET_COOKIE = "leave_crm_reset";
+
 export const ROUTES = {
   home: "/",
   login: "/login",
   register: "/register",
   verifyEmail: "/verify-email",
   forgotPassword: "/forgot-password",
+  verifyResetCode: "/verify-code",
   resetPassword: "/reset-password",
   profileSetup: "/profile/setup",
   dashboard: "/dashboard",

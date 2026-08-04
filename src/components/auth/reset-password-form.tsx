@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
@@ -13,26 +13,22 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { ApiClientError, apiClient } from "@/lib/api-client";
-import { OTP_LENGTH, OTP_TTL_MINUTES, ROUTES } from "@/lib/constants";
+import { ROUTES } from "@/lib/constants";
 import { resetPasswordSchema, type ResetPasswordInput } from "@/validations/auth.schema";
 
-export function ResetPasswordForm() {
+/**
+ * Final step. The account is identified by the ticket cookie set when the code
+ * was verified, so this form only collects the password.
+ */
+export function ResetPasswordForm({ email }: { email: string }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<ResetPasswordInput>({
     resolver: zodResolver(resetPasswordSchema),
-    defaultValues: {
-      email: searchParams.get("email") ?? "",
-      code: "",
-      password: "",
-      confirmPassword: "",
-    },
+    defaultValues: { password: "", confirmPassword: "" },
     mode: "onBlur",
   });
-
-  const password = form.watch("password");
 
   async function onSubmit(values: ResetPasswordInput) {
     try {
@@ -47,8 +43,10 @@ export function ResetPasswordForm() {
             if (field in values) form.setError(field as keyof ResetPasswordInput, { message });
           }
         } else {
-          // A rejected or expired code is reported against the code field.
-          form.setError("code", { message: error.message });
+          // The ticket expired mid-flow; the code must be entered again.
+          toast.error(error.message);
+          router.push(`${ROUTES.verifyResetCode}?email=${encodeURIComponent(email)}`);
+          return;
         }
 
         toast.error(error.message);
@@ -62,51 +60,6 @@ export function ResetPasswordForm() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
-        <FormField
-          control={form.control}
-          name="email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Email</FormLabel>
-              <FormControl>
-                <Input
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@company.com"
-                  disabled={form.formState.isSubmitting}
-                  {...field}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="code"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Reset code</FormLabel>
-              <FormControl>
-                <Input
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={OTP_LENGTH}
-                  placeholder={"0".repeat(OTP_LENGTH)}
-                  className="text-center font-mono text-lg tracking-[0.5em]"
-                  disabled={form.formState.isSubmitting}
-                  {...field}
-                />
-              </FormControl>
-              <p className="text-muted-foreground text-xs">
-                The {OTP_LENGTH}-digit code expires {OTP_TTL_MINUTES} minutes after it is sent.
-              </p>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
         <FormField
           control={form.control}
           name="password"
@@ -133,7 +86,7 @@ export function ResetPasswordForm() {
                   </button>
                 </div>
               </FormControl>
-              <PasswordStrength password={password} />
+              <PasswordStrength password={form.watch("password")} />
               <FormMessage />
             </FormItem>
           )}
@@ -165,9 +118,8 @@ export function ResetPasswordForm() {
         </Button>
 
         <p className="text-muted-foreground text-center text-sm">
-          Didn&apos;t get a code?{" "}
-          <Link href={ROUTES.forgotPassword} className="text-primary font-medium hover:underline">
-            Request a new one
+          <Link href={ROUTES.login} className="hover:text-foreground transition-colors">
+            Back to sign in
           </Link>
         </p>
       </form>

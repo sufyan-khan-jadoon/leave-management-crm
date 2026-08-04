@@ -40,6 +40,13 @@ export function LoginForm({ variant = "employee" }: LoginFormProps) {
   const callbackUrl =
     searchParams.get("callbackUrl") ?? (variant === "admin" ? ROUTES.adminDashboard : ROUTES.dashboard);
 
+  // Carry whatever has been typed into the reset flow so the address never has
+  // to be entered twice. `watch` keeps this current as the field changes.
+  const typedEmail = form.watch("email");
+  const forgotHref = typedEmail.trim()
+    ? `${ROUTES.forgotPassword}?email=${encodeURIComponent(typedEmail.trim())}`
+    : ROUTES.forgotPassword;
+
   async function onSubmit(values: LoginInput) {
     const result = await signIn("credentials", { ...values, redirect: false });
 
@@ -98,7 +105,7 @@ export function LoginForm({ variant = "employee" }: LoginFormProps) {
               <div className="flex items-center justify-between gap-2">
                 <FormLabel>Password</FormLabel>
                 <Link
-                  href={ROUTES.forgotPassword}
+                  href={forgotHref}
                   className="text-muted-foreground hover:text-foreground text-xs transition-colors"
                 >
                   Forgot password?

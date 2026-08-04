@@ -68,14 +68,13 @@ export const forgotPasswordSchema = z.object({ email: emailSchema });
 
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
+/**
+ * The final reset step carries only the password: the account and the code it
+ * belongs to come from the signed ticket set when the code was verified, so
+ * neither is accepted from the request body.
+ */
 export const resetPasswordSchema = z
   .object({
-    email: emailSchema,
-    code: z
-      .string()
-      .trim()
-      .length(OTP_LENGTH, `Enter the ${OTP_LENGTH}-digit code`)
-      .regex(/^\d+$/, "The code contains digits only"),
     password: passwordSchema,
     confirmPassword: z.string(),
   })

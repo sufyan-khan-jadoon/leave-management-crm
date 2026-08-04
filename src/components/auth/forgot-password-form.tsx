@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { SendHorizontal } from "lucide-react";
@@ -16,12 +17,25 @@ import { forgotPasswordSchema, type ForgotPasswordInput } from "@/validations/au
 
 export function ForgotPasswordForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const prefillEmail = searchParams.get("email") ?? "";
+  const autoSubmitted = useRef(false);
 
   const form = useForm<ForgotPasswordInput>({
     resolver: zodResolver(forgotPasswordSchema),
-    defaultValues: { email: "" },
+    defaultValues: { email: prefillEmail },
     mode: "onBlur",
   });
+
+  // Auto-submit when the email was forwarded from the login page so the user
+  // never has to re-enter it or click "Send reset code" manually.
+  useEffect(() => {
+    if (prefillEmail && !autoSubmitted.current) {
+      autoSubmitted.current = true;
+      form.handleSubmit(onSubmit)();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   async function onSubmit(values: ForgotPasswordInput) {
     try {
@@ -30,7 +44,7 @@ export function ForgotPasswordForm() {
       // The server answers identically for unknown addresses, so the UI must
       // not imply the account was found.
       toast.success("If an account exists for that address, a code is on its way.");
-      router.push(`${ROUTES.resetPassword}?email=${encodeURIComponent(values.email)}`);
+      router.push(`${ROUTES.verifyResetCode}?email=${encodeURIComponent(values.email)}`);
     } catch (error) {
       if (error instanceof ApiClientError) {
         if (error.status === 429) form.setError("email", { message: error.message });
