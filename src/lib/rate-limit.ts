@@ -20,6 +20,8 @@ export const RATE_LIMITS = {
   register: { limit: 5, windowSeconds: 3600 },
   verifyOtp: { limit: 10, windowSeconds: 900 },
   resendOtp: { limit: 5, windowSeconds: 900 },
+  forgotPassword: { limit: 5, windowSeconds: 900 },
+  resetPassword: { limit: 10, windowSeconds: 900 },
   aiLeave: { limit: 15, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 

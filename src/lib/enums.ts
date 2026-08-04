@@ -7,7 +7,7 @@
  * literals instead. The `satisfies` clauses keep them locked to the schema:
  * renaming a value in schema.prisma fails the typecheck here.
  */
-import type { EmployeeStatus, LeaveStatus, Role } from "@prisma/client";
+import type { EmployeeStatus, LeaveStatus, OtpPurpose, Role } from "@prisma/client";
 
 export const ROLE = {
   EMPLOYEE: "EMPLOYEE",
@@ -24,6 +24,11 @@ export const LEAVE_STATUS = {
   APPROVED: "APPROVED",
   REJECTED: "REJECTED",
 } as const satisfies Record<LeaveStatus, LeaveStatus>;
+
+export const OTP_PURPOSE = {
+  EMAIL_VERIFICATION: "EMAIL_VERIFICATION",
+  PASSWORD_RESET: "PASSWORD_RESET",
+} as const satisfies Record<OtpPurpose, OtpPurpose>;
 
 export const LEAVE_STATUS_VALUES = [
   LEAVE_STATUS.PENDING,

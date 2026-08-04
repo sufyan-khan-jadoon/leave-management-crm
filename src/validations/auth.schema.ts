@@ -63,3 +63,25 @@ export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>;
 export const resendOtpSchema = z.object({ email: emailSchema });
 
 export type ResendOtpInput = z.infer<typeof resendOtpSchema>;
+
+export const forgotPasswordSchema = z.object({ email: emailSchema });
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z
+  .object({
+    email: emailSchema,
+    code: z
+      .string()
+      .trim()
+      .length(OTP_LENGTH, `Enter the ${OTP_LENGTH}-digit code`)
+      .regex(/^\d+$/, "The code contains digits only"),
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

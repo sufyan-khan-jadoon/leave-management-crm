@@ -13,6 +13,8 @@ const PUBLIC_PATHS = new Set<string>([
   ROUTES.login,
   ROUTES.register,
   ROUTES.verifyEmail,
+  ROUTES.forgotPassword,
+  ROUTES.resetPassword,
   ROUTES.adminLogin,
 ]);
 

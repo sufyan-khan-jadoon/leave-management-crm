@@ -68,6 +68,20 @@ export const employeeRepository = {
     });
   },
 
+  /**
+   * Stores a new password hash. `emailVerified` is set alongside it because
+   * completing a reset proves control of the mailbox — the same proof the
+   * verification flow asks for — so an unverified account is not left locked
+   * out after correctly answering a code sent to its own address.
+   */
+  updatePassword(id: string, password: string): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { password, emailVerified: new Date() },
+      select: employeeSelect,
+    });
+  },
+
   delete(id: string): Promise<EmployeeDto> {
     return prisma.employee.delete({ where: { id }, select: employeeSelect });
   },

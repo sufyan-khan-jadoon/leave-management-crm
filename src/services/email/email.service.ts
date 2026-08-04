@@ -7,6 +7,8 @@ import {
   leaveApprovedTemplate,
   leaveRejectedTemplate,
   otpTemplate,
+  passwordChangedTemplate,
+  passwordResetOtpTemplate,
   profileUpdatedTemplate,
   welcomeTemplate,
 } from "@/services/email/templates";
@@ -71,6 +73,14 @@ export const emailService = {
 
   sendOtp(to: string, name: string, code: string) {
     return send(to, otpTemplate(name, code));
+  },
+
+  sendPasswordResetOtp(to: string, name: string, code: string) {
+    return send(to, passwordResetOtpTemplate(name, code));
+  },
+
+  sendPasswordChanged(to: string, name: string) {
+    return send(to, passwordChangedTemplate(name));
   },
 
   sendEmailVerified(to: string, name: string) {

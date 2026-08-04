@@ -1,24 +1,24 @@
-import type { OtpCode } from "@prisma/client";
+import type { OtpCode, OtpPurpose } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
 export const otpRepository = {
-  create(data: { employeeId: string; code: string; expiresAt: Date }): Promise<OtpCode> {
+  create(data: { employeeId: string; code: string; purpose: OtpPurpose; expiresAt: Date }): Promise<OtpCode> {
     return prisma.otpCode.create({ data });
   },
 
-  /** Most recently issued code for an employee, consumed or not. */
-  findLatest(employeeId: string): Promise<OtpCode | null> {
+  /** Most recently issued code of this purpose, consumed or not. */
+  findLatest(employeeId: string, purpose: OtpPurpose): Promise<OtpCode | null> {
     return prisma.otpCode.findFirst({
-      where: { employeeId },
+      where: { employeeId, purpose },
       orderBy: { createdAt: "desc" },
     });
   },
 
-  /** Most recent code that is still usable: unconsumed and unexpired. */
-  findActive(employeeId: string): Promise<OtpCode | null> {
+  /** Most recent code of this purpose that is still usable: unconsumed and unexpired. */
+  findActive(employeeId: string, purpose: OtpPurpose): Promise<OtpCode | null> {
     return prisma.otpCode.findFirst({
-      where: { employeeId, consumedAt: null, expiresAt: { gt: new Date() } },
+      where: { employeeId, purpose, consumedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
     });
   },
@@ -31,10 +31,14 @@ export const otpRepository = {
     return prisma.otpCode.update({ where: { id }, data: { attempts: { increment: 1 } } });
   },
 
-  /** Invalidates outstanding codes so only the newest one is ever valid. */
-  async invalidateOutstanding(employeeId: string): Promise<void> {
+  /**
+   * Invalidates outstanding codes of one purpose so only the newest is valid.
+   * Scoped by purpose so requesting a password reset does not silently void a
+   * verification code the same person is part-way through entering.
+   */
+  async invalidateOutstanding(employeeId: string, purpose: OtpPurpose): Promise<void> {
     await prisma.otpCode.updateMany({
-      where: { employeeId, consumedAt: null },
+      where: { employeeId, purpose, consumedAt: null },
       data: { consumedAt: new Date() },
     });
   },

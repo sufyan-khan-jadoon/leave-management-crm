@@ -90,6 +90,36 @@ export function otpTemplate(name: string, code: string): Template {
   };
 }
 
+export function passwordResetOtpTemplate(name: string, code: string): Template {
+  return {
+    subject: `${code} is your ${appConfig.name} password reset code`,
+    html: layout(
+      "Reset your password",
+      `<p>Hi ${esc(name)}, use the code below to choose a new password.</p>
+       <div style="margin:24px 0;padding:20px;background:#f4f5fb;border-radius:12px;text-align:center;">
+         <div style="font-size:34px;letter-spacing:10px;font-weight:700;color:#16192b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(code)}</div>
+       </div>
+       <p>This code expires in <strong>${OTP_TTL_MINUTES} minutes</strong>.</p>
+       <p style="color:#8b90a8;">If you didn't ask to reset your password, ignore this email — your current password still works.</p>`,
+      { label: "Reset your password", url: `${appConfig.url}/reset-password` },
+    ),
+    text: `Hi ${name},\n\nYour ${appConfig.name} password reset code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.\n\nIf you didn't request this, ignore this email — your current password still works.`,
+  };
+}
+
+export function passwordChangedTemplate(name: string): Template {
+  return {
+    subject: "Your password was changed",
+    html: layout(
+      "Password changed",
+      `<p>Hi ${esc(name)}, your ${esc(appConfig.name)} password was just changed.</p>
+       <p style="color:#8b90a8;">If this wasn't you, reset your password immediately and contact your HR administrator.</p>`,
+      { label: "Go to sign in", url: `${appConfig.url}/login` },
+    ),
+    text: `Hi ${name},\n\nYour ${appConfig.name} password was just changed. If this wasn't you, reset it immediately and contact your HR administrator.`,
+  };
+}
+
 export function emailVerifiedTemplate(name: string): Template {
   return {
     subject: "Your email is verified",

@@ -33,6 +33,13 @@ enum LeaveStatus {
   REJECTED
 }
 
+/// Separates the two OTP flows. Without it a code mailed to verify an address
+/// would also be accepted to reset that account's password, and vice versa.
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
 /// A person in the system. Admins are Employees with role = ADMIN.
 model Employee {
   id            String         @id @default(cuid())
@@ -64,17 +71,18 @@ model Employee {
 
 /// One-time password issued for email verification.
 model OtpCode {
-  id         String    @id @default(cuid())
+  id         String     @id @default(cuid())
   employeeId String
   code       String
+  purpose    OtpPurpose @default(EMAIL_VERIFICATION)
   expiresAt  DateTime
   consumedAt DateTime?
-  attempts   Int       @default(0)
-  createdAt  DateTime  @default(now())
+  attempts   Int        @default(0)
+  createdAt  DateTime   @default(now())
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  @@index([employeeId, createdAt])
+  @@index([employeeId, purpose, createdAt])
   @@map("otp_codes")
 }
 

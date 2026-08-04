@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 
-import { EmployeeStatus, type Role } from "@prisma/client";
+import { EmployeeStatus, type OtpPurpose, type Role } from "@prisma/client";
 
 import {
   OTP_LENGTH,
@@ -9,11 +9,12 @@ import {
   OTP_TTL_MINUTES,
 } from "@/lib/constants";
 import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } from "@/lib/errors";
+import { OTP_PURPOSE } from "@/lib/enums";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { employeeRepository, type EmployeeDto } from "@/repositories/employee.repository";
 import { otpRepository } from "@/repositories/otp.repository";
 import { emailService } from "@/services/email/email.service";
-import type { LoginInput, RegisterInput, VerifyOtpInput } from "@/validations/auth.schema";
+import type { LoginInput, RegisterInput, ResetPasswordInput, VerifyOtpInput } from "@/validations/auth.schema";
 
 export type AuthenticatedEmployee = {
   id: string;
@@ -39,6 +40,35 @@ function generateOtp(): string {
   // randomInt is cryptographically secure and unbiased, unlike Math.random.
   const max = 10 ** OTP_LENGTH;
   return String(randomInt(0, max)).padStart(OTP_LENGTH, "0");
+}
+
+/**
+ * Checks a submitted code against the active OTP of one purpose and consumes it.
+ * Shared by email verification and password reset so both enforce the same
+ * expiry, attempt cap and single-use semantics.
+ */
+async function consumeOtp(employeeId: string, code: string, purpose: OtpPurpose): Promise<void> {
+  const otp = await otpRepository.findActive(employeeId, purpose);
+  if (!otp) {
+    throw new ValidationError("That code has expired. Request a new one to continue.");
+  }
+
+  if (otp.attempts >= OTP_MAX_ATTEMPTS) {
+    await otpRepository.markConsumed(otp.id);
+    throw new ValidationError("Too many incorrect attempts. Request a new code to continue.");
+  }
+
+  if (otp.code !== code) {
+    await otpRepository.incrementAttempts(otp.id);
+    const remaining = OTP_MAX_ATTEMPTS - otp.attempts - 1;
+    throw new ValidationError(
+      remaining > 0
+        ? `That code is incorrect. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
+        : "That code is incorrect. Request a new code to continue.",
+    );
+  }
+
+  await otpRepository.markConsumed(otp.id);
 }
 
 export const authService = {
@@ -72,14 +102,24 @@ export const authService = {
     return { email: employee.email };
   },
 
-  /** Issues a fresh OTP, invalidating any outstanding codes. */
-  async issueOtp(employeeId: string, email: string, name: string): Promise<void> {
+  /** Issues a fresh OTP for one purpose, invalidating outstanding codes of it. */
+  async issueOtp(
+    employeeId: string,
+    email: string,
+    name: string,
+    purpose: OtpPurpose = OTP_PURPOSE.EMAIL_VERIFICATION,
+  ): Promise<void> {
     const code = generateOtp();
     const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60_000);
 
-    await otpRepository.invalidateOutstanding(employeeId);
-    await otpRepository.create({ employeeId, code, expiresAt });
-    await emailService.sendOtp(email, name, code);
+    await otpRepository.invalidateOutstanding(employeeId, purpose);
+    await otpRepository.create({ employeeId, code, purpose, expiresAt });
+
+    if (purpose === OTP_PURPOSE.PASSWORD_RESET) {
+      await emailService.sendPasswordResetOtp(email, name, code);
+    } else {
+      await emailService.sendOtp(email, name, code);
+    }
   },
 
   /** Re-sends a code, subject to the per-account cooldown. */
@@ -91,7 +131,7 @@ export const authService = {
       return { cooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS };
     }
 
-    const latest = await otpRepository.findLatest(employee.id);
+    const latest = await otpRepository.findLatest(employee.id, OTP_PURPOSE.EMAIL_VERIFICATION);
 
     if (latest) {
       const elapsed = (Date.now() - latest.createdAt.getTime()) / 1000;
@@ -116,32 +156,56 @@ export const authService = {
       throw new ConflictError("This email address is already verified. You can sign in now.");
     }
 
-    const otp = await otpRepository.findActive(employee.id);
-    if (!otp) {
-      throw new ValidationError("That code has expired. Request a new one to continue.");
-    }
-
-    if (otp.attempts >= OTP_MAX_ATTEMPTS) {
-      await otpRepository.markConsumed(otp.id);
-      throw new ValidationError("Too many incorrect attempts. Request a new code to continue.");
-    }
-
-    if (otp.code !== input.code) {
-      await otpRepository.incrementAttempts(otp.id);
-      const remaining = OTP_MAX_ATTEMPTS - otp.attempts - 1;
-      throw new ValidationError(
-        remaining > 0
-          ? `That code is incorrect. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining.`
-          : "That code is incorrect. Request a new code to continue.",
-      );
-    }
-
-    await otpRepository.markConsumed(otp.id);
+    await consumeOtp(employee.id, input.code, OTP_PURPOSE.EMAIL_VERIFICATION);
     const verified = await employeeRepository.markEmailVerified(employee.id);
 
     await emailService.sendEmailVerified(verified.email, verified.name);
 
     return verified;
+  },
+
+  /**
+   * Starts a password reset by mailing a code.
+   *
+   * Reports success regardless of whether the address exists or the account is
+   * suspended, so the endpoint cannot be used to enumerate accounts. Suspended
+   * accounts get no code — a new password would not let them in anyway.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const employee = await employeeRepository.findByEmail(email);
+    if (!employee || employee.status === EmployeeStatus.SUSPENDED) return;
+
+    const latest = await otpRepository.findLatest(employee.id, OTP_PURPOSE.PASSWORD_RESET);
+
+    if (latest) {
+      const elapsed = (Date.now() - latest.createdAt.getTime()) / 1000;
+      if (elapsed < OTP_RESEND_COOLDOWN_SECONDS) {
+        throw new RateLimitError(
+          `Please wait ${Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - elapsed)} seconds before requesting another code.`,
+          Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - elapsed),
+        );
+      }
+    }
+
+    await this.issueOtp(employee.id, employee.email, employee.name, OTP_PURPOSE.PASSWORD_RESET);
+  },
+
+  /** Validates a reset code and stores the new password. */
+  async resetPassword(input: ResetPasswordInput): Promise<void> {
+    const employee = await employeeRepository.findByEmail(input.email);
+
+    // Mirrors the "expired code" wording used for a real account so a wrong
+    // address cannot be distinguished from a wrong code.
+    if (!employee || employee.status === EmployeeStatus.SUSPENDED) {
+      throw new ValidationError("That code has expired. Request a new one to continue.");
+    }
+
+    await consumeOtp(employee.id, input.code, OTP_PURPOSE.PASSWORD_RESET);
+
+    const password = await hashPassword(input.password);
+    await employeeRepository.updatePassword(employee.id, password);
+
+    await emailService.sendPasswordChanged(employee.email, employee.name);
   },
 
   /**
