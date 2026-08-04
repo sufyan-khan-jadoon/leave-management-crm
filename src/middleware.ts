@@ -9,7 +9,6 @@ const { auth } = NextAuth(authConfig);
 
 /** Routes reachable without a session. */
 const PUBLIC_PATHS = new Set<string>([
-  ROUTES.home,
   ROUTES.login,
   ROUTES.register,
   ROUTES.verifyEmail,
