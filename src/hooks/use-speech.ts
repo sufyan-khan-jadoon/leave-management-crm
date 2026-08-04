@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+type SpeechOptions = {
+  /** Fires as the transcript grows; `final` marks the end of an utterance. */
+  onTranscript: (text: string, final: boolean) => void;
+};
+
 /**
  * Dictation and read-back through the browser's own speech engines.
  *
@@ -10,9 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * Firefox does not, so `canListen` gates the microphone rather than offering a
  * button that silently does nothing.
  */
-export function useSpeech(options: { onTranscript: (text: string) => void }) {
-  const { onTranscript } = options;
-
+export function useSpeech({ onTranscript }: SpeechOptions) {
   const [canListen, setCanListen] = useState(false);
   const [canSpeak, setCanSpeak] = useState(false);
   const [listening, setListening] = useState(false);
@@ -20,7 +23,7 @@ export function useSpeech(options: { onTranscript: (text: string) => void }) {
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   // Kept in a ref so the recognition callbacks always see the current handler
-  // without having to tear down and rebuild the instance on every render.
+  // without tearing down and rebuilding the instance on every render.
   const transcriptRef = useRef(onTranscript);
   transcriptRef.current = onTranscript;
 
@@ -34,16 +37,24 @@ export function useSpeech(options: { onTranscript: (text: string) => void }) {
 
     const recognition = new Recognition();
     recognition.lang = "en-US";
+    // One utterance per start. Hands-free mode restarts it after each reply,
+    // which gives a natural turn boundary instead of an endless stream.
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
       let text = "";
+      let final = false;
+
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        text += event.results[i]?.[0]?.transcript ?? "";
+        const result = event.results[i];
+        if (!result) continue;
+        text += result[0]?.transcript ?? "";
+        if (result.isFinal) final = true;
       }
-      transcriptRef.current(text);
+
+      transcriptRef.current(text, final);
     };
 
     recognition.onerror = (event) => {
@@ -102,21 +113,34 @@ export function useSpeech(options: { onTranscript: (text: string) => void }) {
     setListening(false);
   }, []);
 
-  const speak = useCallback((text: string) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  /** Speaks `text`, invoking `onDone` when the utterance finishes or fails. */
+  const speak = useCallback((text: string, onDone?: () => void) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      onDone?.();
+      return;
+    }
 
     window.speechSynthesis.cancel();
 
     // Bullet markers and dashes are read out literally, so strip the ones the
     // assistant uses for formatting.
     const spoken = text.replace(/[•*]/g, " ").replace(/\s+—\s+/g, ", ").trim();
-    if (!spoken) return;
+    if (!spoken) {
+      onDone?.();
+      return;
+    }
 
     const utterance = new SpeechSynthesisUtterance(spoken);
     utterance.lang = "en-US";
     utterance.rate = 1.02;
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
+
+    const finish = () => {
+      setSpeaking(false);
+      onDone?.();
+    };
+
+    utterance.onend = finish;
+    utterance.onerror = finish;
 
     setSpeaking(true);
     window.speechSynthesis.speak(utterance);

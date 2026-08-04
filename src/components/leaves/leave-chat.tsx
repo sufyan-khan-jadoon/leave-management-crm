@@ -2,7 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Check, Mic, MicOff, SendHorizontal, User, Volume2, VolumeX, X } from "lucide-react";
+import {
+  AudioLines,
+  Bot,
+  Check,
+  Mic,
+  MicOff,
+  PhoneOff,
+  SendHorizontal,
+  User,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,82 +41,100 @@ const GREETING: Turn = {
   content: "Hi! Tell me when you need time off — for example, \"4 days from today for a family wedding\".",
 };
 
+/**
+ * Spoken answers to a pending proposal are matched here rather than sent to the
+ * model: booking leave is consequential, and a deterministic yes/no is more
+ * predictable than asking a small model to classify agreement.
+ */
+const AFFIRMATIVE = /\b(yes|yeah|yep|yup|sure|ok|okay|confirm|book it|go ahead|do it|please do)\b/i;
+const NEGATIVE = /\b(no|nope|cancel|don'?t|do not|not now|stop|never mind|nevermind)\b/i;
+
 export function LeaveChat({ className }: { className?: string }) {
   const router = useRouter();
   const [turns, setTurns] = useState<Turn[]>([GREETING]);
   const [draft, setDraft] = useState("");
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [busy, setBusy] = useState(false);
-  const [voiceOn, setVoiceOn] = useState(false);
+  const [readAloud, setReadAloud] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Dictation replaces the draft outright: interim results arrive as a growing
-  // transcript of the same utterance, not as additions to what came before.
-  const handleTranscript = useCallback((text: string) => setDraft(text), []);
-  const speech = useSpeech({ onTranscript: handleTranscript });
+  // Async speech callbacks fire long after the render that scheduled them, so
+  // anything they branch on is mirrored into a ref.
+  const voiceModeRef = useRef(false);
+  const proposalRef = useRef<Proposal | null>(null);
+  const busyRef = useRef(false);
 
-  const { canSpeak, speak, stopSpeaking, stopListening, listening } = speech;
+  voiceModeRef.current = voiceMode;
+  proposalRef.current = proposal;
+  busyRef.current = busy;
 
-  /** Adds a reply and, when voice is on, reads it out. */
+  const turnsRef = useRef<Turn[]>(turns);
+  turnsRef.current = turns;
+
+  const handleRef = useRef<(text: string, final: boolean) => void>(() => {});
+  const speech = useSpeech({
+    onTranscript: useCallback((text: string, final: boolean) => handleRef.current(text, final), []),
+  });
+
+  const { canListen, canSpeak, listening, speaking, speak, startListening, stopListening, stopSpeaking } =
+    speech;
+
+  /** Adds a reply, reads it aloud when asked, and resumes listening in voice mode. */
   const addReply = useCallback(
     (content: string) => {
       setTurns((current) => [...current, { role: "assistant", content }]);
-      if (voiceOn && canSpeak) speak(content);
+
+      const inVoice = voiceModeRef.current;
+      if (!canSpeak || (!readAloud && !inVoice)) return;
+
+      speak(content, () => {
+        // Hand the turn back to the employee, unless they left voice mode while
+        // the assistant was still talking.
+        if (voiceModeRef.current) startListening();
+      });
     },
-    [voiceOn, canSpeak, speak],
+    [canSpeak, readAloud, speak, startListening],
   );
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns, proposal]);
+  const exchange = useCallback(
+    async (message: string) => {
+      const next = [...turnsRef.current, { role: "user" as const, content: message }];
+      setTurns(next);
+      setDraft("");
+      // A new message supersedes any offer still on screen.
+      setProposal(null);
+      setBusy(true);
 
-  // Turning voice off should silence whatever is mid-sentence, not just future
-  // replies.
-  useEffect(() => {
-    if (!voiceOn) stopSpeaking();
-  }, [voiceOn, stopSpeaking]);
+      try {
+        const result = await apiClient.post<ChatReply>("/api/leaves/chat", { messages: next });
 
-  async function send(event: React.FormEvent) {
-    event.preventDefault();
+        addReply(result.reply);
+        if (result.proposal) setProposal(result.proposal);
+      } catch (error) {
+        const text =
+          error instanceof ApiClientError ? error.message : "Something went wrong. Please try again.";
 
-    const message = draft.trim();
-    if (!message || busy) return;
+        addReply(text);
+        toast.error(text);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [addReply],
+  );
 
-    if (listening) stopListening();
-
-    const next = [...turns, { role: "user" as const, content: message }];
-    setTurns(next);
-    setDraft("");
-    // A new message supersedes any offer still on screen.
-    setProposal(null);
-    setBusy(true);
-
-    try {
-      const result = await apiClient.post<ChatReply>("/api/leaves/chat", { messages: next });
-
-      addReply(result.reply);
-      if (result.proposal) setProposal(result.proposal);
-    } catch (error) {
-      const text =
-        error instanceof ApiClientError ? error.message : "Something went wrong. Please try again.";
-
-      addReply(text);
-      toast.error(text);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirm() {
-    if (!proposal || busy) return;
+  const confirmProposal = useCallback(async () => {
+    const pending = proposalRef.current;
+    if (!pending || busyRef.current) return;
 
     setBusy(true);
 
     try {
       const result = await apiClient.post<ChatReply>("/api/leaves/chat/confirm", {
-        startDate: proposal.startDate,
-        days: proposal.days,
-        reason: proposal.reason,
+        startDate: pending.startDate,
+        days: pending.days,
+        reason: pending.reason,
       });
 
       setProposal(null);
@@ -121,24 +151,93 @@ export function LeaveChat({ className }: { className?: string }) {
     } finally {
       setBusy(false);
     }
-  }
+  }, [addReply, router]);
 
-  function decline() {
+  const declineProposal = useCallback(() => {
     setProposal(null);
     addReply("No problem — nothing booked. Tell me what you'd like instead.");
+  }, [addReply]);
+
+  // Wired through a ref so the recognition instance never has to be rebuilt.
+  handleRef.current = (text, final) => {
+    setDraft(text);
+    if (!final || !voiceModeRef.current) return;
+
+    const spoken = text.trim();
+    if (!spoken) {
+      startListening();
+      return;
+    }
+
+    stopListening();
+    setDraft("");
+
+    // While an offer is open, a plain yes or no answers it directly.
+    if (proposalRef.current) {
+      if (AFFIRMATIVE.test(spoken)) {
+        setTurns((current) => [...current, { role: "user", content: spoken }]);
+        void confirmProposal();
+        return;
+      }
+
+      if (NEGATIVE.test(spoken)) {
+        setTurns((current) => [...current, { role: "user", content: spoken }]);
+        declineProposal();
+        return;
+      }
+    }
+
+    void exchange(spoken);
+  };
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [turns, proposal]);
+
+  // Turning read-aloud off should silence what is mid-sentence, not just what
+  // comes next. Voice mode does its own speaking, so leave it alone there.
+  useEffect(() => {
+    if (!readAloud && !voiceMode) stopSpeaking();
+  }, [readAloud, voiceMode, stopSpeaking]);
+
+  function startVoiceMode() {
+    setVoiceMode(true);
+    voiceModeRef.current = true;
+    setDraft("");
+    startListening();
   }
+
+  function endVoiceMode() {
+    setVoiceMode(false);
+    voiceModeRef.current = false;
+    stopListening();
+    stopSpeaking();
+    setDraft("");
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+
+    const message = draft.trim();
+    if (!message || busy) return;
+
+    if (listening) stopListening();
+    await exchange(message);
+  }
+
+  const status = busy ? "Thinking…" : speaking ? "Speaking…" : listening ? "Listening…" : "Paused";
 
   return (
     <Card className={cn("flex flex-col overflow-hidden", className)}>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4 p-0">
-        {canSpeak && (
+        {canSpeak && !voiceMode && (
           <div className="flex items-center gap-2 border-b px-4 py-2">
             <span className="text-muted-foreground mr-auto text-xs">
-              {speech.speaking ? "Speaking…" : voiceOn ? "Voice replies on" : "Voice replies off"}
+              {speaking ? "Speaking…" : readAloud ? "Replies read aloud" : "Replies are text only"}
             </span>
 
-            {speech.speaking && (
-              <Button variant="ghost" size="sm" onClick={stopSpeaking} aria-label="Stop speaking">
+            {speaking && (
+              <Button variant="ghost" size="sm" onClick={stopSpeaking}>
                 Stop
               </Button>
             )}
@@ -146,12 +245,12 @@ export function LeaveChat({ className }: { className?: string }) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setVoiceOn((on) => !on)}
-              aria-pressed={voiceOn}
-              aria-label={voiceOn ? "Turn off spoken replies" : "Turn on spoken replies"}
+              onClick={() => setReadAloud((on) => !on)}
+              aria-pressed={readAloud}
+              aria-label={readAloud ? "Turn off spoken replies" : "Turn on spoken replies"}
             >
-              {voiceOn ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
-              {voiceOn ? "Voice on" : "Voice off"}
+              {readAloud ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+              {readAloud ? "Read aloud" : "Silent"}
             </Button>
           </div>
         )}
@@ -198,47 +297,92 @@ export function LeaveChat({ className }: { className?: string }) {
         {proposal && (
           <div className="border-primary/30 bg-primary/5 mx-4 flex flex-wrap items-center gap-2 rounded-lg border p-3">
             <span className="text-muted-foreground mr-auto text-xs">
-              Nothing is booked until you confirm.
+              {voiceMode ? 'Say "yes" to book it, or "no" to cancel.' : "Nothing is booked until you confirm."}
             </span>
-            <Button size="sm" onClick={confirm} disabled={busy}>
+            <Button size="sm" onClick={confirmProposal} disabled={busy}>
               <Check className="size-4" />
               Confirm
             </Button>
-            <Button size="sm" variant="ghost" onClick={decline} disabled={busy}>
+            <Button size="sm" variant="ghost" onClick={declineProposal} disabled={busy}>
               <X className="size-4" />
               Not now
             </Button>
           </div>
         )}
 
-        <form onSubmit={send} className="bg-background/60 flex items-center gap-2 border-t p-3">
-          {speech.canListen && (
-            <Button
-              type="button"
-              size="icon"
-              variant={listening ? "default" : "outline"}
-              onClick={() => (listening ? stopListening() : speech.startListening())}
-              disabled={busy}
-              aria-pressed={listening}
-              aria-label={listening ? "Stop dictating" : "Dictate your message"}
-              className={cn(listening && "animate-pulse")}
+        {voiceMode ? (
+          <div className="bg-background/60 flex items-center gap-3 border-t p-4">
+            <span
+              className={cn(
+                "flex size-11 shrink-0 items-center justify-center rounded-full transition-colors",
+                listening
+                  ? "bg-primary/15 text-primary animate-pulse"
+                  : speaking
+                    ? "bg-success/15 text-success"
+                    : "bg-muted text-muted-foreground",
+              )}
+              aria-hidden
             >
-              {listening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
-            </Button>
-          )}
+              <AudioLines className="size-5" />
+            </span>
 
-          <Input
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={listening ? "Listening…" : "I need 3 days off from Monday…"}
-            disabled={busy}
-            maxLength={600}
-            aria-label="Message the leave assistant"
-          />
-          <Button type="submit" size="icon" disabled={busy || !draft.trim()} aria-label="Send">
-            <SendHorizontal className="size-4" />
-          </Button>
-        </form>
+            <div className="mr-auto min-w-0">
+              <p className="text-sm font-medium">{status}</p>
+              <p className="text-muted-foreground truncate text-xs">
+                {draft.trim() || "Just talk — I'll reply out loud."}
+              </p>
+            </div>
+
+            {!listening && !speaking && !busy && (
+              <Button variant="outline" size="sm" onClick={startListening}>
+                <Mic className="size-4" />
+                Resume
+              </Button>
+            )}
+
+            <Button variant="destructive" size="sm" onClick={endVoiceMode}>
+              <PhoneOff className="size-4" />
+              End
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="bg-background/60 flex items-center gap-2 border-t p-3">
+            {canListen && (
+              <Button
+                type="button"
+                size="icon"
+                variant={listening ? "default" : "outline"}
+                onClick={() => (listening ? stopListening() : startListening())}
+                disabled={busy}
+                aria-pressed={listening}
+                aria-label={listening ? "Stop dictating" : "Dictate your message"}
+                className={cn(listening && "animate-pulse")}
+              >
+                {listening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+              </Button>
+            )}
+
+            <Input
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={listening ? "Listening…" : "I need 3 days off from Monday…"}
+              disabled={busy}
+              maxLength={600}
+              aria-label="Message the leave assistant"
+            />
+
+            <Button type="submit" size="icon" disabled={busy || !draft.trim()} aria-label="Send">
+              <SendHorizontal className="size-4" />
+            </Button>
+
+            {canListen && canSpeak && (
+              <Button type="button" variant="outline" size="sm" onClick={startVoiceMode} disabled={busy}>
+                <AudioLines className="size-4" />
+                Voice
+              </Button>
+            )}
+          </form>
+        )}
       </CardContent>
     </Card>
   );
