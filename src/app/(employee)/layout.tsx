@@ -1,0 +1,32 @@
+import { redirect } from "next/navigation";
+
+import { AppShell } from "@/components/layout/app-shell";
+import { EMPLOYEE_NAV } from "@/components/layout/nav-config";
+import { auth } from "@/lib/auth/auth";
+import { ROUTES } from "@/lib/constants";
+import { ROLE } from "@/lib/enums";
+import { appConfig } from "@/lib/env";
+
+export default async function EmployeeLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+
+  // Middleware already gates these routes; this is defence in depth for the
+  // case where a page is reached through a path the matcher does not cover.
+  if (!session?.user) redirect(ROUTES.login);
+  if (session.user.role === ROLE.ADMIN) redirect(ROUTES.adminDashboard);
+
+  return (
+    <AppShell
+      nav={EMPLOYEE_NAV}
+      isAdmin={false}
+      appName={appConfig.name}
+      user={{
+        name: session.user.name ?? "Employee",
+        email: session.user.email ?? "",
+        image: session.user.image,
+      }}
+    >
+      {children}
+    </AppShell>
+  );
+}

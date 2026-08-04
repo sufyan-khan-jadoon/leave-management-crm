@@ -1,0 +1,96 @@
+// Leave Management CRM — data model
+// Docs: https://www.prisma.io/docs
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  EMPLOYEE
+  ADMIN
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A person in the system. Admins are Employees with role = ADMIN.
+model Employee {
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  password      String
+  emailVerified DateTime?
+  role          Role           @default(EMPLOYEE)
+  status        EmployeeStatus @default(ACTIVE)
+
+  // Profile fields — collected after email verification, not at registration.
+  phone        String?
+  department   String?
+  position     String?
+  profilePhoto String?
+  joiningDate  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leaves   Leave[]
+  otpCodes OtpCode[]
+
+  @@index([department])
+  @@index([status])
+  @@index([role])
+  @@map("employees")
+}
+
+/// One-time password issued for email verification.
+model OtpCode {
+  id         String    @id @default(cuid())
+  employeeId String
+  code       String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, createdAt])
+  @@map("otp_codes")
+}
+
+/// A single day of leave. Date and reason are extracted by the AI service;
+/// the raw natural-language prompt is intentionally never persisted.
+model Leave {
+  id         String      @id @default(cuid())
+  employeeId String
+  leaveDate  DateTime    @db.Date
+  reason     String
+  status     LeaveStatus @default(PENDING)
+
+  /// Set when an admin manually overrides the automatic decision.
+  decidedById String?
+  decidedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, leaveDate])
+  @@index([status])
+  @@index([leaveDate])
+  @@map("leaves")
+}
