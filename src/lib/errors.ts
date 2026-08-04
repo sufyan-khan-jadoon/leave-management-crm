@@ -54,7 +54,7 @@ export class RateLimitError extends AppError {
   }
 }
 
-/** Raised when Gemini is unreachable or returns unusable output after a retry. */
+/** Raised when the AI provider is unreachable or returns unusable output after a retry. */
 export class AiServiceError extends AppError {
   constructor(message = "The AI assistant could not process that request. Please try again.") {
     super(message, 502, "AI_SERVICE_ERROR");

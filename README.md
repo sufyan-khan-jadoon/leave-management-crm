@@ -1,6 +1,6 @@
 # Leave Management CRM
 
-An AI-powered leave management system. Employees describe the leave they need in plain English; Google Gemini extracts the date and reason, the monthly allowance is applied automatically, and administrators get a full management dashboard.
+An AI-powered leave management system. Employees describe the leave they need in plain English; Groq extracts the date and reason, the monthly allowance is applied automatically, and administrators get a full management dashboard.
 
 > "I need leave on Friday because I have university exams."
 > → `{ "date": "2026-08-14", "reason": "University exams" }` → filed, decided, and emailed.
@@ -70,7 +70,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 | Auth | NextAuth v5 (Auth.js), credentials provider, JWT sessions |
 | Hashing | bcryptjs |
 | Email | Nodemailer |
-| AI | Google Gemini (free tier) via REST |
+| AI | Groq (free tier) via REST |
 | Charts | Recharts |
 | Toasts | Sonner |
 | Icons | Lucide React |
@@ -78,7 +78,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 **Two deliberate substitutions**
 
 - **`bcryptjs` instead of native `bcrypt`.** Identical API and hash format, but pure JavaScript — no `node-gyp` toolchain needed, which keeps installs reliable on Windows and in slim Docker images. Cost factor is 12.
-- **Gemini over `fetch` instead of an SDK.** One less dependency to track, full control over timeouts, retries and `responseSchema`. See `src/services/ai.service.ts`.
+- **Groq over `fetch` instead of an SDK.** One less dependency to track, full control over timeouts, retries and JSON handling. See `src/services/ai.service.ts`.
 
 ---
 
@@ -104,8 +104,8 @@ Every variable is validated at runtime by `src/lib/env.ts`; a missing or malform
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `NEXTAUTH_SECRET` | ✅ | Session signing key, **32+ characters** |
 | `NEXTAUTH_URL` | ✅ | App base URL (`http://localhost:3000` locally) |
-| `GEMINI_API_KEY` | ✅ | Free key from [Google AI Studio](https://aistudio.google.com/app/apikey) |
-| `GEMINI_MODEL` | — | Defaults to `gemini-2.0-flash` |
+| `GROQ_API_KEY` | ✅ | Free key from [Groq Console](https://console.groq.com/keys) — no credit card |
+| `GROQ_MODEL` | — | Defaults to `llama-3.1-8b-instant` |
 | `EMAIL_HOST` | ✅ | SMTP host (e.g. `smtp.gmail.com`) |
 | `EMAIL_PORT` | — | Defaults to `587` |
 | `EMAIL_SECURE` | — | `"true"` for port 465 |
@@ -310,7 +310,7 @@ Employee types free text
         ↓
 POST /api/leaves/ai            ← rate-limited per user (the AI quota is the cost being protected)
         ↓
-extractLeaveDetails()          ← Gemini, temperature 0, responseSchema, 20s timeout
+extractLeaveDetails()          ← Groq, temperature 0, JSON mode, 20s timeout
         ↓
    valid JSON? ──no──→ retry once with a corrective prompt
         ↓                              ↓
@@ -323,7 +323,7 @@ extractLeaveDetails()          ← Gemini, temperature 0, responseSchema, 20s ti
 
 Robustness measures, all covered by the verification harness:
 
-- `responseMimeType: application/json` plus an explicit `responseSchema` constrain the model
+- `response_format: { type: "json_object" }` guarantees the reply parses as JSON (shape is Zod's job)
 - A brace-matching extractor recovers the JSON object even from markdown fences, surrounding prose, nested braces or escaped quotes
 - The result is validated with Zod, and the date is checked to be a real calendar date (`2026-13-45` is rejected)
 - Exactly one retry, then a typed `AiServiceError` — the application never crashes on bad model output
@@ -444,9 +444,11 @@ npm start
 
 **Emails aren't arriving** — Gmail needs an App Password, not your account password. Check `/api/health?smtp=1`, and look in spam.
 
-**`The AI service is not configured correctly`** — a 401/403 from Gemini. Confirm `GEMINI_API_KEY` and that the Generative Language API is enabled for the project.
+**`The AI service is not configured correctly`** — a 401/403 from Groq. Confirm `GROQ_API_KEY` is set and still active in the [Groq Console](https://console.groq.com/keys).
 
-**`I couldn't understand that request`** — Gemini returned unusable JSON twice. Rephrase with a clearer date, e.g. "I need leave on Friday because I have university exams."
+**`The AI assistant is busy right now`** — a 429. The free tier allows 30 requests/minute and 14,400/day on `llama-3.1-8b-instant`; a retired or mistyped `GROQ_MODEL` also returns an error here.
+
+**`I couldn't understand that request`** — the model returned unusable JSON twice. Rephrase with a clearer date, e.g. "I need leave on Friday because I have university exams."
 
 **`Can't reach database server`** — verify `DATABASE_URL`, that the instance is running, and that your IP is allowed. Hosted providers usually require `?sslmode=require`.
 

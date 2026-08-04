@@ -13,7 +13,7 @@ const FEATURES = [
     icon: Sparkles,
     title: "Request leave in plain English",
     description:
-      "Type \"I need leave on Friday for university exams\" — Gemini extracts the date and reason, and the request is filed instantly.",
+      "Type \"I need leave on Friday for university exams\" — the assistant extracts the date and reason, and the request is filed instantly.",
   },
   {
     icon: ShieldCheck,
@@ -68,7 +68,7 @@ export default function LandingPage() {
         <section className="flex flex-col items-center gap-6 py-16 text-center md:py-24">
           <Badge variant="secondary" className="gap-1.5 px-3 py-1">
             <Sparkles className="size-3.5" aria-hidden />
-            Powered by Google Gemini
+            Powered by Groq
           </Badge>
 
           <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance md:text-6xl">

@@ -32,6 +32,15 @@ export function toIsoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+export function addUtcDays(date: Date, days: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days));
+}
+
+/** Weekday name for a calendar day, e.g. "Tuesday". */
+export function utcWeekday(date: Date, locale = "en-US"): string {
+  return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone: "UTC" }).format(date);
+}
+
 export function formatDate(value: Date | string, locale = "en-US"): string {
   return new Intl.DateTimeFormat(locale, {
     year: "numeric",

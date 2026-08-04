@@ -13,8 +13,8 @@ const serverSchema = z.object({
   NEXTAUTH_SECRET: z.string().min(32, "NEXTAUTH_SECRET must be at least 32 characters"),
   NEXTAUTH_URL: z.string().url().default("http://localhost:3000"),
 
-  GEMINI_API_KEY: z.string().min(1, "GEMINI_API_KEY is required"),
-  GEMINI_MODEL: z.string().default("gemini-2.0-flash"),
+  GROQ_API_KEY: z.string().min(1, "GROQ_API_KEY is required"),
+  GROQ_MODEL: z.string().default("llama-3.1-8b-instant"),
 
   EMAIL_HOST: z.string().min(1),
   EMAIL_PORT: z.coerce.number().int().positive().default(587),

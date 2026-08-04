@@ -9,7 +9,7 @@ import { aiLeaveRequestSchema } from "@/validations/leave.schema";
 /**
  * Natural-language leave submission.
  *
- * The request body is passed to Gemini for extraction and then discarded — only
+ * The request body is passed to Groq for extraction and then discarded — only
  * the resulting date and reason are persisted.
  */
 export async function POST(request: Request) {
