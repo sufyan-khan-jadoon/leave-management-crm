@@ -2,15 +2,42 @@
  * Leave dates are calendar days, not instants. Every helper here normalises to
  * UTC midnight so a leave taken on the 14th reads as the 14th regardless of the
  * server's local timezone.
+ *
+ * Timestamps are a different matter: "created 5 minutes ago" has to read
+ * against the company's wall clock, so those are formatted in APP_TIME_ZONE.
  */
+import { APP_TIME_ZONE } from "@/lib/constants";
 
 export function toUtcDay(value: Date | string): Date {
   const date = typeof value === "string" ? new Date(`${value.slice(0, 10)}T00:00:00.000Z`) : value;
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
+/**
+ * Today's calendar day in the company's timezone, as UTC midnight.
+ *
+ * Not `toUtcDay(new Date())`: the server runs in UTC, so for the five hours
+ * after local midnight that returns yesterday's date for anyone in Pakistan —
+ * which made "3 days from today" start on the wrong day.
+ */
 export function todayUtc(): Date {
-  return toUtcDay(new Date());
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  return new Date(`${parts}T00:00:00.000Z`);
+}
+
+/** Current wall-clock time in the company's timezone, e.g. "3:16 AM". */
+export function currentTimeInAppZone(locale = "en-US"): string {
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: APP_TIME_ZONE,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date());
 }
 
 /** Inclusive start of the calendar month containing `date`. */
@@ -74,6 +101,7 @@ export function formatDateTime(value: Date | string, locale = "en-US"): string {
   return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: APP_TIME_ZONE,
   }).format(typeof value === "string" ? new Date(value) : value);
 }
 

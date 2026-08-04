@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { AiServiceError } from "@/lib/errors";
 import { serverEnv } from "@/lib/env";
-import { addUtcDays, toIsoDate, utcWeekday } from "@/lib/date";
+import { addUtcDays, currentTimeInAppZone, toIsoDate, utcWeekday } from "@/lib/date";
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -165,8 +165,16 @@ function buildCalendar(today: Date): string {
 
 function buildChatSystemPrompt(today: Date): string {
   const iso = toIsoDate(today);
+  // Computed rather than written by hand so the weekday example is always a
+  // real upcoming Friday, whatever day the prompt is built on.
+  const nextFriday = toIsoDate(
+    Array.from({ length: 8 }, (_, offset) => addUtcDays(today, offset + 1)).find(
+      (day) => utcWeekday(day) === "Friday",
+    ) ?? addUtcDays(today, 1),
+  );
 
-  return `You are the leave assistant for an HR system. Today is ${iso} (UTC).
+  return `You are the leave assistant for an HR system.
+Today is ${iso} (${utcWeekday(today)}). The local time is ${currentTimeInAppZone()} in Pakistan.
 
 Calendar reference — use these exact pairings, do not compute dates yourself:
 ${buildCalendar(today)}
@@ -187,14 +195,21 @@ Choose the intent:
 - "other" for anything else, including greetings.
 
 Rules for "book":
+- NEVER invent a start date. Only ever use ${iso}, a date the employee named, or
+  a date copied from the calendar above. If you cannot point at one of those,
+  the answer is ${iso}.
+- A duration with no start means it begins today. "5 days", "coming 5 days",
+  "make it 3 days" and "3 days off" all start ${iso}.
 - "from today" starts ${iso}. A bare weekday name means the FIRST row above with
   that weekday, excluding today's row. Copy that row's date exactly.
-- "4 days from today" means days=4 starting ${iso}. Every calendar day counts,
-  weekends included.
+- Every calendar day counts, weekends included.
 - "on Friday" with no duration means days=1.
-- If the start date, the number of days, or the reason is missing, still use
-  intent "book", leave the unknown fields null, and ask for exactly the missing
-  one in "reply".
+- Carry over what the employee already told you earlier in the conversation. If
+  they gave a reason and are now changing the length, keep the reason and only
+  change "days".
+- Only the reason may be missing. If it is, leave it null and ask for it.
+- Never ask which day it starts when they have given a duration or named a
+  weekday. A duration alone means today; a weekday means the calendar row.
 - Never state whether the request is approved, how many days remain, or what
   dates are already booked. The system decides that and tells them separately.
   When every field is known, "reply" should be a short neutral restatement.
@@ -209,8 +224,17 @@ Worked examples for today = ${iso}:
 "I need leave for 4 days from today for a family wedding"
 {"intent":"book","startDate":"${iso}","days":4,"reason":"family wedding","reply":"That's 4 days from ${iso} for a family wedding."}
 
+"I have leave for coming 5 days"
+{"intent":"book","startDate":"${iso}","days":5,"reason":null,"reply":"What's the reason for the 5 days off?"}
+
+"ok make it of three days" (after the above, reason was "back pain")
+{"intent":"book","startDate":"${iso}","days":3,"reason":"back pain","reply":"That's 3 days from ${iso} for back pain."}
+
 "I want 2 days off next week, I'm moving house"
 {"intent":"book","startDate":null,"days":2,"reason":"moving house","reply":"Which day next week should it start?"}
+
+"I need leave on Friday for university exams"
+{"intent":"book","startDate":"${nextFriday}","days":1,"reason":"university exams","reply":"That's Friday ${nextFriday} for university exams."}
 
 "taking tomorrow off"
 {"intent":"book","startDate":"${toIsoDate(addUtcDays(today, 1))}","days":1,"reason":null,"reply":"What's the reason for the day off?"}

@@ -1,3 +1,13 @@
+/**
+ * The company's wall clock.
+ *
+ * Leave dates are stored as UTC midnight, but "today" has to mean today where
+ * the employee is. Deriving it from UTC put the app a day behind for the five
+ * hours after local midnight, since Pakistan is UTC+5 and the server runs in
+ * UTC. Change this one value to move the app to another office.
+ */
+export const APP_TIME_ZONE = "Asia/Karachi";
+
 /** Maximum number of leaves the system will auto-approve in a calendar month. */
 export const MONTHLY_LEAVE_ALLOWANCE = 4;
 
