@@ -13,15 +13,21 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
-import { registerSchema, type RegisterInput } from "@/validations/auth.schema";
+import { adminRegisterSchema, registerSchema, type RegisterInput } from "@/validations/auth.schema";
 import { PasswordStrength } from "@/components/auth/password-strength";
 
-export function RegisterForm() {
+type RegisterFormProps = {
+  /** Administrators register on their own screen, where a key is mandatory. */
+  variant?: "employee" | "admin";
+};
+
+export function RegisterForm({ variant = "employee" }: RegisterFormProps) {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  const isAdmin = variant === "admin";
 
   const form = useForm<RegisterInput>({
-    resolver: zodResolver(registerSchema),
+    resolver: zodResolver(isAdmin ? adminRegisterSchema : registerSchema),
     defaultValues: { name: "", email: "", password: "", confirmPassword: "", inviteKey: "" },
     mode: "onBlur",
   });
@@ -60,6 +66,31 @@ export function RegisterForm() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
+        {isAdmin && (
+          <FormField
+            control={form.control}
+            name="inviteKey"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Invite key</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="ABCD-EFGH-JKLM-NPQR"
+                    className="font-mono tracking-wide uppercase"
+                    autoComplete="off"
+                    disabled={form.formState.isSubmitting}
+                    {...field}
+                  />
+                </FormControl>
+                <p className="text-muted-foreground text-xs">
+                  Ask your super administrator for one. Each key works once.
+                </p>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
         <FormField
           control={form.control}
           name="name"
@@ -151,40 +182,17 @@ export function RegisterForm() {
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="inviteKey"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                Administrator invite key <span className="text-muted-foreground">(optional)</span>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  placeholder="ABCD-EFGH-JKLM-NPQR"
-                  className="font-mono uppercase"
-                  autoComplete="off"
-                  disabled={form.formState.isSubmitting}
-                  {...field}
-                />
-              </FormControl>
-              <p className="text-muted-foreground text-xs">
-                Leave blank unless your super administrator gave you a key. Requests need approval before
-                you can sign in.
-              </p>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
         <Button type="submit" className="w-full" size="lg" loading={form.formState.isSubmitting}>
           {!form.formState.isSubmitting && <UserPlus className="size-4" />}
-          Create account
+          {isAdmin ? "Request administrator access" : "Create account"}
         </Button>
 
         <p className="text-muted-foreground text-center text-sm">
           Already have an account?{" "}
-          <Link href={ROUTES.login} className="text-primary font-medium hover:underline">
+          <Link
+            href={isAdmin ? ROUTES.adminLogin : ROUTES.login}
+            className="text-primary font-medium hover:underline"
+          >
             Sign in
           </Link>
         </p>

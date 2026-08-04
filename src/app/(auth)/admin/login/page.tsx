@@ -28,6 +28,13 @@ export default function AdminLoginPage() {
         </Suspense>
 
         <p className="text-muted-foreground text-center text-sm">
+          Have an invite key?{" "}
+          <Link href={ROUTES.adminRegister} className="text-primary font-medium hover:underline">
+            Register as an administrator
+          </Link>
+        </p>
+
+        <p className="text-muted-foreground text-center text-sm">
           Not an administrator?{" "}
           <Link href={ROUTES.login} className="text-primary font-medium hover:underline">
             Employee sign in

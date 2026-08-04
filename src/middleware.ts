@@ -17,6 +17,7 @@ const PUBLIC_PATHS = new Set<string>([
   ROUTES.verifyResetCode,
   ROUTES.resetPassword,
   ROUTES.adminLogin,
+  ROUTES.adminRegister,
 ]);
 
 const ADMIN_PREFIX = "/admin";
@@ -63,7 +64,13 @@ export default auth((request) => {
   const isAdmin = isAdminRole(user.role);
 
   // Signed-in users have no reason to sit on an auth or role-selection screen.
-  if (pathname === ROUTES.home || pathname === ROUTES.login || pathname === ROUTES.register || isAdminLogin) {
+  if (
+    pathname === ROUTES.home ||
+    pathname === ROUTES.login ||
+    pathname === ROUTES.register ||
+    pathname === ROUTES.adminRegister ||
+    isAdminLogin
+  ) {
     return NextResponse.redirect(new URL(isAdmin ? ROUTES.adminDashboard : ROUTES.dashboard, request.nextUrl));
   }
 

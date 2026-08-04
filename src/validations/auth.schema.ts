@@ -47,6 +47,14 @@ export const registerSchema = z
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 
+/**
+ * Administrators sign up on their own page, where the key is the whole point of
+ * the form rather than an optional extra.
+ */
+export const adminRegisterSchema = registerSchema.safeExtend({
+  inviteKey: z.string().trim().min(1, "An invite key is required").max(40, "That doesn't look like an invite key"),
+});
+
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, "Password is required"),
