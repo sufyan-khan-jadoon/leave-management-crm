@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
-import { AlertTriangle, CalendarCheck, CheckCircle2, PhoneCall, Sparkles, XCircle } from "lucide-react";
+import { AlertTriangle, CalendarCheck, CheckCircle2, Clock3, PhoneCall, Sparkles, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -51,7 +51,8 @@ export function AiLeaveForm({ remainingThisMonth, hrPhone }: AiLeaveFormProps) {
       setResult(decision);
       form.reset({ message: "" });
 
-      if (decision.approved) toast.success("Leave approved.");
+      if (decision.pending) toast.success("Request submitted for approval.");
+      else if (decision.approved) toast.success("Leave approved.");
       else toast.warning("Request could not be approved.");
 
       router.refresh();
@@ -165,24 +166,32 @@ export function AiLeaveForm({ remainingThisMonth, hrPhone }: AiLeaveFormProps) {
 
 /** Shows exactly what the AI extracted and how the policy was applied. */
 function DecisionCard({ result, hrPhone }: { result: LeaveDecisionResult; hrPhone: string }) {
-  const { approved, leave, message, remainingThisMonth } = result;
+  const { approved, pending, leave, message, remainingThisMonth } = result;
 
   return (
     <Card
       className={cn(
         "overflow-hidden",
-        approved ? "border-success/30 bg-success/5" : "border-destructive/30 bg-destructive/5",
+        pending
+          ? "border-warning/30 bg-warning/5"
+          : approved
+            ? "border-success/30 bg-success/5"
+            : "border-destructive/30 bg-destructive/5",
       )}
     >
       <CardContent className="space-y-4">
         <div className="flex items-start gap-3">
-          {approved ? (
+          {pending ? (
+            <Clock3 className="text-warning mt-0.5 size-5 shrink-0" aria-hidden />
+          ) : approved ? (
             <CheckCircle2 className="text-success mt-0.5 size-5 shrink-0" aria-hidden />
           ) : (
             <XCircle className="text-destructive mt-0.5 size-5 shrink-0" aria-hidden />
           )}
           <div className="space-y-1">
-            <p className="font-semibold">{approved ? "Leave approved" : "Request declined"}</p>
+            <p className="font-semibold">
+              {pending ? "Approval pending" : approved ? "Leave approved" : "Request declined"}
+            </p>
             <p className="text-muted-foreground text-sm">{message}</p>
           </div>
         </div>
@@ -206,7 +215,7 @@ function DecisionCard({ result, hrPhone }: { result: LeaveDecisionResult; hrPhon
             <Link href={ROUTES.leaves}>View leave history</Link>
           </Button>
 
-          {!approved && (
+          {!approved && !pending && (
             <Button variant="ghost" size="sm" asChild>
               <a href={`tel:${hrPhone.replace(/[^\d+]/g, "")}`}>
                 <PhoneCall className="size-4" />
@@ -215,7 +224,7 @@ function DecisionCard({ result, hrPhone }: { result: LeaveDecisionResult; hrPhon
             </Button>
           )}
 
-          {approved && (
+          {(approved || pending) && (
             <span className="text-muted-foreground text-xs">
               {remainingThisMonth} of {MONTHLY_LEAVE_ALLOWANCE} remaining this month
             </span>

@@ -1,6 +1,11 @@
 import { LeaveStatus } from "@prisma/client";
 
-import { MONTHLY_LEAVE_ALLOWANCE, quotaExceededMessage } from "@/lib/constants";
+import {
+  LEAVE_AUTO_APPROVAL_DELAY_MINUTES,
+  MONTHLY_LEAVE_ALLOWANCE,
+  leavePendingMessage,
+  quotaExceededMessage,
+} from "@/lib/constants";
 import { addUtcMonths, endOfUtcMonth, startOfUtcMonth, toUtcDay } from "@/lib/date";
 import { serverEnv } from "@/lib/env";
 import { ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
@@ -19,6 +24,8 @@ export type LeaveDecision = {
   /** Auto-decision outcome, surfaced verbatim to the employee. */
   message: string;
   approved: boolean;
+  /** True while the request is queued awaiting the automatic decision. */
+  pending: boolean;
   usedThisMonth: number;
   remainingThisMonth: number;
 };
@@ -55,35 +62,106 @@ export const leaveService = {
 
     // Quota is evaluated against the month the leave falls in, not the month
     // the request is made — a request in March for an April date draws on April.
-    const approvedThisMonth = await leaveRepository.countApprovedInMonth(employeeId, leaveDate);
-    const withinAllowance = approvedThisMonth < MONTHLY_LEAVE_ALLOWANCE;
+    // Queued requests count towards it, otherwise the delay window could be used
+    // to slip an unlimited number past the allowance.
+    const committedThisMonth = await leaveRepository.countCommittedInMonth(employeeId, leaveDate);
+    const withinAllowance = committedThisMonth < MONTHLY_LEAVE_ALLOWANCE;
+    const quotaMessage = quotaExceededMessage(serverEnv().HR_CONTACT_PHONE);
+
+    // Exceeding the allowance is refused straight away: waiting to say no tells
+    // the employee nothing they could act on.
+    if (!withinAllowance) {
+      const leave = await leaveRepository.create({
+        employeeId,
+        leaveDate,
+        reason,
+        status: LeaveStatus.REJECTED,
+      });
+
+      await emailService.sendLeaveRejected(employee.email, employee.name, leaveDate, reason, quotaMessage);
+
+      return {
+        leave,
+        approved: false,
+        pending: false,
+        message: quotaMessage,
+        usedThisMonth: committedThisMonth,
+        remainingThisMonth: 0,
+      };
+    }
 
     const leave = await leaveRepository.create({
       employeeId,
       leaveDate,
       reason,
-      status: withinAllowance ? LeaveStatus.APPROVED : LeaveStatus.REJECTED,
+      status: LeaveStatus.PENDING,
     });
 
-    const usedThisMonth = withinAllowance ? approvedThisMonth + 1 : approvedThisMonth;
-    const remainingThisMonth = Math.max(0, MONTHLY_LEAVE_ALLOWANCE - usedThisMonth);
-    const quotaMessage = quotaExceededMessage(serverEnv().HR_CONTACT_PHONE);
-
-    if (withinAllowance) {
-      await emailService.sendLeaveApproved(employee.email, employee.name, leaveDate, reason, remainingThisMonth);
-    } else {
-      await emailService.sendLeaveRejected(employee.email, employee.name, leaveDate, reason, quotaMessage);
-    }
+    const usedThisMonth = committedThisMonth + 1;
 
     return {
       leave,
-      approved: withinAllowance,
-      message: withinAllowance
-        ? `Your leave on ${extracted.date} has been approved. You have ${remainingThisMonth} of ${MONTHLY_LEAVE_ALLOWANCE} leaves remaining this month.`
-        : quotaMessage,
+      approved: false,
+      pending: true,
+      message: leavePendingMessage(),
       usedThisMonth,
-      remainingThisMonth,
+      remainingThisMonth: Math.max(0, MONTHLY_LEAVE_ALLOWANCE - usedThisMonth),
     };
+  },
+
+  /**
+   * Decides every request whose delay has elapsed and emails the outcome.
+   *
+   * Idempotent and safe to run concurrently from the request-path sweep and the
+   * scheduled trigger: each request is re-read as PENDING and the allowance is
+   * re-checked against approved leaves only, so a queue that would overshoot the
+   * month is trimmed rather than approved wholesale.
+   */
+  async processDueDecisions(): Promise<{ approved: number; rejected: number }> {
+    const cutoff = new Date(Date.now() - LEAVE_AUTO_APPROVAL_DELAY_MINUTES * 60_000);
+    const due = await leaveRepository.findDueForDecision(cutoff);
+
+    let approved = 0;
+    let rejected = 0;
+
+    for (const leave of due) {
+      const approvedThisMonth = await leaveRepository.countApprovedInMonth(leave.employeeId, leave.leaveDate);
+      const fits = approvedThisMonth < MONTHLY_LEAVE_ALLOWANCE;
+
+      const updated = await leaveRepository
+        .markAutoDecided(leave.id, fits ? LeaveStatus.APPROVED : LeaveStatus.REJECTED)
+        .catch((error: unknown) => {
+          // A concurrent sweep may have decided it first; skip rather than abort
+          // the batch.
+          console.warn(`[leave] Could not decide ${leave.id}:`, error);
+          return null;
+        });
+
+      if (!updated) continue;
+
+      if (fits) {
+        approved += 1;
+        const remaining = Math.max(0, MONTHLY_LEAVE_ALLOWANCE - (approvedThisMonth + 1));
+        await emailService.sendLeaveApproved(
+          leave.employee.email,
+          leave.employee.name,
+          leave.leaveDate,
+          leave.reason,
+          remaining,
+        );
+      } else {
+        rejected += 1;
+        await emailService.sendLeaveRejected(
+          leave.employee.email,
+          leave.employee.name,
+          leave.leaveDate,
+          leave.reason,
+          quotaExceededMessage(serverEnv().HR_CONTACT_PHONE),
+        );
+      }
+    }
+
+    return { approved, rejected };
   },
 
   /** Admin override of an automatic decision. */
@@ -132,6 +210,10 @@ export const leaveService = {
   },
 
   async balanceFor(employeeId: string, reference: Date = new Date()): Promise<LeaveBalance> {
+    // Reading the balance is the moment an employee is most likely to be
+    // waiting on a decision, so clear anything already due before answering.
+    await this.sweepDueDecisions();
+
     const monthStart = startOfUtcMonth(reference);
     const monthEnd = endOfUtcMonth(reference);
 
@@ -151,8 +233,24 @@ export const leaveService = {
     };
   },
 
-  list(filters: LeaveListFilters) {
+  async list(filters: LeaveListFilters) {
+    await this.sweepDueDecisions();
     return leaveRepository.list(filters);
+  },
+
+  /**
+   * Request-path wrapper around `processDueDecisions`.
+   *
+   * The scheduled trigger is the reliable driver; this only makes the wait feel
+   * immediate for someone who has the app open. It therefore must never break
+   * the read it is attached to, so failures are logged and swallowed.
+   */
+  async sweepDueDecisions(): Promise<void> {
+    try {
+      await this.processDueDecisions();
+    } catch (error) {
+      console.error("[leave] Inline decision sweep failed:", error);
+    }
   },
 
   listAll(filters: Omit<LeaveListFilters, "page" | "pageSize">) {

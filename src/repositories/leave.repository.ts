@@ -74,6 +74,45 @@ export const leaveRepository = {
     });
   },
 
+  /**
+   * Approved plus still-queued requests for the month.
+   *
+   * The allowance is checked against this rather than approved alone: while
+   * requests wait out the delay, counting only approved would let someone queue
+   * any number inside the window and have every one of them approved later.
+   */
+  countCommittedInMonth(employeeId: string, reference: Date = new Date()): Promise<number> {
+    return prisma.leave.count({
+      where: {
+        employeeId,
+        status: { in: [LeaveStatus.APPROVED, LeaveStatus.PENDING] },
+        leaveDate: { gte: startOfUtcMonth(reference), lt: endOfUtcMonth(reference) },
+      },
+    });
+  },
+
+  /** Queued requests whose delay has elapsed, oldest first. */
+  findDueForDecision(cutoff: Date, take = 50): Promise<LeaveWithEmployeeDto[]> {
+    return prisma.leave.findMany({
+      where: { status: LeaveStatus.PENDING, createdAt: { lte: cutoff } },
+      orderBy: { createdAt: "asc" },
+      take,
+      select: leaveWithEmployeeSelect,
+    });
+  },
+
+  /**
+   * Records an automatic decision. `decidedById` stays null — that column marks
+   * a human override, which keeps the two kinds of decision distinguishable.
+   */
+  markAutoDecided(id: string, status: LeaveStatus): Promise<LeaveWithEmployeeDto> {
+    return prisma.leave.update({
+      where: { id },
+      data: { status, decidedAt: new Date() },
+      select: leaveWithEmployeeSelect,
+    });
+  },
+
   findByEmployeeAndDate(employeeId: string, leaveDate: Date): Promise<LeaveDto | null> {
     return prisma.leave.findFirst({
       where: { employeeId, leaveDate, status: { not: LeaveStatus.REJECTED } },

@@ -90,6 +90,8 @@ export type LeaveDecisionResult = {
   leave: LeaveView;
   message: string;
   approved: boolean;
+  /** True while the request is queued awaiting the automatic decision. */
+  pending: boolean;
   usedThisMonth: number;
   remainingThisMonth: number;
 };
