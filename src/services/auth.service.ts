@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 
-import { EmployeeStatus, type OtpPurpose, type Role } from "@prisma/client";
+import { EmployeeStatus, Role, type OtpPurpose } from "@prisma/client";
 
 import {
   OTP_LENGTH,
@@ -9,12 +9,13 @@ import {
   OTP_TTL_MINUTES,
 } from "@/lib/constants";
 import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } from "@/lib/errors";
-import { OTP_PURPOSE } from "@/lib/enums";
+import { OTP_PURPOSE, canSignIn } from "@/lib/enums";
 import type { ResetTicket } from "@/lib/auth/reset-ticket";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { employeeRepository, type EmployeeDto } from "@/repositories/employee.repository";
 import { otpRepository } from "@/repositories/otp.repository";
 import { emailService } from "@/services/email/email.service";
+import { inviteService } from "@/services/invite.service";
 import type { LoginInput, RegisterInput, VerifyOtpInput } from "@/validations/auth.schema";
 
 export type AuthenticatedEmployee = {
@@ -87,7 +88,8 @@ export const authService = {
    * Re-registering an existing but unverified address reissues a code rather
    * than leaking that the address is taken.
    */
-  async register(input: RegisterInput): Promise<{ email: string }> {
+  async register(input: RegisterInput): Promise<{ email: string; pendingApproval: boolean }> {
+    const inviteKey = input.inviteKey?.trim().toUpperCase() || undefined;
     const existing = await employeeRepository.findByEmail(input.email);
 
     if (existing) {
@@ -96,20 +98,32 @@ export const authService = {
       }
 
       await this.issueOtp(existing.id, existing.email, existing.name);
-      return { email: existing.email };
+      return { email: existing.email, pendingApproval: existing.status === EmployeeStatus.PENDING_APPROVAL };
     }
+
+    // Checked before the account exists so an invalid key never leaves a
+    // half-registered row behind.
+    const invite = inviteKey ? await inviteService.assertUsable(inviteKey) : null;
 
     const password = await hashPassword(input.password);
     const employee = await employeeRepository.create({
       name: input.name,
       email: input.email,
       password,
+      role: invite ? Role.ADMIN : Role.EMPLOYEE,
+      // An invited admin is inert until the super admin decides; an employee is
+      // active the moment they verify their address.
+      status: invite ? EmployeeStatus.PENDING_APPROVAL : EmployeeStatus.ACTIVE,
     });
+
+    if (invite) {
+      await inviteService.redeem(invite.id, employee.id);
+    }
 
     await emailService.sendWelcome(employee.email, employee.name);
     await this.issueOtp(employee.id, employee.email, employee.name);
 
-    return { email: employee.email };
+    return { email: employee.email, pendingApproval: Boolean(invite) };
   },
 
   /** Issues a fresh OTP for one purpose, invalidating outstanding codes of it. */
@@ -183,7 +197,7 @@ export const authService = {
    */
   async requestPasswordReset(email: string): Promise<void> {
     const employee = await employeeRepository.findByEmail(email);
-    if (!employee || employee.status === EmployeeStatus.SUSPENDED) return;
+    if (!employee || !canSignIn(employee.status)) return;
 
     const latest = await otpRepository.findLatest(employee.id, OTP_PURPOSE.PASSWORD_RESET);
 
@@ -210,7 +224,7 @@ export const authService = {
 
     // Mirrors the "expired code" wording used for a real account so a wrong
     // address cannot be distinguished from a wrong code.
-    if (!employee || employee.status === EmployeeStatus.SUSPENDED) {
+    if (!employee || !canSignIn(employee.status)) {
       throw new ValidationError("That code has expired. Request a new one to continue.");
     }
 
@@ -229,7 +243,7 @@ export const authService = {
   async resetPassword(ticket: ResetTicket, password: string): Promise<void> {
     const employee = await employeeRepository.findById(ticket.employeeId);
 
-    if (!employee || employee.status === EmployeeStatus.SUSPENDED) {
+    if (!employee || !canSignIn(employee.status)) {
       throw new ValidationError("That code has expired. Request a new one to continue.");
     }
 
@@ -259,6 +273,16 @@ export const authService = {
 
     if (!employee.emailVerified) {
       throw new ForbiddenError("Please verify your email address before signing in.");
+    }
+
+    if (employee.status === EmployeeStatus.PENDING_APPROVAL) {
+      throw new ForbiddenError(
+        "Your administrator request is awaiting approval. You'll be emailed once it's reviewed.",
+      );
+    }
+
+    if (employee.status === EmployeeStatus.REJECTED) {
+      throw new ForbiddenError("Your administrator request was declined. Please contact your super administrator.");
     }
 
     if (employee.status === EmployeeStatus.SUSPENDED) {

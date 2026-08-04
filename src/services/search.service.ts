@@ -1,4 +1,6 @@
-import { Role } from "@prisma/client";
+import type { Role } from "@prisma/client";
+
+import { isAdminRole } from "@/lib/enums";
 
 import { employeeRepository, type EmployeeDto } from "@/repositories/employee.repository";
 import { leaveRepository, type LeaveWithEmployeeDto } from "@/repositories/leave.repository";
@@ -17,7 +19,7 @@ export const searchService = {
    * additionally get employee matches.
    */
   async search(term: string, limit: number, viewer: { id: string; role: Role }): Promise<SearchResults> {
-    const isAdmin = viewer.role === Role.ADMIN;
+    const isAdmin = isAdminRole(viewer.role);
 
     const [employees, leaves] = await Promise.all([
       isAdmin ? employeeRepository.searchBasic(term, limit) : Promise.resolve([]),

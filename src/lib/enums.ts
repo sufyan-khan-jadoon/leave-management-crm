@@ -12,12 +12,33 @@ import type { EmployeeStatus, LeaveStatus, OtpPurpose, Role } from "@prisma/clie
 export const ROLE = {
   EMPLOYEE: "EMPLOYEE",
   ADMIN: "ADMIN",
+  SUPER_ADMIN: "SUPER_ADMIN",
 } as const satisfies Record<Role, Role>;
+
+/**
+ * Both admin roles reach the admin area; only SUPER_ADMIN reaches the access
+ * panel. Every role check goes through these so adding a third never means
+ * hunting down comparisons that silently excluded it.
+ */
+export function isAdminRole(role: Role | string): boolean {
+  return role === ROLE.ADMIN || role === ROLE.SUPER_ADMIN;
+}
+
+export function isSuperAdminRole(role: Role | string): boolean {
+  return role === ROLE.SUPER_ADMIN;
+}
 
 export const EMPLOYEE_STATUS = {
   ACTIVE: "ACTIVE",
   SUSPENDED: "SUSPENDED",
+  PENDING_APPROVAL: "PENDING_APPROVAL",
+  REJECTED: "REJECTED",
 } as const satisfies Record<EmployeeStatus, EmployeeStatus>;
+
+/** Only ACTIVE accounts may hold a session. */
+export function canSignIn(status: EmployeeStatus | string): boolean {
+  return status === EMPLOYEE_STATUS.ACTIVE;
+}
 
 export const LEAVE_STATUS = {
   PENDING: "PENDING",

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
-import { ROLE } from "@/lib/enums";
+import { isAdminRole } from "@/lib/enums";
 import { appConfig } from "@/lib/env";
 
 export default async function EmployeeLayout({ children }: { children: React.ReactNode }) {
@@ -12,7 +12,7 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
   // Middleware already gates these routes; this is defence in depth for the
   // case where a page is reached through a path the matcher does not cover.
   if (!session?.user) redirect(ROUTES.login);
-  if (session.user.role === ROLE.ADMIN) redirect(ROUTES.adminDashboard);
+  if (isAdminRole(session.user.role)) redirect(ROUTES.adminDashboard);
 
   return (
     <AppShell

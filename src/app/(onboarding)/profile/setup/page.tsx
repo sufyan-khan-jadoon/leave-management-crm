@@ -7,7 +7,7 @@ import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
-import { ROLE } from "@/lib/enums";
+import { isAdminRole } from "@/lib/enums";
 import { appConfig } from "@/lib/env";
 import { employeeService } from "@/services/employee.service";
 import { serializeEmployee } from "@/lib/serialize";
@@ -18,7 +18,7 @@ export default async function ProfileSetupPage() {
   const session = await auth();
 
   if (!session?.user) redirect(ROUTES.login);
-  if (session.user.role === ROLE.ADMIN) redirect(ROUTES.adminDashboard);
+  if (isAdminRole(session.user.role)) redirect(ROUTES.adminDashboard);
 
   const employee = await employeeService.byId(session.user.id);
 

@@ -36,12 +36,12 @@ async function seedAdmin(): Promise<void> {
 
   const admin = await prisma.employee.upsert({
     where: { email: ADMIN_EMAIL },
-    update: { role: Role.ADMIN, emailVerified: new Date() },
+    update: { role: Role.SUPER_ADMIN, emailVerified: new Date() },
     create: {
       name: ADMIN_NAME,
       email: ADMIN_EMAIL,
       password,
-      role: Role.ADMIN,
+      role: Role.SUPER_ADMIN,
       emailVerified: new Date(),
       department: "Human Resources",
       position: "System Administrator",
@@ -50,7 +50,7 @@ async function seedAdmin(): Promise<void> {
     },
   });
 
-  console.log(`  Admin ready: ${admin.email}`);
+  console.log(`  Super admin ready: ${admin.email}`);
 }
 
 async function seedDemoEmployees(): Promise<void> {

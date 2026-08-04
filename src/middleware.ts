@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { authConfig } from "@/lib/auth/auth.config";
 import { RESET_TICKET_COOKIE, ROUTES } from "@/lib/constants";
-import { EMPLOYEE_STATUS, ROLE } from "@/lib/enums";
+import { canSignIn, isAdminRole } from "@/lib/enums";
 
 const { auth } = NextAuth(authConfig);
 
@@ -56,11 +56,11 @@ export default auth((request) => {
     return NextResponse.redirect(signInUrl);
   }
 
-  if (user.status === EMPLOYEE_STATUS.SUSPENDED) {
+  if (!canSignIn(user.status)) {
     return NextResponse.redirect(new URL(`${ROUTES.login}?error=AccountSuspended`, request.nextUrl));
   }
 
-  const isAdmin = user.role === ROLE.ADMIN;
+  const isAdmin = isAdminRole(user.role);
 
   // Signed-in users have no reason to sit on an auth or role-selection screen.
   if (pathname === ROUTES.home || pathname === ROUTES.login || pathname === ROUTES.register || isAdminLogin) {

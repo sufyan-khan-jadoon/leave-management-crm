@@ -120,6 +120,28 @@ export function passwordChangedTemplate(name: string): Template {
   };
 }
 
+export function adminDecisionTemplate(name: string, approved: boolean): Template {
+  return approved
+    ? {
+        subject: "Your administrator access is approved",
+        html: layout(
+          "Administrator access approved",
+          `<p>Hi ${esc(name)}, your administrator request has been approved. You can sign in now.</p>`,
+          { label: "Go to admin sign in", url: `${appConfig.url}/admin/login` },
+        ),
+        text: `Hi ${name}, your administrator request has been approved. Sign in at ${appConfig.url}/admin/login.`,
+      }
+    : {
+        subject: "Your administrator request was declined",
+        html: layout(
+          "Administrator request declined",
+          `<p>Hi ${esc(name)}, your administrator request was declined.</p>
+           <p style="color:#8b90a8;">If you believe this is a mistake, contact your super administrator.</p>`,
+        ),
+        text: `Hi ${name}, your administrator request was declined. Contact your super administrator if you believe this is a mistake.`,
+      };
+}
+
 export function emailVerifiedTemplate(name: string): Template {
   return {
     subject: "Your email is verified",

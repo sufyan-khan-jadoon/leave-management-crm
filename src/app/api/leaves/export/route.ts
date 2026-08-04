@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth/guards";
 import { failure, parseQuery } from "@/lib/api";
 import { AppError } from "@/lib/errors";
-import { ROLE } from "@/lib/enums";
+import { isAdminRole } from "@/lib/enums";
 import { toIsoDate, toUtcDay } from "@/lib/date";
 import { leaveService } from "@/services/leave.service";
 import { leaveQuerySchema } from "@/validations/leave.schema";
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   try {
     const user = await requireUser();
     const query = parseQuery(request, leaveQuerySchema);
-    const isAdmin = user.role === ROLE.ADMIN;
+    const isAdmin = isAdminRole(user.role);
 
     const leaves = await leaveService.listAll({
       ...query,

@@ -3,6 +3,7 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { serverEnv } from "@/lib/env";
 import {
   accountStatusTemplate,
+  adminDecisionTemplate,
   emailVerifiedTemplate,
   leaveApprovedTemplate,
   leaveRejectedTemplate,
@@ -81,6 +82,10 @@ export const emailService = {
 
   sendPasswordChanged(to: string, name: string) {
     return send(to, passwordChangedTemplate(name));
+  },
+
+  sendAdminDecision(to: string, name: string, approved: boolean) {
+    return send(to, adminDecisionTemplate(name, approved));
   },
 
   sendEmailVerified(to: string, name: string) {

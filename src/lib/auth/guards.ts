@@ -1,7 +1,7 @@
-import { EmployeeStatus, Role } from "@prisma/client";
 import type { Session } from "next-auth";
 
 import { auth } from "@/lib/auth/auth";
+import { canSignIn, isAdminRole, isSuperAdminRole } from "@/lib/enums";
 import { ForbiddenError, UnauthorizedError } from "@/lib/errors";
 
 export type SessionUser = Session["user"];
@@ -12,8 +12,8 @@ export async function requireUser(): Promise<SessionUser> {
 
   if (!session?.user) throw new UnauthorizedError();
 
-  if (session.user.status === EmployeeStatus.SUSPENDED) {
-    throw new ForbiddenError("Your account has been suspended. Please contact your HR administrator.");
+  if (!canSignIn(session.user.status)) {
+    throw new ForbiddenError("Your account is not active. Please contact your administrator.");
   }
 
   return session.user;
@@ -22,8 +22,19 @@ export async function requireUser(): Promise<SessionUser> {
 export async function requireAdmin(): Promise<SessionUser> {
   const user = await requireUser();
 
-  if (user.role !== Role.ADMIN) {
+  if (!isAdminRole(user.role)) {
     throw new ForbiddenError("This action requires administrator access.");
+  }
+
+  return user;
+}
+
+/** Guards the access panel: issuing invite keys and deciding admin requests. */
+export async function requireSuperAdmin(): Promise<SessionUser> {
+  const user = await requireUser();
+
+  if (!isSuperAdminRole(user.role)) {
+    throw new ForbiddenError("This action requires super administrator access.");
   }
 
   return user;
@@ -31,7 +42,7 @@ export async function requireAdmin(): Promise<SessionUser> {
 
 /** Allows access when the viewer owns the record, or is an admin. */
 export function assertOwnerOrAdmin(user: SessionUser, ownerId: string): void {
-  if (user.role !== Role.ADMIN && user.id !== ownerId) {
+  if (!isAdminRole(user.role) && user.id !== ownerId) {
     throw new ForbiddenError("You can only access your own records.");
   }
 }

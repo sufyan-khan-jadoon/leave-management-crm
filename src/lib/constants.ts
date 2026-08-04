@@ -22,6 +22,9 @@ export const OTP_MAX_ATTEMPTS = 5;
 
 export const OTP_LENGTH = 6;
 
+/** How long an unused administrator invite key stays valid. */
+export const ADMIN_INVITE_TTL_DAYS = 7;
+
 /** Upper bound on a single request, so a slip of the tongue cannot book a year. */
 export const MAX_LEAVE_DAYS_PER_REQUEST = 31;
 
@@ -63,4 +66,5 @@ export const ROUTES = {
   adminDashboard: "/admin",
   adminEmployees: "/admin/employees",
   adminLeaves: "/admin/leaves",
+  adminAccess: "/admin/access",
 } as const;

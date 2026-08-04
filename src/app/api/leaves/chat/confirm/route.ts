@@ -2,7 +2,7 @@ import { created, handleRoute, parseBody } from "@/lib/api";
 import { requireUser } from "@/lib/auth/guards";
 import { ForbiddenError } from "@/lib/errors";
 import { RATE_LIMITS, enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { ROLE } from "@/lib/enums";
+import { isAdminRole } from "@/lib/enums";
 import { leaveChatService } from "@/services/leave-chat.service";
 import { leaveConfirmSchema } from "@/validations/leave.schema";
 
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   return handleRoute(async () => {
     const user = await requireUser();
 
-    if (user.role === ROLE.ADMIN) {
+    if (isAdminRole(user.role)) {
       throw new ForbiddenError("Administrators submit leave from an employee account.");
     }
 

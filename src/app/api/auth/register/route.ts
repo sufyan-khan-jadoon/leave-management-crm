@@ -12,7 +12,10 @@ export async function POST(request: Request) {
 
     return created({
       email: result.email,
-      message: "Account created. Check your inbox for a 6-digit verification code.",
+      pendingApproval: result.pendingApproval,
+      message: result.pendingApproval
+        ? "Request received. Verify your email, then your super administrator will review it."
+        : "Account created. Check your inbox for a 6-digit verification code.",
     });
   });
 }

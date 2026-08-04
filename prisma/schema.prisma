@@ -20,11 +20,17 @@ datasource db {
 enum Role {
   EMPLOYEE
   ADMIN
+  /// Owns admin onboarding: issues invite keys and approves admin requests.
+  SUPER_ADMIN
 }
 
 enum EmployeeStatus {
   ACTIVE
   SUSPENDED
+  /// An admin who registered with an invite key and is awaiting a decision.
+  PENDING_APPROVAL
+  /// Refused by the super admin. Kept so the address cannot simply re-register.
+  REJECTED
 }
 
 enum LeaveStatus {
@@ -60,8 +66,10 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  leaves   Leave[]
-  otpCodes OtpCode[]
+  leaves        Leave[]
+  otpCodes      OtpCode[]
+  invitesIssued AdminInviteKey[] @relation("InviteIssuer")
+  inviteUsed    AdminInviteKey?  @relation("InviteRedeemer")
 
   @@index([department])
   @@index([status])
@@ -84,6 +92,31 @@ model OtpCode {
 
   @@index([employeeId, purpose, createdAt])
   @@map("otp_codes")
+}
+
+/// A one-shot invitation to register as an administrator.
+///
+/// Single-use by design: redeeming one ties it to the account that used it, so
+/// a leaked key cannot onboard a stream of strangers and every admin can be
+/// traced back to the invitation they came through.
+model AdminInviteKey {
+  id         String    @id @default(cuid())
+  key        String    @unique
+  /// Free-text note of who the key was meant for.
+  label      String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  redeemedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  issuedById String
+  issuedBy   Employee @relation("InviteIssuer", fields: [issuedById], references: [id], onDelete: Cascade)
+
+  redeemedById String?   @unique
+  redeemedBy   Employee? @relation("InviteRedeemer", fields: [redeemedById], references: [id], onDelete: SetNull)
+
+  @@index([issuedById, createdAt])
+  @@map("admin_invite_keys")
 }
 
 /// A single day of leave. Date and reason are extracted by the AI service;

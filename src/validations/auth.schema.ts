@@ -34,6 +34,11 @@ export const registerSchema = z
     email: emailSchema,
     password: passwordSchema,
     confirmPassword: z.string(),
+    /**
+     * Present only when registering as an administrator. Employees leave it
+     * blank and are active as soon as they verify their email.
+     */
+    inviteKey: z.string().trim().max(40, "That doesn't look like an invite key").optional(),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",

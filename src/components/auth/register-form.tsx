@@ -22,7 +22,7 @@ export function RegisterForm() {
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+    defaultValues: { name: "", email: "", password: "", confirmPassword: "", inviteKey: "" },
     mode: "onBlur",
   });
 
@@ -32,7 +32,11 @@ export function RegisterForm() {
     try {
       await apiClient.post("/api/auth/register", values);
 
-      toast.success("Account created — check your inbox for a verification code.");
+      toast.success(
+        values.inviteKey?.trim()
+          ? "Request submitted — verify your email, then wait for approval."
+          : "Account created — check your inbox for a verification code.",
+      );
       router.push(`${ROUTES.verifyEmail}?email=${encodeURIComponent(values.email)}`);
     } catch (error) {
       if (error instanceof ApiClientError) {
@@ -142,6 +146,32 @@ export function RegisterForm() {
                   {...field}
                 />
               </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="inviteKey"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Administrator invite key <span className="text-muted-foreground">(optional)</span>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="ABCD-EFGH-JKLM-NPQR"
+                  className="font-mono uppercase"
+                  autoComplete="off"
+                  disabled={form.formState.isSubmitting}
+                  {...field}
+                />
+              </FormControl>
+              <p className="text-muted-foreground text-xs">
+                Leave blank unless your super administrator gave you a key. Requests need approval before
+                you can sign in.
+              </p>
               <FormMessage />
             </FormItem>
           )}

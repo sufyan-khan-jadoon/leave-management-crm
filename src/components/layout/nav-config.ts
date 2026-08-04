@@ -1,4 +1,4 @@
-import { CalendarDays, LayoutDashboard, Sparkles, User, Users } from "lucide-react";
+import { CalendarDays, KeyRound, LayoutDashboard, Sparkles, User, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ROUTES } from "@/lib/constants";
@@ -22,6 +22,12 @@ export const ADMIN_NAV: NavItem[] = [
   { href: ROUTES.adminDashboard, label: "Overview", icon: LayoutDashboard, exact: true },
   { href: ROUTES.adminEmployees, label: "Employees", icon: Users },
   { href: ROUTES.adminLeaves, label: "Leave requests", icon: CalendarDays },
+];
+
+/** The access panel belongs to the super admin alone. */
+export const SUPER_ADMIN_NAV: NavItem[] = [
+  ...ADMIN_NAV,
+  { href: ROUTES.adminAccess, label: "Admin access", icon: KeyRound },
 ];
 
 export function isActiveRoute(pathname: string, item: NavItem): boolean {

@@ -49,7 +49,26 @@ export const employeeRepository = {
     });
   },
 
-  create(data: { name: string; email: string; password: string; role?: Role }): Promise<EmployeeDto> {
+  /** Administrators awaiting a decision, oldest request first. */
+  listByStatus(status: EmployeeStatus): Promise<EmployeeDto[]> {
+    return prisma.employee.findMany({
+      where: { status },
+      orderBy: { createdAt: "asc" },
+      select: employeeSelect,
+    });
+  },
+
+  updateStatus(id: string, status: EmployeeStatus): Promise<EmployeeDto> {
+    return prisma.employee.update({ where: { id }, data: { status }, select: employeeSelect });
+  },
+
+  create(data: {
+    name: string;
+    email: string;
+    password: string;
+    role?: Role;
+    status?: EmployeeStatus;
+  }): Promise<EmployeeDto> {
     return prisma.employee.create({
       data: { ...data, email: normalizeEmail(data.email) },
       select: employeeSelect,
