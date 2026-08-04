@@ -41,6 +41,26 @@ export function utcWeekday(date: Date, locale = "en-US"): string {
   return new Intl.DateTimeFormat(locale, { weekday: "long", timeZone: "UTC" }).format(date);
 }
 
+/**
+ * `count` consecutive calendar days starting at `start`.
+ *
+ * Every day counts, weekends included — a four-day request books four dates
+ * and draws four days of allowance regardless of where they fall.
+ */
+export function utcDayRange(start: Date, count: number): Date[] {
+  return Array.from({ length: count }, (_, offset) => addUtcDays(start, offset));
+}
+
+/** "5 Aug" or "5–8 Aug 2026" — how a booked range reads back to the employee. */
+export function formatDateRange(dates: Date[], locale = "en-US"): string {
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  if (!first || !last) return "";
+  if (dates.length === 1) return formatDate(first, locale);
+
+  return `${formatDate(first, locale)} – ${formatDate(last, locale)}`;
+}
+
 export function formatDate(value: Date | string, locale = "en-US"): string {
   return new Intl.DateTimeFormat(locale, {
     year: "numeric",

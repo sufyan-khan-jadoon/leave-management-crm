@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { LeaveTrendChart } from "@/components/charts/leave-trend-chart";
+import { LeaveChat } from "@/components/leaves/leave-chat";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LeaveStatusBadge } from "@/components/shared/leave-status-badge";
@@ -111,6 +112,21 @@ export function EmployeeDashboard({ firstName }: { firstName: string }) {
             hint="All time"
           />
         </div>
+
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Sparkles className="text-primary size-4" aria-hidden />
+              Request leave
+            </CardTitle>
+            <CardDescription>
+              Describe the time off you need — the assistant confirms the details with you before booking.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-0 pb-0">
+            <LeaveChat className="rounded-none border-0 shadow-none" />
+          </CardContent>
+        </Card>
 
         <div className="grid gap-4 lg:grid-cols-5">
           <Card className="lg:col-span-3">

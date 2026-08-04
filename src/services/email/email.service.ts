@@ -87,8 +87,8 @@ export const emailService = {
     return send(to, emailVerifiedTemplate(name));
   },
 
-  sendLeaveApproved(to: string, name: string, leaveDate: Date, reason: string, remaining: number) {
-    return send(to, leaveApprovedTemplate(name, leaveDate, reason, remaining));
+  sendLeaveApproved(to: string, name: string, dates: Date[], reason: string, remaining: number) {
+    return send(to, leaveApprovedTemplate(name, dates, reason, remaining));
   },
 
   sendLeaveRejected(to: string, name: string, leaveDate: Date, reason: string, explanation: string) {

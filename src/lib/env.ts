@@ -16,9 +16,6 @@ const serverSchema = z.object({
   GROQ_API_KEY: z.string().min(1, "GROQ_API_KEY is required"),
   GROQ_MODEL: z.string().default("llama-3.1-8b-instant"),
 
-  /** Shared secret for the scheduled leave-decision endpoint. */
-  CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters"),
-
   EMAIL_HOST: z.string().min(1),
   EMAIL_PORT: z.coerce.number().int().positive().default(587),
   EMAIL_USER: z.string().min(1),

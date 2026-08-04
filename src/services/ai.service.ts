@@ -2,18 +2,32 @@ import { z } from "zod";
 
 import { AiServiceError } from "@/lib/errors";
 import { serverEnv } from "@/lib/env";
-import { addUtcDays, toIsoDate, toUtcDay, todayUtc, utcWeekday } from "@/lib/date";
+import { addUtcDays, toIsoDate, utcWeekday } from "@/lib/date";
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const REQUEST_TIMEOUT_MS = 20_000;
 
-/** Shape the model is instructed to return. */
-const extractionSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be an ISO calendar date"),
-  reason: z.string().trim().min(3).max(280),
+/**
+ * What the assistant decided the employee wants.
+ *
+ * The model classifies and extracts only. It is never asked for balances, dates
+ * already booked, or whether a request fits the allowance — those come from the
+ * database, so a confident-sounding wrong number cannot reach the employee.
+ */
+const chatIntentSchema = z.object({
+  intent: z.enum(["book", "balance", "history", "other"]),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be an ISO calendar date")
+    .nullish(),
+  days: z.number().int().min(1).max(366).nullish(),
+  reason: z.string().trim().max(280).nullish(),
+  reply: z.string().trim().min(1).max(600),
 });
 
-export type LeaveExtraction = z.infer<typeof extractionSchema>;
+export type LeaveChatIntent = z.infer<typeof chatIntentSchema>;
+
+export type ChatTurn = { role: "user" | "assistant"; content: string };
 
 type GroqResponse = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -21,39 +35,34 @@ type GroqResponse = {
 };
 
 /**
- * Turns a free-text leave request into a structured `{ date, reason }`.
+ * Reads a conversation and reports what the employee is asking for.
  *
- * The model is put in JSON-object mode and validated against `extractionSchema`.
- * JSON mode guarantees syntax but not shape, so a reply that parses yet fails
- * validation is retried once with a corrective instruction; a second failure
- * raises AiServiceError rather than throwing an unhandled parse error.
+ * A malformed reply is retried once with a corrective instruction; a second
+ * failure raises AiServiceError rather than throwing an unhandled parse error.
  */
-export async function extractLeaveDetails(message: string): Promise<LeaveExtraction> {
-  const today = toIsoDate(todayUtc());
-  const firstAttempt = await requestExtraction(buildPrompt(message, today));
+export async function interpretLeaveChat(turns: ChatTurn[], today: Date): Promise<LeaveChatIntent> {
+  const system = buildChatSystemPrompt(today);
+  const messages: ChatTurn[] = turns.slice(-12);
 
-  if (firstAttempt.ok) return firstAttempt.value;
+  const first = await requestIntent(system, messages);
+  if (first.ok) return first.value;
 
-  console.warn("[ai] First extraction attempt failed:", firstAttempt.reason);
+  console.warn("[ai] First chat interpretation failed:", first.reason);
 
-  const retry = await requestExtraction(buildRetryPrompt(message, today, firstAttempt.reason));
+  const retry = await requestIntent(`${system}\n\nYour previous answer was rejected because: ${first.reason}\nReturn ONLY the JSON object described above.`, messages);
   if (retry.ok) return retry.value;
 
-  console.error("[ai] Extraction failed after retry:", retry.reason);
-  throw new AiServiceError(
-    "I couldn't understand that request. Try phrasing it like: \"I need leave on Friday because I have university exams.\"",
-  );
+  console.error("[ai] Chat interpretation failed after retry:", retry.reason);
+  throw new AiServiceError("I didn't catch that. Try something like \"I need 3 days off from Monday for a family wedding\".");
 }
 
-type Attempt =
-  | { ok: true; value: LeaveExtraction }
-  | { ok: false; reason: string };
+type Attempt = { ok: true; value: LeaveChatIntent } | { ok: false; reason: string };
 
-async function requestExtraction(prompt: string): Promise<Attempt> {
+async function requestIntent(system: string, turns: ChatTurn[]): Promise<Attempt> {
   let raw: string;
 
   try {
-    raw = await callGroq(prompt);
+    raw = await callGroq(system, turns);
   } catch (error) {
     // Transport/auth failures are terminal — surface immediately rather than
     // burning the retry on a request that cannot succeed.
@@ -71,19 +80,19 @@ async function requestExtraction(prompt: string): Promise<Attempt> {
     return { ok: false, reason: `Malformed JSON: ${json.slice(0, 200)}` };
   }
 
-  const result = extractionSchema.safeParse(parsed);
+  const result = chatIntentSchema.safeParse(parsed);
   if (!result.success) {
     return { ok: false, reason: result.error.issues.map((issue) => issue.message).join("; ") };
   }
 
-  if (Number.isNaN(Date.parse(`${result.data.date}T00:00:00.000Z`))) {
-    return { ok: false, reason: `Not a real calendar date: ${result.data.date}` };
+  if (result.data.startDate && Number.isNaN(Date.parse(`${result.data.startDate}T00:00:00.000Z`))) {
+    return { ok: false, reason: `Not a real calendar date: ${result.data.startDate}` };
   }
 
   return { ok: true, value: result.data };
 }
 
-async function callGroq(prompt: string): Promise<string> {
+async function callGroq(system: string, turns: ChatTurn[]): Promise<string> {
   const env = serverEnv();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -99,12 +108,12 @@ async function callGroq(prompt: string): Promise<string> {
       body: JSON.stringify({
         model: env.GROQ_MODEL,
         temperature: 0,
-        max_tokens: 256,
+        max_tokens: 400,
         // Syntax-level JSON only. Groq enforces a schema just on the gpt-oss
         // models, so the shape is validated with Zod instead — that keeps any
         // model swappable through GROQ_MODEL without touching this call.
         response_format: { type: "json_object" },
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "system", content: system }, ...turns],
       }),
     });
 
@@ -143,50 +152,71 @@ async function callGroq(prompt: string): Promise<string> {
 
 /**
  * Small models reliably get weekday arithmetic wrong — "Friday" lands a day off,
- * "next Monday" lands on a Saturday. The next two weeks are therefore spelled
+ * "next Monday" lands on a Saturday. The next three weeks are therefore spelled
  * out so resolving a weekday is a table lookup rather than a calculation.
  */
 function buildCalendar(today: Date): string {
-  return Array.from({ length: 15 }, (_, offset) => {
+  return Array.from({ length: 22 }, (_, offset) => {
     const day = addUtcDays(today, offset);
     const marker = offset === 0 ? "  <- today" : offset === 1 ? "  <- tomorrow" : "";
     return `${toIsoDate(day)} = ${utcWeekday(day)}${marker}`;
   }).join("\n");
 }
 
-function buildPrompt(message: string, today: string): string {
-  const calendar = buildCalendar(toUtcDay(today));
+function buildChatSystemPrompt(today: Date): string {
+  const iso = toIsoDate(today);
 
-  return `You are a leave-request parser for an HR system. Today's date is ${today} (UTC).
+  return `You are the leave assistant for an HR system. Today is ${iso} (UTC).
 
 Calendar reference — use these exact pairings, do not compute dates yourself:
-${calendar}
+${buildCalendar(today)}
 
-Extract exactly two fields from the employee's message:
-- "date": the single calendar date of the requested leave, in YYYY-MM-DD format.
-- "reason": a concise reason (3-12 words), written in third person without pronouns like "I".
-
-Rules for resolving the date:
-- "today" resolves to ${today}; "tomorrow" resolves to the row marked tomorrow.
-- A weekday name ("Friday", "next Friday") means the FIRST row above with that
-  weekday name, excluding today's row. Copy that row's date exactly.
-- If a date is given without a year, choose the interpretation on or after ${today}.
-- If no date can be determined, use ${today}.
-- If a range is mentioned, use the FIRST day of the range.
-
-Respond with a single JSON object and nothing else. No markdown, no commentary.
-
-Employee message:
-"""
-${message}
-"""`;
+Reply with a single JSON object and nothing else:
+{
+  "intent": "book" | "balance" | "history" | "other",
+  "startDate": "YYYY-MM-DD" or null,
+  "days": whole number or null,
+  "reason": "short reason" or null,
+  "reply": "what to say to the employee"
 }
 
-function buildRetryPrompt(message: string, today: string, failureReason: string): string {
-  return `${buildPrompt(message, today)}
+Choose the intent:
+- "book" when they want time off. Fill startDate, days and reason.
+- "balance" when they ask how much leave they have left.
+- "history" when they ask about leave they already booked.
+- "other" for anything else, including greetings.
 
-Your previous answer was rejected because: ${failureReason}
-Return ONLY a valid JSON object of the form {"date":"YYYY-MM-DD","reason":"short text"}.`;
+Rules for "book":
+- "from today" starts ${iso}. A bare weekday name means the FIRST row above with
+  that weekday, excluding today's row. Copy that row's date exactly.
+- "4 days from today" means days=4 starting ${iso}. Every calendar day counts,
+  weekends included.
+- "on Friday" with no duration means days=1.
+- If the start date, the number of days, or the reason is missing, still use
+  intent "book", leave the unknown fields null, and ask for exactly the missing
+  one in "reply".
+- Never state whether the request is approved, how many days remain, or what
+  dates are already booked. The system decides that and tells them separately.
+  When every field is known, "reply" should be a short neutral restatement.
+
+For "balance" and "history", "reply" is ignored — the system answers from the
+employee's records — so a brief acknowledgement is enough.
+
+Keep "reply" to one or two short sentences, plain and friendly.
+
+Worked examples for today = ${iso}:
+
+"I need leave for 4 days from today for a family wedding"
+{"intent":"book","startDate":"${iso}","days":4,"reason":"family wedding","reply":"That's 4 days from ${iso} for a family wedding."}
+
+"I want 2 days off next week, I'm moving house"
+{"intent":"book","startDate":null,"days":2,"reason":"moving house","reply":"Which day next week should it start?"}
+
+"taking tomorrow off"
+{"intent":"book","startDate":"${toIsoDate(addUtcDays(today, 1))}","days":1,"reason":null,"reply":"What's the reason for the day off?"}
+
+"how many leaves do I have left"
+{"intent":"balance","startDate":null,"days":null,"reason":null,"reply":"Checking your balance."}`;
 }
 
 /**

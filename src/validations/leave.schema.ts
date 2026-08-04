@@ -1,15 +1,35 @@
 import { LeaveStatus } from "@prisma/client";
 import { z } from "zod";
 
-export const aiLeaveRequestSchema = z.object({
-  message: z
-    .string()
-    .trim()
-    .min(10, "Describe your leave in a little more detail")
-    .max(600, "Please keep your request under 600 characters"),
+const chatTurnSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().trim().min(1).max(600),
 });
 
-export type AiLeaveRequestInput = z.infer<typeof aiLeaveRequestSchema>;
+/**
+ * The conversation is replayed by the client on every turn. Nothing about it is
+ * stored: the raw wording never reaches the database, only the extracted dates
+ * and reason do.
+ */
+export const leaveChatSchema = z.object({
+  messages: z.array(chatTurnSchema).min(1, "Say something first").max(24, "This conversation is too long"),
+});
+
+export type LeaveChatInput = z.infer<typeof leaveChatSchema>;
+
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date")
+  .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`)), "Enter a valid date");
+
+/** Echoed back on confirmation; re-validated server-side before anything is booked. */
+export const leaveConfirmSchema = z.object({
+  startDate: isoDate,
+  days: z.coerce.number().int().min(1).max(366),
+  reason: z.string().trim().min(3).max(280),
+});
+
+export type LeaveConfirmInput = z.infer<typeof leaveConfirmSchema>;
 
 export const leaveDecisionSchema = z.object({
   status: z.enum([LeaveStatus.APPROVED, LeaveStatus.REJECTED]),

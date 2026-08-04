@@ -1,13 +1,15 @@
 import { LeaveStatus } from "@prisma/client";
 
+import { MAX_LEAVE_DAYS_PER_REQUEST, MONTHLY_LEAVE_ALLOWANCE } from "@/lib/constants";
 import {
-  LEAVE_AUTO_APPROVAL_DELAY_MINUTES,
-  MONTHLY_LEAVE_ALLOWANCE,
-  leavePendingMessage,
-  quotaExceededMessage,
-} from "@/lib/constants";
-import { addUtcMonths, endOfUtcMonth, startOfUtcMonth, toUtcDay } from "@/lib/date";
-import { serverEnv } from "@/lib/env";
+  addUtcMonths,
+  endOfUtcMonth,
+  formatDateRange,
+  monthLabel,
+  startOfUtcMonth,
+  todayUtc,
+  utcDayRange,
+} from "@/lib/date";
 import { ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
 import { employeeRepository } from "@/repositories/employee.repository";
 import {
@@ -16,18 +18,31 @@ import {
   type LeaveListFilters,
   type LeaveWithEmployeeDto,
 } from "@/repositories/leave.repository";
-import { extractLeaveDetails } from "@/services/ai.service";
 import { emailService } from "@/services/email/email.service";
 
-export type LeaveDecision = {
-  leave: LeaveDto;
-  /** Auto-decision outcome, surfaced verbatim to the employee. */
-  message: string;
-  approved: boolean;
-  /** True while the request is queued awaiting the automatic decision. */
-  pending: boolean;
-  usedThisMonth: number;
-  remainingThisMonth: number;
+/** Allowance picture for one calendar month a request touches. */
+export type LeaveMonthUsage = {
+  label: string;
+  requested: number;
+  used: number;
+  allowance: number;
+};
+
+export type LeavePlan = {
+  ok: boolean;
+  dates: Date[];
+  reason: string;
+  months?: LeaveMonthUsage[];
+  /** Why the range cannot be booked, phrased for the employee. */
+  problem?: string;
+  remainingAfter?: number;
+};
+
+export type LeaveBooking = {
+  leaves: LeaveDto[];
+  dates: Date[];
+  reason: string;
+  remainingAfter: number;
 };
 
 export type LeaveBalance = {
@@ -40,128 +55,114 @@ export type LeaveBalance = {
 
 export const leaveService = {
   /**
-   * Full natural-language pipeline: extract → validate → apply quota → persist.
+   * Works out whether a range can be booked, without writing anything.
    *
-   * The raw prompt is never stored. Only the AI-extracted `date` and `reason`
-   * reach the database, per the data-minimisation requirement.
+   * The chatbot proposes before it commits, so this is the shared judgement:
+   * the same call decides what to say in the proposal and re-validates when the
+   * employee confirms. Nothing is trusted from the client in between.
    */
-  async createFromNaturalLanguage(employeeId: string, message: string): Promise<LeaveDecision> {
-    const employee = await employeeRepository.findById(employeeId);
-    if (!employee) throw new NotFoundError("Employee not found.");
+  async planLeave(
+    employeeId: string,
+    startDate: Date,
+    days: number,
+    reason: string,
+  ): Promise<LeavePlan> {
+    const dates = utcDayRange(startDate, days);
+    const today = todayUtc();
+    const base = { dates, reason };
 
-    const extracted = await extractLeaveDetails(message);
-    const leaveDate = toUtcDay(extracted.date);
-    const reason = extracted.reason.trim();
-
-    const duplicate = await leaveRepository.findByEmployeeAndDate(employeeId, leaveDate);
-    if (duplicate) {
-      throw new ConflictError(
-        `You already have a ${duplicate.status.toLowerCase()} leave request for that date.`,
-      );
+    if (days < 1 || days > MAX_LEAVE_DAYS_PER_REQUEST) {
+      return { ...base, ok: false, problem: `A request has to cover between 1 and ${MAX_LEAVE_DAYS_PER_REQUEST} days.` };
     }
 
-    // Quota is evaluated against the month the leave falls in, not the month
-    // the request is made — a request in March for an April date draws on April.
-    // Queued requests count towards it, otherwise the delay window could be used
-    // to slip an unlimited number past the allowance.
-    const committedThisMonth = await leaveRepository.countCommittedInMonth(employeeId, leaveDate);
-    const withinAllowance = committedThisMonth < MONTHLY_LEAVE_ALLOWANCE;
-    const quotaMessage = quotaExceededMessage(serverEnv().HR_CONTACT_PHONE);
+    if (startDate.getTime() < today.getTime()) {
+      return { ...base, ok: false, problem: "Leave cannot start in the past." };
+    }
 
-    // Exceeding the allowance is refused straight away: waiting to say no tells
-    // the employee nothing they could act on.
-    if (!withinAllowance) {
-      const leave = await leaveRepository.create({
-        employeeId,
-        leaveDate,
-        reason,
-        status: LeaveStatus.REJECTED,
-      });
-
-      await emailService.sendLeaveRejected(employee.email, employee.name, leaveDate, reason, quotaMessage);
-
+    const clashes = await leaveRepository.findByEmployeeAndDates(employeeId, dates);
+    if (clashes.length > 0) {
       return {
-        leave,
-        approved: false,
-        pending: false,
-        message: quotaMessage,
-        usedThisMonth: committedThisMonth,
-        remainingThisMonth: 0,
+        ...base,
+        ok: false,
+        problem: `You already have a request covering ${formatDateRange(clashes.map((c) => c.leaveDate))}.`,
       };
     }
 
-    const leave = await leaveRepository.create({
-      employeeId,
-      leaveDate,
-      reason,
-      status: LeaveStatus.PENDING,
-    });
+    // A range may straddle a month boundary, and the allowance is per calendar
+    // month, so each month it touches is checked against its own usage.
+    const byMonth = new Map<number, Date[]>();
+    for (const date of dates) {
+      const key = startOfUtcMonth(date).getTime();
+      byMonth.set(key, [...(byMonth.get(key) ?? []), date]);
+    }
 
-    const usedThisMonth = committedThisMonth + 1;
+    const months: LeaveMonthUsage[] = [];
 
-    return {
-      leave,
-      approved: false,
-      pending: true,
-      message: leavePendingMessage(),
-      usedThisMonth,
-      remainingThisMonth: Math.max(0, MONTHLY_LEAVE_ALLOWANCE - usedThisMonth),
-    };
+    for (const [key, monthDates] of byMonth) {
+      const reference = new Date(key);
+      const used = await leaveRepository.countApprovedInMonth(employeeId, reference);
+
+      months.push({
+        label: monthLabel(reference),
+        requested: monthDates.length,
+        used,
+        allowance: MONTHLY_LEAVE_ALLOWANCE,
+      });
+    }
+
+    // Partial cover is deliberately not offered: being approved for half a trip
+    // is worse than being told to ask for fewer days.
+    const short = months.find((month) => month.used + month.requested > month.allowance);
+    if (short) {
+      const remaining = Math.max(0, short.allowance - short.used);
+
+      return {
+        ...base,
+        ok: false,
+        months,
+        problem:
+          remaining === 0
+            ? `You have used all ${short.allowance} of your leaves for ${short.label}.`
+            : `That needs ${short.requested} day${short.requested === 1 ? "" : "s"} in ${short.label}, but you have only ${remaining} left.`,
+      };
+    }
+
+    const totalRemaining = months.reduce(
+      (lowest, month) => Math.min(lowest, month.allowance - month.used - month.requested),
+      MONTHLY_LEAVE_ALLOWANCE,
+    );
+
+    return { ...base, ok: true, months, remainingAfter: Math.max(0, totalRemaining) };
   },
 
   /**
-   * Decides every request whose delay has elapsed and emails the outcome.
-   *
-   * Idempotent and safe to run concurrently from the request-path sweep and the
-   * scheduled trigger: each request is re-read as PENDING and the allowance is
-   * re-checked against approved leaves only, so a queue that would overshoot the
-   * month is trimmed rather than approved wholesale.
+   * Books a previously planned range. The plan is recomputed here rather than
+   * taken on trust, so a proposal that has gone stale — the allowance used up
+   * in another tab, a clashing request added since — cannot slip through.
    */
-  async processDueDecisions(): Promise<{ approved: number; rejected: number }> {
-    const cutoff = new Date(Date.now() - LEAVE_AUTO_APPROVAL_DELAY_MINUTES * 60_000);
-    const due = await leaveRepository.findDueForDecision(cutoff);
+  async bookLeave(
+    employeeId: string,
+    startDate: Date,
+    days: number,
+    reason: string,
+  ): Promise<LeaveBooking> {
+    const employee = await employeeRepository.findById(employeeId);
+    if (!employee) throw new NotFoundError("Employee not found.");
 
-    let approved = 0;
-    let rejected = 0;
+    const plan = await this.planLeave(employeeId, startDate, days, reason);
+    if (!plan.ok) throw new ConflictError(plan.problem ?? "That leave request can no longer be booked.");
 
-    for (const leave of due) {
-      const approvedThisMonth = await leaveRepository.countApprovedInMonth(leave.employeeId, leave.leaveDate);
-      const fits = approvedThisMonth < MONTHLY_LEAVE_ALLOWANCE;
+    const leaves = await leaveRepository.createManyApproved(employeeId, plan.dates, plan.reason);
 
-      const updated = await leaveRepository
-        .markAutoDecided(leave.id, fits ? LeaveStatus.APPROVED : LeaveStatus.REJECTED)
-        .catch((error: unknown) => {
-          // A concurrent sweep may have decided it first; skip rather than abort
-          // the batch.
-          console.warn(`[leave] Could not decide ${leave.id}:`, error);
-          return null;
-        });
+    await emailService.sendLeaveApproved(
+      employee.email,
+      employee.name,
+      plan.dates,
+      plan.reason,
+      plan.remainingAfter ?? 0,
+    );
 
-      if (!updated) continue;
-
-      if (fits) {
-        approved += 1;
-        const remaining = Math.max(0, MONTHLY_LEAVE_ALLOWANCE - (approvedThisMonth + 1));
-        await emailService.sendLeaveApproved(
-          leave.employee.email,
-          leave.employee.name,
-          leave.leaveDate,
-          leave.reason,
-          remaining,
-        );
-      } else {
-        rejected += 1;
-        await emailService.sendLeaveRejected(
-          leave.employee.email,
-          leave.employee.name,
-          leave.leaveDate,
-          leave.reason,
-          quotaExceededMessage(serverEnv().HR_CONTACT_PHONE),
-        );
-      }
-    }
-
-    return { approved, rejected };
+    return { leaves, dates: plan.dates, reason: plan.reason, remainingAfter: plan.remainingAfter ?? 0 };
   },
 
   /** Admin override of an automatic decision. */
@@ -192,7 +193,8 @@ export const leaveService = {
       await emailService.sendLeaveApproved(
         updated.employee.email,
         updated.employee.name,
-        updated.leaveDate,
+        // An admin decides one row at a time, even when it came from a range.
+        [updated.leaveDate],
         updated.reason,
         remaining,
       );
@@ -210,10 +212,6 @@ export const leaveService = {
   },
 
   async balanceFor(employeeId: string, reference: Date = new Date()): Promise<LeaveBalance> {
-    // Reading the balance is the moment an employee is most likely to be
-    // waiting on a decision, so clear anything already due before answering.
-    await this.sweepDueDecisions();
-
     const monthStart = startOfUtcMonth(reference);
     const monthEnd = endOfUtcMonth(reference);
 
@@ -233,24 +231,8 @@ export const leaveService = {
     };
   },
 
-  async list(filters: LeaveListFilters) {
-    await this.sweepDueDecisions();
+  list(filters: LeaveListFilters) {
     return leaveRepository.list(filters);
-  },
-
-  /**
-   * Request-path wrapper around `processDueDecisions`.
-   *
-   * The scheduled trigger is the reliable driver; this only makes the wait feel
-   * immediate for someone who has the app open. It therefore must never break
-   * the read it is attached to, so failures are logged and swallowed.
-   */
-  async sweepDueDecisions(): Promise<void> {
-    try {
-      await this.processDueDecisions();
-    } catch (error) {
-      console.error("[leave] Inline decision sweep failed:", error);
-    }
   },
 
   listAll(filters: Omit<LeaveListFilters, "page" | "pageSize">) {

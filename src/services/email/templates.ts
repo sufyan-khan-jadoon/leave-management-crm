@@ -1,6 +1,6 @@
 import { appConfig } from "@/lib/env";
 import { MONTHLY_LEAVE_ALLOWANCE, OTP_TTL_MINUTES } from "@/lib/constants";
-import { formatDate } from "@/lib/date";
+import { formatDate, formatDateRange } from "@/lib/date";
 
 type Template = { subject: string; html: string; text: string };
 
@@ -133,20 +133,24 @@ export function emailVerifiedTemplate(name: string): Template {
   };
 }
 
-export function leaveApprovedTemplate(name: string, leaveDate: Date, reason: string, remaining: number): Template {
+/** A request may cover several consecutive days, so the range is reported. */
+export function leaveApprovedTemplate(name: string, dates: Date[], reason: string, remaining: number): Template {
+  const range = formatDateRange(dates);
+  const dayCount = `${dates.length} day${dates.length === 1 ? "" : "s"}`;
+
   return {
-    subject: `Leave approved for ${formatDate(leaveDate)}`,
+    subject: `Leave approved for ${range}`,
     html: layout(
       "Your leave has been approved",
       `<p>Hi ${esc(name)}, your leave request has been approved.</p>
        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;border:1px solid #eceef6;border-radius:12px;">
-         <tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">Date</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(formatDate(leaveDate))}</td></tr>
+         <tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">Dates</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(range)} (${esc(dayCount)})</td></tr>
          <tr><td style="padding:14px 18px;color:#8b90a8;font-size:13px;">Reason</td><td style="padding:14px 18px;font-weight:600;color:#16192b;">${esc(reason)}</td></tr>
        </table>
        <p>You have <strong>${remaining} of ${MONTHLY_LEAVE_ALLOWANCE}</strong> leaves remaining this month.</p>`,
       { label: "View leave history", url: `${appConfig.url}/leaves` },
     ),
-    text: `Hi ${name}, your leave on ${formatDate(leaveDate)} (${reason}) has been approved. You have ${remaining} of ${MONTHLY_LEAVE_ALLOWANCE} leaves remaining this month.`,
+    text: `Hi ${name}, your leave on ${range} (${dayCount}, ${reason}) has been approved. You have ${remaining} of ${MONTHLY_LEAVE_ALLOWANCE} leaves remaining this month.`,
   };
 }
 

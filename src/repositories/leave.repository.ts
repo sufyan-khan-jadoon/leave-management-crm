@@ -91,6 +91,40 @@ export const leaveRepository = {
     });
   },
 
+  /** Existing requests that would clash with any day of a proposed range. */
+  findByEmployeeAndDates(employeeId: string, dates: Date[]): Promise<LeaveDto[]> {
+    return prisma.leave.findMany({
+      where: { employeeId, leaveDate: { in: dates }, status: { not: LeaveStatus.REJECTED } },
+      orderBy: { leaveDate: "asc" },
+      select: leaveSelect,
+    });
+  },
+
+  /** Books a whole range in one statement so a partial failure cannot land. */
+  async createManyApproved(
+    employeeId: string,
+    dates: Date[],
+    reason: string,
+  ): Promise<LeaveDto[]> {
+    const decidedAt = new Date();
+
+    await prisma.leave.createMany({
+      data: dates.map((leaveDate) => ({
+        employeeId,
+        leaveDate,
+        reason,
+        status: LeaveStatus.APPROVED,
+        decidedAt,
+      })),
+    });
+
+    return prisma.leave.findMany({
+      where: { employeeId, leaveDate: { in: dates } },
+      orderBy: { leaveDate: "asc" },
+      select: leaveSelect,
+    });
+  },
+
   /** Queued requests whose delay has elapsed, oldest first. */
   findDueForDecision(cutoff: Date, take = 50): Promise<LeaveWithEmployeeDto[]> {
     return prisma.leave.findMany({

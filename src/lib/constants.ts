@@ -12,23 +12,12 @@ export const OTP_MAX_ATTEMPTS = 5;
 
 export const OTP_LENGTH = 6;
 
-/**
- * How long a request waits before the system decides it.
- *
- * There is no stored deadline: a request is due once `createdAt` is this far in
- * the past. That works because PENDING is only ever reached by this queue —
- * admins may set APPROVED or REJECTED but never PENDING.
- */
-export const LEAVE_AUTO_APPROVAL_DELAY_MINUTES = 5;
+/** Upper bound on a single request, so a slip of the tongue cannot book a year. */
+export const MAX_LEAVE_DAYS_PER_REQUEST = 31;
 
 /** Verbatim response required when an employee exceeds their monthly allowance. */
 export function quotaExceededMessage(hrPhone: string): string {
   return `You have already used the maximum of ${MONTHLY_LEAVE_ALLOWANCE} approved leaves this month. Please contact HR at ${hrPhone} for further assistance.`;
-}
-
-/** Shown the moment a request is accepted into the approval queue. */
-export function leavePendingMessage(): string {
-  return "Your leave approval is pending. You will be informed when it is approved via your registered email.";
 }
 
 export const DEPARTMENTS = [
