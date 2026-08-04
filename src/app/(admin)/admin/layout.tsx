@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { ADMIN_NAV } from "@/components/layout/nav-config";
 import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
 import { ROLE } from "@/lib/enums";
@@ -15,7 +14,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <AppShell
-      nav={ADMIN_NAV}
       isAdmin
       appName={appConfig.name}
       user={{

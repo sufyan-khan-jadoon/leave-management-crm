@@ -7,14 +7,13 @@ import { CalendarCheck, Menu, X } from "lucide-react";
 
 import { GlobalSearch } from "@/components/layout/global-search";
 import { UserMenu } from "@/components/layout/user-menu";
-import { isActiveRoute, type NavItem } from "@/components/layout/nav-config";
+import { ADMIN_NAV, EMPLOYEE_NAV, isActiveRoute } from "@/components/layout/nav-config";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type AppShellProps = {
-  nav: NavItem[];
   user: { name: string; email: string; image?: string | null };
   isAdmin: boolean;
   appName: string;
@@ -24,10 +23,16 @@ type AppShellProps = {
 /**
  * Responsive dashboard chrome: a fixed sidebar on desktop, a slide-over drawer
  * on mobile, and a sticky topbar carrying global search and account controls.
+ *
+ * The nav is chosen here rather than passed in: its items carry Lucide icon
+ * components, and a Server Component cannot serialise a function across the
+ * client boundary. Selecting from `isAdmin` keeps the icons inside the client
+ * bundle where they belong.
  */
-export function AppShell({ nav, user, isAdmin, appName, children }: AppShellProps) {
+export function AppShell({ user, isAdmin, appName, children }: AppShellProps) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const nav = isAdmin ? ADMIN_NAV : EMPLOYEE_NAV;
 
   return (
     <div className="app-aurora flex min-h-dvh">

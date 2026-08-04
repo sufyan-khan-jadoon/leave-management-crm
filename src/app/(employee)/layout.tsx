@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
-import { EMPLOYEE_NAV } from "@/components/layout/nav-config";
 import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
 import { ROLE } from "@/lib/enums";
@@ -17,7 +16,6 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
 
   return (
     <AppShell
-      nav={EMPLOYEE_NAV}
       isAdmin={false}
       appName={appConfig.name}
       user={{
