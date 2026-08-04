@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Check, SendHorizontal, User, X } from "lucide-react";
+import { Bot, Check, Mic, MicOff, SendHorizontal, User, Volume2, VolumeX, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useSpeech } from "@/hooks/use-speech";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -34,17 +35,42 @@ export function LeaveChat({ className }: { className?: string }) {
   const [draft, setDraft] = useState("");
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [busy, setBusy] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Dictation replaces the draft outright: interim results arrive as a growing
+  // transcript of the same utterance, not as additions to what came before.
+  const handleTranscript = useCallback((text: string) => setDraft(text), []);
+  const speech = useSpeech({ onTranscript: handleTranscript });
+
+  const { canSpeak, speak, stopSpeaking, stopListening, listening } = speech;
+
+  /** Adds a reply and, when voice is on, reads it out. */
+  const addReply = useCallback(
+    (content: string) => {
+      setTurns((current) => [...current, { role: "assistant", content }]);
+      if (voiceOn && canSpeak) speak(content);
+    },
+    [voiceOn, canSpeak, speak],
+  );
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [turns, proposal]);
+
+  // Turning voice off should silence whatever is mid-sentence, not just future
+  // replies.
+  useEffect(() => {
+    if (!voiceOn) stopSpeaking();
+  }, [voiceOn, stopSpeaking]);
 
   async function send(event: React.FormEvent) {
     event.preventDefault();
 
     const message = draft.trim();
     if (!message || busy) return;
+
+    if (listening) stopListening();
 
     const next = [...turns, { role: "user" as const, content: message }];
     setTurns(next);
@@ -56,13 +82,13 @@ export function LeaveChat({ className }: { className?: string }) {
     try {
       const result = await apiClient.post<ChatReply>("/api/leaves/chat", { messages: next });
 
-      setTurns((current) => [...current, { role: "assistant", content: result.reply }]);
+      addReply(result.reply);
       if (result.proposal) setProposal(result.proposal);
     } catch (error) {
       const text =
         error instanceof ApiClientError ? error.message : "Something went wrong. Please try again.";
 
-      setTurns((current) => [...current, { role: "assistant", content: text }]);
+      addReply(text);
       toast.error(text);
     } finally {
       setBusy(false);
@@ -82,7 +108,7 @@ export function LeaveChat({ className }: { className?: string }) {
       });
 
       setProposal(null);
-      setTurns((current) => [...current, { role: "assistant", content: result.reply }]);
+      addReply(result.reply);
       toast.success("Leave approved.");
       // Balance and recent-requests panels are server-rendered.
       router.refresh();
@@ -90,7 +116,7 @@ export function LeaveChat({ className }: { className?: string }) {
       const text = error instanceof ApiClientError ? error.message : "That could not be booked.";
 
       setProposal(null);
-      setTurns((current) => [...current, { role: "assistant", content: text }]);
+      addReply(text);
       toast.error(text);
     } finally {
       setBusy(false);
@@ -99,15 +125,37 @@ export function LeaveChat({ className }: { className?: string }) {
 
   function decline() {
     setProposal(null);
-    setTurns((current) => [
-      ...current,
-      { role: "assistant", content: "No problem — nothing booked. Tell me what you'd like instead." },
-    ]);
+    addReply("No problem — nothing booked. Tell me what you'd like instead.");
   }
 
   return (
     <Card className={cn("flex flex-col overflow-hidden", className)}>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4 p-0">
+        {canSpeak && (
+          <div className="flex items-center gap-2 border-b px-4 py-2">
+            <span className="text-muted-foreground mr-auto text-xs">
+              {speech.speaking ? "Speaking…" : voiceOn ? "Voice replies on" : "Voice replies off"}
+            </span>
+
+            {speech.speaking && (
+              <Button variant="ghost" size="sm" onClick={stopSpeaking} aria-label="Stop speaking">
+                Stop
+              </Button>
+            )}
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setVoiceOn((on) => !on)}
+              aria-pressed={voiceOn}
+              aria-label={voiceOn ? "Turn off spoken replies" : "Turn on spoken replies"}
+            >
+              {voiceOn ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+              {voiceOn ? "Voice on" : "Voice off"}
+            </Button>
+          </div>
+        )}
+
         <div className="scrollbar-thin max-h-[22rem] min-h-[13rem] flex-1 space-y-4 overflow-y-auto px-4 pt-4">
           {turns.map((turn, index) => (
             <div
@@ -164,10 +212,25 @@ export function LeaveChat({ className }: { className?: string }) {
         )}
 
         <form onSubmit={send} className="bg-background/60 flex items-center gap-2 border-t p-3">
+          {speech.canListen && (
+            <Button
+              type="button"
+              size="icon"
+              variant={listening ? "default" : "outline"}
+              onClick={() => (listening ? stopListening() : speech.startListening())}
+              disabled={busy}
+              aria-pressed={listening}
+              aria-label={listening ? "Stop dictating" : "Dictate your message"}
+              className={cn(listening && "animate-pulse")}
+            >
+              {listening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+            </Button>
+          )}
+
           <Input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="I need 3 days off from Monday…"
+            placeholder={listening ? "Listening…" : "I need 3 days off from Monday…"}
             disabled={busy}
             maxLength={600}
             aria-label="Message the leave assistant"
