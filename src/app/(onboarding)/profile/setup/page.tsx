@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { CalendarCheck } from "lucide-react";
 
+import { BrandMark } from "@/components/layout/brand-mark";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,20 +24,20 @@ export default async function ProfileSetupPage() {
 
   return (
     <div className="app-aurora flex min-h-dvh flex-col">
-      <header className="flex items-center justify-between px-6 py-5">
-        <span className="flex items-center gap-2 font-semibold">
-          <span className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-lg">
-            <CalendarCheck className="size-4" aria-hidden />
-          </span>
+      <header className="flex items-center justify-between px-5 py-4 sm:px-7 sm:py-5">
+        <span className="flex items-center gap-2.5 font-semibold tracking-[-0.015em]">
+          <BrandMark />
           {appConfig.name}
         </span>
         <ThemeToggle />
       </header>
 
       <main className="flex flex-1 items-start justify-center px-4 py-8">
-        <Card glass className="w-full max-w-2xl shadow-xl">
+        <Card glass className="animate-in fade-in-0 slide-in-from-bottom-2 w-full max-w-2xl duration-500 ease-standard">
           <CardHeader className="space-y-1.5">
-            <CardTitle className="text-2xl">One last step, {employee.name.split(" ")[0]}</CardTitle>
+            <CardTitle className="text-2xl tracking-[-0.024em]">
+              One last step, {employee.name.split(" ")[0]}
+            </CardTitle>
             <CardDescription>
               Tell us where you work so your leave requests reach the right people. Your administrator can
               update these later.

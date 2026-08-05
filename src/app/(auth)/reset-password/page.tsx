@@ -18,7 +18,7 @@ export default async function ResetPasswordPage() {
   if (!ticket) redirect(ROUTES.verifyResetCode);
 
   return (
-    <Card glass className="shadow-xl">
+    <Card glass>
       <CardHeader className="space-y-1.5">
         <CardTitle className="text-2xl">Choose a new password</CardTitle>
         <CardDescription>

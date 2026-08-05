@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Administrator registration" };
 
 export default function AdminRegisterPage() {
   return (
-    <Card glass className="shadow-xl">
+    <Card glass>
       <CardHeader className="space-y-3">
         <div className="bg-primary/12 text-primary flex size-11 items-center justify-center rounded-xl">
           <KeyRound className="size-5" aria-hidden />

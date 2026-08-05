@@ -5,30 +5,60 @@ import { Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Solid variants carry a specular top edge (`inset 0 1px 0`) and a tinted glow
+ * that only appears on hover — the same two-part lighting model the glass
+ * surfaces use, scaled down to control size.
+ */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 focus-visible:ring-[3px] focus-visible:ring-ring/40",
+  cn(
+    "relative inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium",
+    "transition-[background-color,box-shadow,transform,color,opacity] duration-200 ease-standard",
+    "outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35",
+    "disabled:pointer-events-none disabled:opacity-45 disabled:shadow-none",
+    "active:scale-[0.97] active:duration-100",
+    "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  ),
   {
     variants: {
       variant: {
-        default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 active:scale-[0.98]",
-        destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 active:scale-[0.98]",
-        success:
-          "bg-success text-success-foreground shadow-sm hover:bg-success/90 active:scale-[0.98]",
-        outline:
-          "border border-border bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
-        secondary:
-          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+        default: cn(
+          "bg-primary text-primary-foreground",
+          "shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_1px_2px_-1px_var(--glass-shadow),0_6px_16px_-8px_color-mix(in_oklab,var(--primary)_55%,transparent)]",
+          "hover:bg-primary/92 hover:shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_2px_4px_-2px_var(--glass-shadow),0_10px_24px_-8px_color-mix(in_oklab,var(--primary)_65%,transparent)]",
+        ),
+        destructive: cn(
+          "bg-destructive text-destructive-foreground",
+          "shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_1px_2px_-1px_var(--glass-shadow),0_6px_16px_-8px_color-mix(in_oklab,var(--destructive)_55%,transparent)]",
+          "hover:bg-destructive/92 hover:shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_2px_4px_-2px_var(--glass-shadow),0_10px_24px_-8px_color-mix(in_oklab,var(--destructive)_65%,transparent)]",
+          "focus-visible:ring-destructive/35",
+        ),
+        success: cn(
+          "bg-success text-success-foreground",
+          "shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_1px_2px_-1px_var(--glass-shadow),0_6px_16px_-8px_color-mix(in_oklab,var(--success)_55%,transparent)]",
+          "hover:bg-success/92 hover:shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_2px_4px_-2px_var(--glass-shadow),0_10px_24px_-8px_color-mix(in_oklab,var(--success)_65%,transparent)]",
+          "focus-visible:ring-success/35",
+        ),
+        outline: cn(
+          "text-foreground glass-inset",
+          "hover:bg-accent/60 hover:text-accent-foreground",
+        ),
+        secondary: cn(
+          "bg-secondary text-secondary-foreground",
+          "shadow-[inset_0_1px_0_0_var(--glass-highlight),inset_0_0_0_1px_var(--glass-hairline)]",
+          "hover:bg-secondary/70",
+        ),
+        /** Floating translucent control — for chrome that sits over content. */
+        glass: "glass text-foreground rounded-md hover:bg-accent/45",
+        ghost: "text-foreground/80 hover:bg-accent/70 hover:text-accent-foreground",
+        link: "text-primary underline-offset-4 hover:underline active:scale-100",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
-        lg: "h-11 rounded-lg px-6 has-[>svg]:px-4 text-[0.9375rem]",
+        sm: "h-8 gap-1.5 rounded-sm px-3 has-[>svg]:px-2.5",
+        lg: "h-11 rounded-lg px-6 text-[0.9375rem] has-[>svg]:px-4",
         icon: "size-9",
-        "icon-sm": "size-8",
+        "icon-sm": "size-8 rounded-sm",
       },
     },
     defaultVariants: {
@@ -61,6 +91,7 @@ function Button({
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
     >
       {loading && !asChild ? (

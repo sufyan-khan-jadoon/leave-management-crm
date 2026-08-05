@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Sign in" };
 
 export default function LoginPage() {
   return (
-    <Card glass className="shadow-xl">
+    <Card glass>
       <CardHeader className="space-y-1.5">
         <CardTitle className="text-2xl">Welcome back</CardTitle>
         <CardDescription>Sign in to manage your leave requests.</CardDescription>

@@ -27,7 +27,7 @@ export function PasswordStrength({ password }: { password: string }) {
           <span
             key={rule.label}
             className={cn(
-              "h-1 flex-1 rounded-full transition-colors",
+              "h-1 flex-1 rounded-full transition-colors duration-300 ease-standard",
               index < passed ? STRENGTH_STYLES[passed - 1] : "bg-muted",
             )}
           />
@@ -41,7 +41,7 @@ export function PasswordStrength({ password }: { password: string }) {
             <li
               key={rule.label}
               className={cn(
-                "flex items-center gap-1.5 text-xs",
+                "flex items-center gap-1.5 text-xs transition-colors duration-200 ease-standard",
                 ok ? "text-success" : "text-muted-foreground",
               )}
             >

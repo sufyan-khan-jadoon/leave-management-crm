@@ -2,17 +2,27 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
+/**
+ * Glass is the baseline surface. `glass` opts into the denser fill used where a
+ * card floats directly over the aurora (auth screens, error states) and needs
+ * more contrast behind its text than the ambient wash provides.
+ */
 function Card({
   className,
   glass = false,
+  interactive = false,
   ...props
-}: React.ComponentProps<"div"> & { glass?: boolean }) {
+}: React.ComponentProps<"div"> & { glass?: boolean; interactive?: boolean }) {
   return (
     <div
       data-slot="card"
       className={cn(
-        "text-card-foreground flex flex-col gap-6 rounded-xl py-6 transition-shadow",
-        glass ? "glass" : "bg-card border border-border shadow-sm",
+        // `min-w-0` keeps a card from inflating its grid/flex track: a wide
+        // table inside would otherwise push its intrinsic minimum onto the
+        // track and overflow the page horizontally on narrow viewports.
+        "text-card-foreground flex min-w-0 flex-col gap-6 rounded-xl py-6",
+        glass ? "glass-strong" : "glass",
+        interactive && "hover-lift",
         className,
       )}
       {...props}
@@ -37,7 +47,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      className={cn("leading-none font-semibold tracking-tight", className)}
+      className={cn("text-[0.9375rem] leading-none font-semibold tracking-[-0.012em]", className)}
       {...props}
     />
   );
@@ -47,7 +57,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn("text-muted-foreground text-sm leading-relaxed", className)}
       {...props}
     />
   );

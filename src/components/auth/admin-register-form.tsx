@@ -96,7 +96,7 @@ export function AdminRegisterForm() {
 
   return (
     <div className="space-y-4">
-      <div className="border-success/30 bg-success/5 text-muted-foreground flex items-center gap-2 rounded-lg border p-3 text-sm">
+      <div className="bg-success/8 text-muted-foreground flex items-center gap-2 rounded-lg p-3 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--success)_28%,transparent)]">
         <CheckCircle2 className="text-success size-4 shrink-0" aria-hidden />
         <span className="min-w-0">
           Key verified — <span className="text-foreground font-mono">{accepted}</span>

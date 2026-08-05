@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Loading() {
   return (
-    <div className="flex min-h-dvh flex-col gap-4 p-8">
+    <div className="app-aurora flex min-h-dvh flex-col gap-4 p-8">
       <Skeleton className="h-8 w-64" />
       <Skeleton className="h-4 w-96" />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

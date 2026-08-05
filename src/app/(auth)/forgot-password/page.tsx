@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Forgot your password" };
 
 export default function ForgotPasswordPage() {
   return (
-    <Card glass className="shadow-xl">
+    <Card glass>
       <CardHeader className="space-y-1.5">
         <CardTitle className="text-2xl">Forgot your password?</CardTitle>
         <CardDescription>

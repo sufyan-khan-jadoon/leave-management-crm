@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Enter your reset code" };
 
 export default function VerifyResetCodePage() {
   return (
-    <Card glass className="shadow-xl">
+    <Card glass>
       <CardHeader className="space-y-1.5">
         <CardTitle className="text-2xl">Enter your code</CardTitle>
         <CardDescription>

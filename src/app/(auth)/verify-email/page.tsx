@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Verify your email" };
 
 export default function VerifyEmailPage() {
   return (
-    <Card glass className="shadow-xl">
+    <Card glass>
       <CardHeader className="space-y-1.5">
         <CardTitle className="text-2xl">Verify your email</CardTitle>
         <CardDescription>

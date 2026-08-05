@@ -124,7 +124,7 @@ export function EmployeeDashboard({ firstName }: { firstName: string }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
-            <LeaveChat className="rounded-none border-0 shadow-none" />
+            <LeaveChat bare />
           </CardContent>
         </Card>
 
@@ -145,7 +145,7 @@ export function EmployeeDashboard({ firstName }: { firstName: string }) {
                   icon={CalendarDays}
                   title="No history yet"
                   description="Once you submit your first request it will show up here."
-                  className="border-0"
+                  inset={false}
                 />
               )}
             </CardContent>
@@ -162,7 +162,8 @@ export function EmployeeDashboard({ firstName }: { firstName: string }) {
                   icon={Sparkles}
                   title="Nothing here yet"
                   description="Describe the leave you need in plain English and we'll handle the rest."
-                  className="mx-6 border-0"
+                  inset={false}
+                  className="mx-6"
                   action={
                     <Button size="sm" asChild>
                       <Link href={ROUTES.newLeave}>Request leave</Link>

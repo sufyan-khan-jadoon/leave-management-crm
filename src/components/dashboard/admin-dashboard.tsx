@@ -124,7 +124,7 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
                   icon={CalendarDays}
                   title="No requests yet"
                   description="Leave activity will chart here once employees start submitting."
-                  className="border-0"
+                  inset={false}
                 />
               )}
             </CardContent>
@@ -146,7 +146,7 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
                   icon={Building2}
                   title="No department data"
                   description="Once employees complete their profiles, this breakdown will populate."
-                  className="border-0"
+                  inset={false}
                 />
               )}
             </CardContent>
@@ -164,12 +164,15 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
                 icon={CalendarDays}
                 title="Nothing to show yet"
                 description="New leave requests will appear here as they come in."
-                className="border-0"
+                inset={false}
               />
             ) : (
-              <ul className="divide-y">
+              <ul className="divide-border/60 divide-y">
                 {recentActivity.map((leave) => (
-                  <li key={leave.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                  <li
+                    key={leave.id}
+                    className="-mx-2 flex items-center gap-3 rounded-md px-2 py-3 transition-colors duration-150 ease-standard first:pt-0 last:pb-0 hover:bg-accent/40"
+                  >
                     <Avatar className="size-9">
                       {leave.employee.profilePhoto && <AvatarImage src={leave.employee.profilePhoto} alt="" />}
                       <AvatarFallback>{initialsOf(leave.employee.name)}</AvatarFallback>

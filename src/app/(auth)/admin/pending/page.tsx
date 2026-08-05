@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Request pending" };
 /** Where a newly verified administrator lands while they wait on a decision. */
 export default function AdminPendingPage() {
   return (
-    <Card glass className="shadow-xl">
+    <Card glass>
       <CardHeader className="space-y-3">
         <div className="bg-warning/12 text-warning flex size-11 items-center justify-center rounded-xl">
           <Clock3 className="size-5" aria-hidden />

@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Administrator sign in" };
 
 export default function AdminLoginPage() {
   return (
-    <Card glass className="shadow-xl">
+    <Card glass>
       <CardHeader className="space-y-3">
         <div className="bg-primary/12 text-primary flex size-11 items-center justify-center rounded-xl">
           <ShieldCheck className="size-5" aria-hidden />

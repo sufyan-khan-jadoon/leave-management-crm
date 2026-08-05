@@ -75,7 +75,7 @@ export function GlobalSearch({ isAdmin }: { isAdmin: boolean }) {
       )}
 
       {showPanel && (
-        <div className="bg-popover absolute top-full z-50 mt-2 max-h-96 w-full overflow-y-auto rounded-xl border p-1.5 shadow-xl">
+        <div className="glass-strong scrollbar-thin animate-in fade-in-0 zoom-in-95 slide-in-from-top-1 absolute top-full z-50 mt-2 max-h-96 w-full overflow-y-auto rounded-xl p-1.5 duration-200 ease-standard">
           {!hasResults && !loading && (
             <p className="text-muted-foreground px-3 py-6 text-center text-sm">
               No matches for &ldquo;{debounced}&rdquo;.
@@ -118,7 +118,9 @@ export function GlobalSearch({ isAdmin }: { isAdmin: boolean }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="py-1">
-      <p className="text-muted-foreground px-3 py-1.5 text-xs font-semibold tracking-wide uppercase">{title}</p>
+      <p className="text-muted-foreground px-3 py-1.5 text-[0.6875rem] font-semibold tracking-[0.06em] uppercase">
+        {title}
+      </p>
       {children}
     </div>
   );
@@ -140,10 +142,11 @@ function ResultRow({
       type="button"
       onClick={onSelect}
       className={cn(
-        "hover:bg-accent flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+        "hover:bg-accent/70 flex w-full items-center gap-3 rounded-md px-3 py-2 text-left",
+        "transition-[background-color,transform] duration-150 ease-standard active:scale-[0.99]",
       )}
     >
-      <span className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-md">
+      <span className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-sm">
         {icon}
       </span>
       <span className="min-w-0 flex-1">

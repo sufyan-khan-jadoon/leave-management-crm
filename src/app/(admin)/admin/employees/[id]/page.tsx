@@ -130,7 +130,8 @@ export default async function AdminEmployeeDetailPage({ params }: { params: Prom
                   icon={CalendarDays}
                   title="No leave requests"
                   description="This employee hasn't submitted any leave yet."
-                  className="mx-6 border-0"
+                  inset={false}
+                  className="mx-6"
                 />
               ) : (
                 <Table>

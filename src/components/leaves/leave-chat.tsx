@@ -49,7 +49,11 @@ const GREETING: Turn = {
 const AFFIRMATIVE = /\b(yes|yeah|yep|yup|sure|ok|okay|confirm|book it|go ahead|do it|please do)\b/i;
 const NEGATIVE = /\b(no|nope|cancel|don'?t|do not|not now|stop|never mind|nevermind)\b/i;
 
-export function LeaveChat({ className }: { className?: string }) {
+/**
+ * `bare` drops the surrounding card so the chat can be embedded in a panel that
+ * already provides one — nesting two glass surfaces muddies both.
+ */
+export function LeaveChat({ className, bare = false }: { className?: string; bare?: boolean }) {
   const router = useRouter();
   const [turns, setTurns] = useState<Turn[]>([GREETING]);
   const [draft, setDraft] = useState("");
@@ -227,11 +231,10 @@ export function LeaveChat({ className }: { className?: string }) {
 
   const status = busy ? "Thinking…" : speaking ? "Speaking…" : listening ? "Listening…" : "Paused";
 
-  return (
-    <Card className={cn("flex flex-col overflow-hidden", className)}>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-4 p-0">
+  const body = (
+    <>
         {canSpeak && !voiceMode && (
-          <div className="flex items-center gap-2 border-b px-4 py-2">
+          <div className="border-border/60 flex items-center gap-2 border-b px-4 py-2">
             <span className="text-muted-foreground mr-auto text-xs">
               {speaking ? "Speaking…" : readAloud ? "Replies read aloud" : "Replies are text only"}
             </span>
@@ -272,10 +275,10 @@ export function LeaveChat({ className }: { className?: string }) {
               </div>
               <div
                 className={cn(
-                  "max-w-[85%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-line",
+                  "animate-in fade-in-0 zoom-in-95 max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-line duration-300 ease-spring",
                   turn.role === "user"
-                    ? "bg-primary text-primary-foreground rounded-tr-sm"
-                    : "bg-muted rounded-tl-sm",
+                    ? "bg-primary text-primary-foreground rounded-tr-sm shadow-[inset_0_1px_0_0_oklch(1_0_0/20%),0_4px_12px_-6px_color-mix(in_oklab,var(--primary)_60%,transparent)]"
+                    : "glass-subtle rounded-tl-sm",
                 )}
               >
                 {turn.content}
@@ -295,7 +298,7 @@ export function LeaveChat({ className }: { className?: string }) {
         </div>
 
         {proposal && (
-          <div className="border-primary/30 bg-primary/5 mx-4 flex flex-wrap items-center gap-2 rounded-lg border p-3">
+          <div className="bg-primary/6 animate-in fade-in-0 slide-in-from-bottom-1 mx-4 flex flex-wrap items-center gap-2 rounded-lg p-3 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_25%,transparent)] duration-300 ease-spring">
             <span className="text-muted-foreground mr-auto text-xs">
               {voiceMode ? 'Say "yes" to book it, or "no" to cancel.' : "Nothing is booked until you confirm."}
             </span>
@@ -311,7 +314,7 @@ export function LeaveChat({ className }: { className?: string }) {
         )}
 
         {voiceMode ? (
-          <div className="bg-background/60 flex items-center gap-3 border-t p-4">
+          <div className="border-border/60 glass-subtle flex items-center gap-3 border-t p-4">
             <span
               className={cn(
                 "flex size-11 shrink-0 items-center justify-center rounded-full transition-colors",
@@ -346,7 +349,7 @@ export function LeaveChat({ className }: { className?: string }) {
             </Button>
           </div>
         ) : (
-          <form onSubmit={submit} className="bg-background/60 flex items-center gap-2 border-t p-3">
+          <form onSubmit={submit} className="border-border/60 glass-subtle flex items-center gap-2 border-t p-3">
             {canListen && (
               <Button
                 type="button"
@@ -383,7 +386,16 @@ export function LeaveChat({ className }: { className?: string }) {
             )}
           </form>
         )}
-      </CardContent>
+    </>
+  );
+
+  if (bare) {
+    return <div className={cn("flex min-h-0 flex-1 flex-col gap-4", className)}>{body}</div>;
+  }
+
+  return (
+    <Card className={cn("flex flex-col overflow-hidden", className)}>
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-4 p-0">{body}</CardContent>
     </Card>
   );
 }

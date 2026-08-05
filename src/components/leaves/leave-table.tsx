@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpDown, CalendarDays, Download, Search, SlidersHorizontal } from "lucide-react";
+import { CalendarDays, Download, Search, SlidersHorizontal } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/empty-state";
 import { LeaveStatusBadge } from "@/components/shared/leave-status-badge";
@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SortButton } from "@/components/ui/sort-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { initialsOf } from "@/lib/utils";
 import type { useLeaveTable } from "@/hooks/use-leave-table";
@@ -135,6 +136,7 @@ export function LeaveTable({ table, showEmployee = false, departments = [], rend
                     <SortButton
                       label="Leave date"
                       active={filters.sortBy === "leaveDate"}
+                      direction={filters.sortDir}
                       onClick={() => toggleSort("leaveDate")}
                     />
                   </TableHead>
@@ -144,6 +146,7 @@ export function LeaveTable({ table, showEmployee = false, departments = [], rend
                     <SortButton
                       label="Status"
                       active={filters.sortBy === "status"}
+                      direction={filters.sortDir}
                       onClick={() => toggleSort("status")}
                     />
                   </TableHead>
@@ -151,6 +154,7 @@ export function LeaveTable({ table, showEmployee = false, departments = [], rend
                     <SortButton
                       label="Requested"
                       active={filters.sortBy === "createdAt"}
+                      direction={filters.sortDir}
                       onClick={() => toggleSort("createdAt")}
                     />
                   </TableHead>
@@ -215,20 +219,6 @@ export function LeaveTable({ table, showEmployee = false, departments = [], rend
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function SortButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="hover:text-foreground inline-flex items-center gap-1 text-xs font-semibold tracking-wide uppercase transition-colors"
-      aria-label={`Sort by ${label}`}
-    >
-      {label}
-      <ArrowUpDown className={active ? "text-primary size-3" : "size-3 opacity-40"} />
-    </button>
   );
 }
 

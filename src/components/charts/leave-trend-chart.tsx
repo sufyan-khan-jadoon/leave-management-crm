@@ -11,6 +11,13 @@ import {
   YAxis,
 } from "recharts";
 
+import {
+  axisTick,
+  gridStroke,
+  tooltipContentStyle,
+  tooltipItemStyle,
+  tooltipLabelStyle,
+} from "@/components/charts/chart-theme";
 import { monthLabel } from "@/lib/date";
 import type { MonthlyTrendPoint } from "@/types";
 
@@ -36,28 +43,14 @@ export function LeaveTrendChart({ data }: { data: MonthlyTrendPoint[] }) {
           ))}
         </defs>
 
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
-        <XAxis
-          dataKey="label"
-          tickLine={false}
-          axisLine={false}
-          tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }}
-        />
-        <YAxis
-          allowDecimals={false}
-          tickLine={false}
-          axisLine={false}
-          tick={{ fill: "var(--color-muted-foreground)", fontSize: 12 }}
-        />
+        <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+        <XAxis dataKey="label" tickLine={false} axisLine={false} tick={axisTick} />
+        <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={axisTick} />
         <Tooltip
-          cursor={{ stroke: "var(--color-border)" }}
-          contentStyle={{
-            background: "var(--color-popover)",
-            border: "1px solid var(--color-border)",
-            borderRadius: "0.75rem",
-            color: "var(--color-popover-foreground)",
-            fontSize: "0.8125rem",
-          }}
+          cursor={{ stroke: gridStroke }}
+          contentStyle={tooltipContentStyle}
+          itemStyle={tooltipItemStyle}
+          labelStyle={tooltipLabelStyle}
         />
         <Legend
           iconType="circle"

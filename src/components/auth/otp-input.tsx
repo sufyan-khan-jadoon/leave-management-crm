@@ -95,9 +95,11 @@ export function OtpInput({ value, onChange, onComplete, disabled, invalid }: Otp
           onKeyDown={(event) => handleKeyDown(index, event)}
           onFocus={(event) => event.target.select()}
           className={cn(
-            "border-input bg-background size-12 rounded-lg border text-center text-xl font-semibold tabular-nums shadow-xs transition-all outline-none",
-            "focus-visible:border-ring focus-visible:ring-ring/40 focus-visible:ring-[3px]",
-            invalid && "border-destructive ring-destructive/25 ring-[3px]",
+            "glass-inset size-12 rounded-lg border-0 text-center text-xl font-semibold tabular-nums outline-none",
+            "transition-[box-shadow,background-color,transform] duration-200 ease-standard",
+            "focus-visible:bg-card/80 focus-visible:scale-105 focus-visible:shadow-[inset_0_0_0_1px_var(--ring),0_0_0_3px_color-mix(in_oklab,var(--ring)_28%,transparent)]",
+            invalid &&
+              "shadow-[inset_0_0_0_1px_var(--destructive),0_0_0_3px_color-mix(in_oklab,var(--destructive)_22%,transparent)]",
             disabled && "cursor-not-allowed opacity-50",
           )}
         />

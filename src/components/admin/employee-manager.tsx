@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  ArrowUpDown,
   Ban,
   CircleCheck,
   Eye,
@@ -34,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SortButton } from "@/components/ui/sort-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useEmployeeTable } from "@/hooks/use-employee-table";
 import { ApiClientError, apiClient } from "@/lib/api-client";
@@ -177,6 +177,7 @@ export function EmployeeManager() {
                       <SortButton
                         label="Employee"
                         active={filters.sortBy === "name"}
+                        direction={filters.sortDir}
                         onClick={() => toggleSort("name")}
                       />
                     </TableHead>
@@ -184,6 +185,7 @@ export function EmployeeManager() {
                       <SortButton
                         label="Department"
                         active={filters.sortBy === "department"}
+                        direction={filters.sortDir}
                         onClick={() => toggleSort("department")}
                       />
                     </TableHead>
@@ -193,6 +195,7 @@ export function EmployeeManager() {
                       <SortButton
                         label="Joined"
                         active={filters.sortBy === "createdAt"}
+                        direction={filters.sortDir}
                         onClick={() => toggleSort("createdAt")}
                       />
                     </TableHead>
@@ -346,20 +349,6 @@ export function EmployeeManager() {
         />
       )}
     </>
-  );
-}
-
-function SortButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="hover:text-foreground inline-flex items-center gap-1 text-xs font-semibold tracking-wide uppercase transition-colors"
-      aria-label={`Sort by ${label}`}
-    >
-      {label}
-      <ArrowUpDown className={active ? "text-primary size-3" : "size-3 opacity-40"} />
-    </button>
   );
 }
 

@@ -20,7 +20,7 @@ export function PaginationControls({ pagination, onPageChange, label = "items" }
   const last = Math.min(page * pageSize, total);
 
   return (
-    <div className="flex flex-col items-center justify-between gap-3 border-t px-6 py-4 sm:flex-row">
+    <div className="border-border/60 flex flex-col items-center justify-between gap-3 border-t px-6 py-4 sm:flex-row">
       <p className="text-muted-foreground text-sm">
         Showing <span className="text-foreground font-medium tabular-nums">{first}</span>–
         <span className="text-foreground font-medium tabular-nums">{last}</span> of{" "}

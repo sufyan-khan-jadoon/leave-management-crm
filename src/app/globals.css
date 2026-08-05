@@ -3,87 +3,126 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ---------------------------------------------------------------------------
+ * Liquid Glass design tokens.
+ *
+ * The palette is deliberately near-neutral: surfaces carry the design through
+ * translucency and light, not through hue. Saturated colour is reserved for
+ * semantic state (success / warning / destructive) and the single accent used
+ * on active navigation and primary actions.
+ * ------------------------------------------------------------------------- */
+
 :root {
-  --radius: 0.75rem;
+  /* Apple's corner scale. `--radius` is the card/panel anchor; the rest derive
+     from it so curvature stays proportional if the anchor is retuned. */
+  --radius: 1.5rem;
 
-  --background: oklch(0.985 0.005 260);
-  --foreground: oklch(0.21 0.03 265);
+  --background: oklch(0.976 0.002 250);
+  --foreground: oklch(0.22 0.008 265);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.03 265);
+  --card-foreground: oklch(0.22 0.008 265);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.03 265);
-  --primary: oklch(0.55 0.21 268);
-  --primary-foreground: oklch(0.985 0.005 260);
-  --secondary: oklch(0.96 0.008 265);
-  --secondary-foreground: oklch(0.28 0.03 265);
-  --muted: oklch(0.96 0.008 265);
-  --muted-foreground: oklch(0.55 0.02 265);
-  --accent: oklch(0.95 0.02 268);
-  --accent-foreground: oklch(0.32 0.05 268);
-  --destructive: oklch(0.58 0.22 27);
-  --destructive-foreground: oklch(0.985 0.005 260);
-  --success: oklch(0.62 0.16 155);
-  --success-foreground: oklch(0.985 0.005 260);
-  --warning: oklch(0.72 0.16 70);
-  --warning-foreground: oklch(0.22 0.04 70);
-  --border: oklch(0.9 0.01 265);
-  --input: oklch(0.9 0.01 265);
-  --ring: oklch(0.55 0.21 268);
+  --popover-foreground: oklch(0.22 0.008 265);
+  --primary: oklch(0.52 0.095 266);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.003 260);
+  --secondary-foreground: oklch(0.3 0.008 265);
+  --muted: oklch(0.958 0.003 260);
+  --muted-foreground: oklch(0.52 0.009 265);
+  --accent: oklch(0.945 0.008 266);
+  --accent-foreground: oklch(0.3 0.02 266);
+  --destructive: oklch(0.585 0.19 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.6 0.135 152);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.72 0.13 72);
+  --warning-foreground: oklch(0.24 0.04 72);
+  --border: oklch(0.9 0.004 265);
+  --input: oklch(0.91 0.004 265);
+  --ring: oklch(0.52 0.095 266);
 
-  --chart-1: oklch(0.55 0.21 268);
-  --chart-2: oklch(0.65 0.17 195);
-  --chart-3: oklch(0.62 0.16 155);
-  --chart-4: oklch(0.72 0.16 70);
-  --chart-5: oklch(0.6 0.2 340);
+  /* Chart series: muted, evenly spaced in hue so they stay legible side by side
+     without any one reading as "the loud one". */
+  --chart-1: oklch(0.55 0.1 266);
+  --chart-2: oklch(0.62 0.09 205);
+  --chart-3: oklch(0.6 0.115 152);
+  --chart-4: oklch(0.72 0.12 72);
+  --chart-5: oklch(0.6 0.11 340);
 
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.21 0.03 265);
-  --sidebar-border: oklch(0.92 0.01 265);
+  --sidebar: oklch(1 0 0 / 55%);
+  --sidebar-foreground: oklch(0.22 0.008 265);
+  --sidebar-border: oklch(1 0 0 / 55%);
 
-  /* Glass surface tokens — referenced by the .glass utility below. */
-  --glass-bg: oklch(1 0 0 / 65%);
-  --glass-border: oklch(1 0 0 / 60%);
-  --glass-shadow: oklch(0.45 0.05 265 / 10%);
+  /* Glass — tuned as a set. `bg` stays translucent enough for the aurora to
+     read through it; `highlight` is the specular top edge that sells depth. */
+  --glass-bg: oklch(1 0 0 / 62%);
+  --glass-bg-strong: oklch(1 0 0 / 78%);
+  --glass-bg-subtle: oklch(1 0 0 / 42%);
+  --glass-border: oklch(1 0 0 / 70%);
+  --glass-hairline: oklch(0.55 0.01 265 / 12%);
+  --glass-highlight: oklch(1 0 0 / 90%);
+  --glass-shadow: oklch(0.42 0.03 265 / 10%);
+  --glass-shadow-strong: oklch(0.38 0.03 265 / 16%);
+  --glass-blur: 20px;
+  --glass-saturation: 180%;
+
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+  --duration-slow: 300ms;
+}
+
+/* Motion curves live in a non-inline `@theme` so Tailwind both emits them as
+   custom properties (used by the `@utility` blocks below) and generates the
+   matching `ease-*` utilities. `spring` overshoots slightly on entry. */
+@theme {
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 .dark {
-  --background: oklch(0.16 0.02 265);
-  --foreground: oklch(0.96 0.007 260);
-  --card: oklch(0.21 0.025 265);
-  --card-foreground: oklch(0.96 0.007 260);
-  --popover: oklch(0.21 0.025 265);
-  --popover-foreground: oklch(0.96 0.007 260);
-  --primary: oklch(0.68 0.18 268);
-  --primary-foreground: oklch(0.17 0.03 265);
-  --secondary: oklch(0.27 0.025 265);
-  --secondary-foreground: oklch(0.96 0.007 260);
-  --muted: oklch(0.27 0.025 265);
-  --muted-foreground: oklch(0.7 0.02 265);
-  --accent: oklch(0.31 0.04 268);
-  --accent-foreground: oklch(0.96 0.007 260);
-  --destructive: oklch(0.65 0.2 27);
-  --destructive-foreground: oklch(0.98 0.005 260);
-  --success: oklch(0.7 0.15 155);
-  --success-foreground: oklch(0.17 0.03 265);
-  --warning: oklch(0.78 0.15 70);
-  --warning-foreground: oklch(0.2 0.04 70);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.68 0.18 268);
+  --background: oklch(0.155 0.004 265);
+  --foreground: oklch(0.96 0.002 260);
+  --card: oklch(0.205 0.005 265);
+  --card-foreground: oklch(0.96 0.002 260);
+  --popover: oklch(0.215 0.005 265);
+  --popover-foreground: oklch(0.96 0.002 260);
+  --primary: oklch(0.72 0.1 266);
+  --primary-foreground: oklch(0.17 0.01 265);
+  --secondary: oklch(0.26 0.006 265);
+  --secondary-foreground: oklch(0.96 0.002 260);
+  --muted: oklch(0.26 0.006 265);
+  --muted-foreground: oklch(0.71 0.008 265);
+  --accent: oklch(0.3 0.015 266);
+  --accent-foreground: oklch(0.96 0.002 260);
+  --destructive: oklch(0.66 0.17 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.7 0.13 152);
+  --success-foreground: oklch(0.16 0.02 152);
+  --warning: oklch(0.79 0.12 72);
+  --warning-foreground: oklch(0.2 0.03 72);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.72 0.1 266);
 
-  --chart-1: oklch(0.68 0.18 268);
-  --chart-2: oklch(0.72 0.15 195);
-  --chart-3: oklch(0.7 0.15 155);
-  --chart-4: oklch(0.78 0.15 70);
-  --chart-5: oklch(0.68 0.18 340);
+  --chart-1: oklch(0.72 0.1 266);
+  --chart-2: oklch(0.74 0.09 205);
+  --chart-3: oklch(0.73 0.11 152);
+  --chart-4: oklch(0.8 0.12 72);
+  --chart-5: oklch(0.72 0.11 340);
 
-  --sidebar: oklch(0.19 0.025 265);
-  --sidebar-foreground: oklch(0.96 0.007 260);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar: oklch(0.22 0.006 265 / 55%);
+  --sidebar-foreground: oklch(0.96 0.002 260);
+  --sidebar-border: oklch(1 0 0 / 8%);
 
-  --glass-bg: oklch(0.24 0.03 265 / 60%);
-  --glass-border: oklch(1 0 0 / 12%);
-  --glass-shadow: oklch(0 0 0 / 35%);
+  --glass-bg: oklch(0.25 0.006 265 / 55%);
+  --glass-bg-strong: oklch(0.24 0.006 265 / 78%);
+  --glass-bg-subtle: oklch(0.28 0.006 265 / 34%);
+  --glass-border: oklch(1 0 0 / 10%);
+  --glass-hairline: oklch(1 0 0 / 8%);
+  --glass-highlight: oklch(1 0 0 / 14%);
+  --glass-shadow: oklch(0 0 0 / 40%);
+  --glass-shadow-strong: oklch(0 0 0 / 55%);
 }
 
 @theme inline {
@@ -120,13 +159,36 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Corner scale: sm 10 · md 14 (buttons) · lg 18 (inputs) · xl 24 (cards)
+     · 2xl 30 (dialogs) · 3xl 36 (hero panels). */
+  --radius-sm: calc(var(--radius) - 14px);
+  --radius-md: calc(var(--radius) - 10px);
+  --radius-lg: calc(var(--radius) - 6px);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) + 6px);
+  --radius-3xl: calc(var(--radius) + 12px);
 
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --shadow-glass-sm:
+    0 1px 2px -1px var(--glass-shadow), 0 4px 12px -6px var(--glass-shadow);
+  --shadow-glass:
+    0 1px 2px -1px var(--glass-shadow), 0 8px 24px -10px var(--glass-shadow),
+    0 20px 44px -24px var(--glass-shadow);
+  --shadow-glass-lg:
+    0 1px 2px -1px var(--glass-shadow), 0 12px 32px -12px var(--glass-shadow-strong),
+    0 32px 64px -32px var(--glass-shadow-strong);
+  --shadow-glass-xl:
+    0 2px 4px -2px var(--glass-shadow), 0 20px 48px -16px var(--glass-shadow-strong),
+    0 48px 96px -40px var(--glass-shadow-strong);
+
+  --blur-glass: var(--glass-blur);
+
+  /* SF Pro renders natively on Apple platforms; Geist carries everywhere else
+     so the type colour stays close on Windows and Linux. */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+    var(--font-geist-sans), "Segoe UI Variable Text", "Segoe UI", ui-sans-serif,
+    system-ui, sans-serif;
+  --font-mono: "SF Mono", var(--font-geist-mono), ui-monospace, monospace;
 }
 
 @layer base {
@@ -134,11 +196,29 @@
     border-color: var(--border);
   }
 
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Apple tightens tracking as type scales up; mirror that so headings read as
+     one family with the body copy rather than a separate font. */
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.021em;
+  }
+
+  h1 {
+    letter-spacing: -0.026em;
   }
 
   /* Keep focus rings visible for keyboard users without boxing every click. */
@@ -146,17 +226,73 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
 }
+
+/* ---------------------------------------------------------------------------
+ * Glass surfaces
+ *
+ * Depth comes from one inset highlight (the specular top edge), one inset
+ * hairline (the rim), and stacked low-opacity drop shadows. Doing it all in
+ * `box-shadow` keeps these usable on `position: sticky` elements, which a
+ * pseudo-element border trick would fight with.
+ * ------------------------------------------------------------------------- */
 
 @utility glass {
   background-color: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  box-shadow: 0 8px 32px -8px var(--glass-shadow);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-highlight),
+    inset 0 0 0 1px var(--glass-hairline),
+    0 1px 2px -1px var(--glass-shadow),
+    0 8px 24px -10px var(--glass-shadow),
+    0 20px 44px -24px var(--glass-shadow);
 }
 
-/* Ambient gradient wash used behind auth screens and dashboard shells. */
+/* Denser fill for surfaces that carry dense content (dialogs, popovers, menus)
+   where text legibility outranks translucency. */
+@utility glass-strong {
+  background-color: var(--glass-bg-strong);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturation));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.4)) saturate(var(--glass-saturation));
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-highlight),
+    inset 0 0 0 1px var(--glass-hairline),
+    0 2px 4px -2px var(--glass-shadow),
+    0 20px 48px -16px var(--glass-shadow-strong),
+    0 48px 96px -40px var(--glass-shadow-strong);
+}
+
+/* Barely-there fill for nested surfaces that sit on top of another glass
+   panel — table headers, inline wells, segmented controls. */
+@utility glass-subtle {
+  background-color: var(--glass-bg-subtle);
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(140%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.6)) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-highlight),
+    inset 0 0 0 1px var(--glass-hairline);
+}
+
+/* Recessed surface for form controls: the light comes from inside the well. */
+@utility glass-inset {
+  background-color: color-mix(in oklab, var(--card) 55%, transparent);
+  box-shadow:
+    inset 0 1px 2px 0 var(--glass-shadow),
+    inset 0 0 0 1px var(--glass-hairline);
+}
+
+@utility glass-hairline {
+  box-shadow: inset 0 0 0 1px var(--glass-hairline);
+}
+
+/* Ambient gradient wash behind auth screens and dashboard shells. Fixed so it
+   stays put while content scrolls, which is what makes the glass read as glass
+   rather than as flat translucent paint. */
 @utility app-aurora {
   position: relative;
   isolation: isolate;
@@ -167,15 +303,146 @@
     inset: 0;
     z-index: -1;
     background:
-      radial-gradient(60rem 40rem at 12% -10%, color-mix(in oklab, var(--primary) 22%, transparent), transparent 60%),
-      radial-gradient(50rem 35rem at 95% 5%, color-mix(in oklab, var(--chart-2) 18%, transparent), transparent 60%),
-      radial-gradient(45rem 40rem at 50% 110%, color-mix(in oklab, var(--chart-5) 15%, transparent), transparent 65%);
+      radial-gradient(
+        58rem 38rem at 8% -12%,
+        color-mix(in oklab, var(--chart-1) 26%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(
+        48rem 34rem at 98% 2%,
+        color-mix(in oklab, var(--chart-2) 22%, transparent),
+        transparent 60%
+      ),
+      radial-gradient(
+        44rem 38rem at 46% 112%,
+        color-mix(in oklab, var(--chart-5) 18%, transparent),
+        transparent 64%
+      );
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion
+ * ------------------------------------------------------------------------- */
+
+@utility hover-lift {
+  transition:
+    transform var(--duration-base) var(--ease-standard),
+    box-shadow var(--duration-base) var(--ease-standard);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      inset 0 1px 0 0 var(--glass-highlight),
+      inset 0 0 0 1px var(--glass-hairline),
+      0 2px 4px -2px var(--glass-shadow),
+      0 16px 36px -12px var(--glass-shadow-strong),
+      0 36px 72px -32px var(--glass-shadow-strong);
+  }
+}
+
+@utility press {
+  transition: transform var(--duration-fast) var(--ease-standard);
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+/* Retimes the `animate-in` / `animate-out` keyframes that tw-animate-css drives
+   on Radix state changes. Entry overshoots on a spring; exit is faster and
+   flat, because a dismissal that bounces reads as indecisive. */
+@utility motion-pop {
+  &[data-state="open"],
+  &[data-state="delayed-open"] {
+    animation-duration: var(--duration-base);
+    animation-timing-function: var(--ease-spring);
+  }
+
+  &[data-state="closed"] {
+    animation-duration: var(--duration-fast);
+    animation-timing-function: var(--ease-exit);
+  }
+}
+
+/* A travelling specular sweep — reads as light moving across glass, where a
+   pulse just reads as a box blinking. */
+@keyframes glass-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@utility shimmer {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--foreground) 6%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: glass-shimmer 1.8s var(--ease-standard) infinite;
 }
 
 @utility scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+    background-clip: content-box;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Environment fallbacks
+ * ------------------------------------------------------------------------- */
+
+/* Backdrop blur is the most expensive thing on the page. Where the user has
+   asked for reduced transparency, drop it entirely and pay the cost back as
+   opaque fills — the layout is identical either way. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-strong,
+  .glass-subtle {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: var(--card);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .hover-lift:hover {
+    transform: none;
+  }
 }
 
 @media print {

@@ -143,10 +143,10 @@ export function AccessPanel() {
               icon={ShieldX}
               title="No requests waiting"
               description="Approved and declined requests disappear from here."
-              className="border-0"
+              inset={false}
             />
           ) : (
-            <ul className="divide-y">
+            <ul className="divide-border/60 divide-y">
               {pending.map((person) => (
                 <li key={person.id} className="flex flex-wrap items-center gap-3 py-3">
                   <div className="mr-auto min-w-0">
@@ -205,10 +205,10 @@ export function AccessPanel() {
               icon={KeyRound}
               title="No keys yet"
               description="Create one to invite your first administrator."
-              className="border-0"
+              inset={false}
             />
           ) : (
-            <ul className="divide-y">
+            <ul className="divide-border/60 divide-y">
               {invites.map((invite) => {
                 const state = keyState(invite);
                 const usable = !invite.revokedAt && !invite.redeemedAt;
