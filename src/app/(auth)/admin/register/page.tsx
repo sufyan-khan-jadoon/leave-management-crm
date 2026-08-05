@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 
-import { RegisterForm } from "@/components/auth/register-form";
+import { AdminRegisterForm } from "@/components/auth/admin-register-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROUTES } from "@/lib/constants";
 
@@ -18,13 +18,13 @@ export default function AdminRegisterPage() {
         <div className="space-y-1.5">
           <CardTitle className="text-2xl">Administrator registration</CardTitle>
           <CardDescription>
-            Register with the invite key your super administrator gave you. You&apos;ll verify your email,
-            then wait for them to approve the request before you can sign in.
+            Enter the invite key your super administrator gave you. You&apos;ll then create your account,
+            verify your email, and wait for them to approve the request.
           </CardDescription>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <RegisterForm variant="admin" />
+        <AdminRegisterForm />
 
         <p className="text-muted-foreground text-center text-sm">
           Not an administrator?{" "}

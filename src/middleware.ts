@@ -18,6 +18,7 @@ const PUBLIC_PATHS = new Set<string>([
   ROUTES.resetPassword,
   ROUTES.adminLogin,
   ROUTES.adminRegister,
+  ROUTES.adminPending,
 ]);
 
 const ADMIN_PREFIX = "/admin";

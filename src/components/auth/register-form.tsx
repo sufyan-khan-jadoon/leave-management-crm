@@ -19,16 +19,18 @@ import { PasswordStrength } from "@/components/auth/password-strength";
 type RegisterFormProps = {
   /** Administrators register on their own screen, where a key is mandatory. */
   variant?: "employee" | "admin";
+  /** Supplied by the admin screen once the key has been checked. */
+  inviteKey?: string;
 };
 
-export function RegisterForm({ variant = "employee" }: RegisterFormProps) {
+export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormProps) {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const isAdmin = variant === "admin";
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(isAdmin ? adminRegisterSchema : registerSchema),
-    defaultValues: { name: "", email: "", password: "", confirmPassword: "", inviteKey: "" },
+    defaultValues: { name: "", email: "", password: "", confirmPassword: "", inviteKey: inviteKey ?? "" },
     mode: "onBlur",
   });
 
@@ -39,7 +41,7 @@ export function RegisterForm({ variant = "employee" }: RegisterFormProps) {
       await apiClient.post("/api/auth/register", values);
 
       toast.success(
-        values.inviteKey?.trim()
+        isAdmin
           ? "Request submitted — verify your email, then wait for approval."
           : "Account created — check your inbox for a verification code.",
       );
@@ -66,31 +68,6 @@ export function RegisterForm({ variant = "employee" }: RegisterFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
-        {isAdmin && (
-          <FormField
-            control={form.control}
-            name="inviteKey"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Invite key</FormLabel>
-                <FormControl>
-                  <Input
-                    placeholder="ABCD-EFGH-JKLM-NPQR"
-                    className="font-mono tracking-wide uppercase"
-                    autoComplete="off"
-                    disabled={form.formState.isSubmitting}
-                    {...field}
-                  />
-                </FormControl>
-                <p className="text-muted-foreground text-xs">
-                  Ask your super administrator for one. Each key works once.
-                </p>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-
         <FormField
           control={form.control}
           name="name"

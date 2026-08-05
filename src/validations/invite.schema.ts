@@ -7,6 +7,12 @@ export const issueInviteSchema = z.object({
 
 export type IssueInviteInput = z.infer<typeof issueInviteSchema>;
 
+export const verifyInviteSchema = z.object({
+  inviteKey: z.string().trim().min(1, "Enter your invite key").max(40, "That doesn't look like an invite key"),
+});
+
+export type VerifyInviteInput = z.infer<typeof verifyInviteSchema>;
+
 export const adminDecisionSchema = z.object({ approve: z.boolean() });
 
 export type AdminDecisionInput = z.infer<typeof adminDecisionSchema>;

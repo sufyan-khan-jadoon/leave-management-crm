@@ -64,6 +64,7 @@ export const ROUTES = {
   profile: "/profile",
   adminLogin: "/admin/login",
   adminRegister: "/admin/register",
+  adminPending: "/admin/pending",
   adminDashboard: "/admin",
   adminEmployees: "/admin/employees",
   adminLeaves: "/admin/leaves",

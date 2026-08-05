@@ -42,7 +42,18 @@ export function VerifyEmailForm() {
       setError(null);
 
       try {
-        await apiClient.post("/api/auth/verify-email", { email, code: submittedCode });
+        const result = await apiClient.post<{ pendingApproval?: boolean }>("/api/auth/verify-email", {
+          email,
+          code: submittedCode,
+        });
+
+        // An administrator still has to be approved, so sending them to a sign-in
+        // screen that will refuse them would only look broken.
+        if (result.pendingApproval) {
+          toast.success("Email verified — your request is with the super administrator.");
+          router.push(ROUTES.adminPending);
+          return;
+        }
 
         toast.success("Email verified! You can sign in now.");
         router.push(`${ROUTES.login}?verified=1`);
