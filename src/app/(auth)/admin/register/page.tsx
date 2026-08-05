@@ -18,8 +18,8 @@ export default function AdminRegisterPage() {
         <div className="space-y-1.5">
           <CardTitle className="text-2xl">Administrator registration</CardTitle>
           <CardDescription>
-            Enter the invite key your super administrator gave you. You&apos;ll then create your account,
-            verify your email, and wait for them to approve the request.
+            Enter the invite key your super administrator gave you, then create your account. We&apos;ll
+            email you a code — verifying it sends your request for approval automatically.
           </CardDescription>
         </div>
       </CardHeader>

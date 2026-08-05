@@ -42,7 +42,7 @@ export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormPr
 
       toast.success(
         isAdmin
-          ? "Request submitted — verify your email, then wait for approval."
+          ? "Account created — verify your email to send your request."
           : "Account created — check your inbox for a verification code.",
       );
       router.push(`${ROUTES.verifyEmail}?email=${encodeURIComponent(values.email)}`);
@@ -161,7 +161,7 @@ export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormPr
 
         <Button type="submit" className="w-full" size="lg" loading={form.formState.isSubmitting}>
           {!form.formState.isSubmitting && <UserPlus className="size-4" />}
-          {isAdmin ? "Request administrator access" : "Create account"}
+          {isAdmin ? "Create account & send code" : "Create account"}
         </Button>
 
         <p className="text-muted-foreground text-center text-sm">
