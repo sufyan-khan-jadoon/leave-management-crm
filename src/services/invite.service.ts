@@ -71,7 +71,7 @@ export const inviteService = {
 
   /** Administrators still waiting on a decision, oldest first. */
   pendingAdmins() {
-    return employeeRepository.listByStatus(EmployeeStatus.PENDING_APPROVAL);
+    return employeeRepository.listPendingAdmins();
   },
 
   /** Approves or refuses a pending administrator and tells them which. */
@@ -85,6 +85,12 @@ export const inviteService = {
 
     if (employee.role !== Role.ADMIN) {
       throw new ConflictError("Only administrator requests are decided here.");
+    }
+
+    // The queue already hides these, so reaching here means the endpoint was
+    // called directly. Approving an unproven address would undo verification.
+    if (!employee.emailVerified) {
+      throw new ConflictError("That administrator has not verified their email address yet.");
     }
 
     const updated = await employeeRepository.updateStatus(

@@ -1,4 +1,4 @@
-import { type Employee, type EmployeeStatus, type Prisma, Role } from "@prisma/client";
+import { EmployeeStatus, type Employee, type Prisma, Role } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
@@ -49,10 +49,20 @@ export const employeeRepository = {
     });
   },
 
-  /** Administrators awaiting a decision, oldest request first. */
-  listByStatus(status: EmployeeStatus): Promise<EmployeeDto[]> {
+  /**
+   * Administrators awaiting a decision, oldest request first.
+   *
+   * Unverified accounts are excluded: the request only counts as made once the
+   * address has been proven, so the super admin is never asked to decide on
+   * someone who may have typed a mailbox they do not own.
+   */
+  listPendingAdmins(): Promise<EmployeeDto[]> {
     return prisma.employee.findMany({
-      where: { status },
+      where: {
+        role: Role.ADMIN,
+        status: EmployeeStatus.PENDING_APPROVAL,
+        emailVerified: { not: null },
+      },
       orderBy: { createdAt: "asc" },
       select: employeeSelect,
     });
