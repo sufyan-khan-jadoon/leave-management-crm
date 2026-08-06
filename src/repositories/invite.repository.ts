@@ -7,6 +7,7 @@ const inviteSelect = {
   id: true,
   key: true,
   role: true,
+  jobRole: { select: { id: true, name: true } },
   label: true,
   expiresAt: true,
   revokedAt: true,
@@ -19,6 +20,7 @@ export type InviteKeyDto = {
   id: string;
   key: string;
   role: Role;
+  jobRole: { id: string; name: string } | null;
   label: string | null;
   expiresAt: Date;
   revokedAt: Date | null;
@@ -28,7 +30,14 @@ export type InviteKeyDto = {
 };
 
 export const inviteRepository = {
-  create(data: { key: string; role: Role; label: string | null; expiresAt: Date; issuedById: string }) {
+  create(data: {
+    key: string;
+    role: Role;
+    jobRoleId: string | null;
+    label: string | null;
+    expiresAt: Date;
+    issuedById: string;
+  }) {
     return prisma.inviteKey.create({ data, select: inviteSelect });
   },
 

@@ -16,6 +16,7 @@ import { employeeRepository, type EmployeeDto } from "@/repositories/employee.re
 import { otpRepository } from "@/repositories/otp.repository";
 import { emailService } from "@/services/email/email.service";
 import { inviteService } from "@/services/invite.service";
+import { jobRoleService } from "@/services/job-role.service";
 import type { LoginInput, RegisterInput, VerifyOtpInput } from "@/validations/auth.schema";
 
 export type AuthenticatedEmployee = {
@@ -109,11 +110,17 @@ export const authService = {
     // stops an employee key posted to the admin form from minting an admin.
     const pendingApproval = invite.role === Role.ADMIN;
 
+    // The job title travels on the key the same way the role does, so it is
+    // assigned rather than claimed. Copied by value: renaming or deleting the
+    // job role later does not retitle people who already hold it.
+    const position = invite.jobRoleId ? await jobRoleService.nameFor(invite.jobRoleId) : undefined;
+
     const password = await hashPassword(input.password);
     const employee = await employeeRepository.create({
       name: input.name,
       email: input.email,
       password,
+      position,
       role: invite.role,
       // An invited admin is inert until the super admin decides; an invited
       // employee is active the moment they verify their address, because

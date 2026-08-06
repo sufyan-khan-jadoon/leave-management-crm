@@ -8,6 +8,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@
 import { employeeRepository } from "@/repositories/employee.repository";
 import { inviteRepository } from "@/repositories/invite.repository";
 import { emailService } from "@/services/email/email.service";
+import { jobRoleService } from "@/services/job-role.service";
 
 /**
  * Readable but unguessable: 24 bytes of entropy in groups of four, so it can be
@@ -47,8 +48,13 @@ async function permissionsFor(viewer: { id: string; role: Role }): Promise<Issue
 export const inviteService = {
   permissionsFor,
 
-  /** Issues a single-use key granting one role to one person. */
-  async issue(issuer: { id: string; role: Role }, role: Role, label: string | null) {
+  /** Issues a single-use key granting one role, and optionally a job title. */
+  async issue(
+    issuer: { id: string; role: Role },
+    role: Role,
+    jobRoleId: string | null,
+    label: string | null,
+  ) {
     const allowed = await permissionsFor(issuer);
 
     if (role === Role.ADMIN && !allowed.admin) {
@@ -61,9 +67,20 @@ export const inviteService = {
       );
     }
 
+    // Resolved now so a title deleted between opening the form and submitting
+    // it is refused here, rather than silently producing a key with none.
+    if (jobRoleId) await jobRoleService.nameFor(jobRoleId);
+
     const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
 
-    return inviteRepository.create({ key: generateKey(), role, label, expiresAt, issuedById: issuer.id });
+    return inviteRepository.create({
+      key: generateKey(),
+      role,
+      jobRoleId,
+      label,
+      expiresAt,
+      issuedById: issuer.id,
+    });
   },
 
   /** Administrators the super admin can grant or withdraw invite rights for. */

@@ -7,9 +7,21 @@ export const inviteRoleSchema = z.enum(INVITE_ROLE_VALUES);
 
 export const issueInviteSchema = z.object({
   role: inviteRoleSchema,
+  /** Job title stamped on the account at sign-up. Omitted leaves it unset. */
+  jobRoleId: z.string().trim().min(1).optional(),
   /** Optional note of who the key is for, so a list of keys stays readable. */
   label: z.string().trim().max(80, "Keep the note under 80 characters").optional(),
 });
+
+export const jobRoleSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Give the role a name of at least 2 characters")
+    .max(60, "Keep the name under 60 characters"),
+});
+
+export type JobRoleInput = z.infer<typeof jobRoleSchema>;
 
 export type IssueInviteInput = z.infer<typeof issueInviteSchema>;
 

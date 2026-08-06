@@ -34,6 +34,12 @@ export function ProfileForm({ employee, mode, onSaved }: ProfileFormProps) {
   const router = useRouter();
   const { update } = useSession();
 
+  // A job title that already exists came from the invite key, since this is the
+  // only self-service form that writes one. It is assigned rather than claimed,
+  // so it is shown but not editable here — administrators can still change it
+  // from the People screen, which uses a different form.
+  const assignedPosition = Boolean(employee.position);
+
   const form = useForm<ProfileSetupInput>({
     resolver: zodResolver(profileSetupSchema),
     defaultValues: {
@@ -161,9 +167,15 @@ export function ProfileForm({ employee, mode, onSaved }: ProfileFormProps) {
               <FormItem>
                 <FormLabel>Position</FormLabel>
                 <FormControl>
-                  <Input placeholder="Frontend Engineer" {...field} />
+                  <Input placeholder="Frontend Engineer" readOnly={assignedPosition} {...field} />
                 </FormControl>
-                <FormMessage />
+                {assignedPosition ? (
+                  <p className="text-muted-foreground text-xs">
+                    Set by whoever invited you. Ask an administrator if it needs changing.
+                  </p>
+                ) : (
+                  <FormMessage />
+                )}
               </FormItem>
             )}
           />

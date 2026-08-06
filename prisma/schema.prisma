@@ -113,10 +113,30 @@ model OtpCode {
 /// holder becomes — registration reads the role off the key rather than from
 /// which page the form was posted from, so a key can never be used to claim a
 /// role it was not issued for. SUPER_ADMIN is deliberately not issuable.
+/// A job title an administrator can hand out with an invite key.
+///
+/// Curated rather than free text so the same job is spelled one way across the
+/// organisation — "Software Engineer" and "software engineer" would otherwise
+/// both appear in filters. Redeeming a key stamps the name onto the new
+/// account's `position`; it deliberately does not become a third field
+/// competing with `position` and `department` to describe the same thing.
+model JobRole {
+  id        String      @id @default(cuid())
+  name      String      @unique
+  createdAt DateTime    @default(now())
+  invites   InviteKey[]
+
+  @@map("job_roles")
+}
+
 model InviteKey {
   id         String    @id @default(cuid())
   key        String    @unique
   role       Role
+  /// Job title the holder is given on sign-up. Optional: a key may simply admit
+  /// someone and leave the title to be filled in at profile setup.
+  jobRoleId  String?
+  jobRole    JobRole?  @relation(fields: [jobRoleId], references: [id], onDelete: SetNull)
   /// Free-text note of who the key was meant for.
   label      String?
   expiresAt  DateTime

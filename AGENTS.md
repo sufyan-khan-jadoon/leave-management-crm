@@ -44,6 +44,16 @@ never from the request body, so posting an employee key to the admin form still 
 
 `SUPER_ADMIN` is deliberately not issuable — that role is seeded, so no key can mint another owner.
 
+A key may also carry a **`JobRole`**, a curated job title. Redeeming stamps its *name* onto the new
+account's `position` — copied by value, so renaming or deleting the job role later never retitles
+people who already hold it, and `position` stays the single field describing what someone does.
+There is deliberately no third field competing with `position` and `department`.
+
+Any admin may add a title (naming the jobs you hire for is bookkeeping); only the super admin may
+remove one, since that changes what everyone else can pick. Because the title is assigned rather
+than claimed, `ProfileForm` renders `position` read-only once set — administrators change it
+through the separate edit dialog on the People screen.
+
 **`canInviteEmployees` is off by default.** Being an admin is not by itself permission to onboard
 people; the super admin grants it per administrator. `permissionsFor()` reads it from the database
 on every issue rather than from the session, so withdrawing it takes effect on the next request

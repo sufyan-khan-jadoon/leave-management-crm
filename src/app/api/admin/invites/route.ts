@@ -31,8 +31,8 @@ export async function GET() {
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const user = await requireAdmin();
-    const { role, label } = await parseBody(request, issueInviteSchema);
+    const { role, jobRoleId, label } = await parseBody(request, issueInviteSchema);
 
-    return created(await inviteService.issue(user, role, label ?? null));
+    return created(await inviteService.issue(user, role, jobRoleId ?? null, label ?? null));
   });
 }

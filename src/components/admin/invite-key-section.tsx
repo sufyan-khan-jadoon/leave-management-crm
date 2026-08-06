@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, KeyRound, Lock, Plus, Trash2 } from "lucide-react";
+import { Briefcase, Check, Copy, KeyRound, Lock, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { JobRoleDialog, type JobRole } from "@/components/admin/job-role-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ export type InviteKey = {
   id: string;
   key: string;
   role: InviteRole;
+  jobRole: { id: string; name: string } | null;
   label: string | null;
   expiresAt: string;
   revokedAt: string | null;
@@ -53,8 +55,15 @@ type InviteKeySectionProps = {
    */
   roles: InviteRole[];
   invites: InviteKey[];
+  /** Shared list of job titles the key may carry. */
+  jobRoles: JobRole[];
+  /** Removing a title changes everyone's options, so it is super admin only. */
+  canManageJobRoles: boolean;
   onChanged: () => void | Promise<void>;
 };
+
+/** Sentinel for "leave the title to profile setup" — Radix forbids empty values. */
+const NO_JOB_ROLE = "none";
 
 /**
  * Issue-and-manage panel for invite keys.
@@ -63,8 +72,16 @@ type InviteKeySectionProps = {
  * whoever redeems it becomes exactly what was picked here — registration reads
  * the role off the key rather than off the sign-up form.
  */
-export function InviteKeySection({ roles, invites, onChanged }: InviteKeySectionProps) {
+export function InviteKeySection({
+  roles,
+  invites,
+  jobRoles,
+  canManageJobRoles,
+  onChanged,
+}: InviteKeySectionProps) {
   const [role, setRole] = useState<InviteRole>(roles[0] ?? ROLE.EMPLOYEE);
+  const [jobRoleId, setJobRoleId] = useState<string>(NO_JOB_ROLE);
+  const [managingRoles, setManagingRoles] = useState(false);
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -75,7 +92,11 @@ export function InviteKeySection({ roles, invites, onChanged }: InviteKeySection
     setBusy("issue");
 
     try {
-      await apiClient.post("/api/admin/invites", { role, label: label.trim() || undefined });
+      await apiClient.post("/api/admin/invites", {
+        role,
+        jobRoleId: jobRoleId === NO_JOB_ROLE ? undefined : jobRoleId,
+        label: label.trim() || undefined,
+      });
       setLabel("");
       toast.success(`${ROLE_LABEL[role]} key created.`);
       await onChanged();
@@ -142,6 +163,30 @@ export function InviteKeySection({ roles, invites, onChanged }: InviteKeySection
                 </Select>
               )}
 
+              <Select value={jobRoleId} onValueChange={setJobRoleId}>
+                <SelectTrigger className="w-48" aria-label="Job title this key assigns">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_JOB_ROLE}>No job title</SelectItem>
+                  {jobRoles.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => setManagingRoles(true)}
+                aria-label="Manage job roles"
+              >
+                <Briefcase className="size-4" />
+              </Button>
+
               <Input
                 value={label}
                 onChange={(event) => setLabel(event.target.value)}
@@ -157,7 +202,11 @@ export function InviteKeySection({ roles, invites, onChanged }: InviteKeySection
               </Button>
             </div>
 
-            <p className="text-muted-foreground text-xs">{ROLE_EFFECT[role]}</p>
+            <p className="text-muted-foreground text-xs">
+              {ROLE_EFFECT[role]}
+              {jobRoleId !== NO_JOB_ROLE &&
+                ` Their job title is set to "${jobRoles.find((r) => r.id === jobRoleId)?.name ?? ""}".`}
+            </p>
           </div>
         ) : (
           <p className="text-muted-foreground glass-inset rounded-lg p-3 text-sm">
@@ -189,6 +238,7 @@ export function InviteKeySection({ roles, invites, onChanged }: InviteKeySection
                       <Badge variant={invite.role === ROLE.ADMIN ? "warning" : "success"}>
                         {ROLE_LABEL[invite.role]}
                       </Badge>
+                      {invite.jobRole && <Badge variant="secondary">{invite.jobRole.name}</Badge>}
                     </div>
                     <p className="text-muted-foreground truncate text-xs">
                       <span className={state.tone}>{state.label}</span>
@@ -220,6 +270,14 @@ export function InviteKeySection({ roles, invites, onChanged }: InviteKeySection
           </ul>
         )}
       </CardContent>
+
+      <JobRoleDialog
+        open={managingRoles}
+        onOpenChange={setManagingRoles}
+        roles={jobRoles}
+        canDelete={canManageJobRoles}
+        onChanged={onChanged}
+      />
     </Card>
   );
 }

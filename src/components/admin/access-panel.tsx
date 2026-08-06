@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { AdminPermissions, type Administrator } from "@/components/admin/admin-permissions";
 import { InviteKeySection, type InviteKey } from "@/components/admin/invite-key-section";
+import type { JobRole } from "@/components/admin/job-role-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,20 +32,23 @@ export function AccessPanel() {
   const [invites, setInvites] = useState<InviteKey[]>([]);
   const [pending, setPending] = useState<PendingAdmin[]>([]);
   const [admins, setAdmins] = useState<Administrator[]>([]);
+  const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [keys, requests, administrators] = await Promise.all([
+      const [keys, requests, administrators, titles] = await Promise.all([
         apiClient.get<{ items: InviteKey[] }>("/api/admin/invites"),
         apiClient.get<{ items: PendingAdmin[] }>("/api/admin/requests"),
         apiClient.get<{ items: Administrator[] }>("/api/admin/administrators"),
+        apiClient.get<{ items: JobRole[] }>("/api/admin/job-roles"),
       ]);
 
       setInvites(keys.items);
       setPending(requests.items);
       setAdmins(administrators.items);
+      setJobRoles(titles.items);
     } catch (error) {
       toast.error(error instanceof ApiClientError ? error.message : "Couldn't load the access panel.");
     } finally {
@@ -130,7 +134,13 @@ export function AccessPanel() {
 
       {/* The super admin may issue either role, so both are offered in the
           picker rather than split across two panels. */}
-      <InviteKeySection roles={[ROLE.EMPLOYEE, ROLE.ADMIN]} invites={invites} onChanged={load} />
+      <InviteKeySection
+        roles={[ROLE.EMPLOYEE, ROLE.ADMIN]}
+        invites={invites}
+        jobRoles={jobRoles}
+        canManageJobRoles
+        onChanged={load}
+      />
 
       <AdminPermissions admins={admins} onChanged={load} />
     </div>
