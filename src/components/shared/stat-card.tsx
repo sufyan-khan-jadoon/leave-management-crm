@@ -7,10 +7,10 @@ import { cn } from "@/lib/utils";
 type Tone = "primary" | "success" | "warning" | "destructive" | "neutral";
 
 const TONE_STYLES: Record<Tone, { icon: string; accent: string }> = {
-  primary: { icon: "bg-primary/12 text-primary", accent: "from-primary/10" },
-  success: { icon: "bg-success/12 text-success", accent: "from-success/10" },
-  warning: { icon: "bg-warning/15 text-warning", accent: "from-warning/12" },
-  destructive: { icon: "bg-destructive/12 text-destructive", accent: "from-destructive/10" },
+  primary: { icon: "bg-primary/12 text-primary-ink", accent: "from-primary/10" },
+  success: { icon: "bg-success/12 text-success-ink", accent: "from-success/10" },
+  warning: { icon: "bg-warning/15 text-warning-ink", accent: "from-warning/12" },
+  destructive: { icon: "bg-destructive/12 text-destructive-ink", accent: "from-destructive/10" },
   neutral: { icon: "bg-muted text-muted-foreground", accent: "from-muted/60" },
 };
 

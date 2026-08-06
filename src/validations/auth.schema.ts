@@ -35,10 +35,14 @@ export const registerSchema = z
     password: passwordSchema,
     confirmPassword: z.string(),
     /**
-     * Present only when registering as an administrator. Employees leave it
-     * blank and are active as soon as they verify their email.
+     * Required for everyone: registration is invite-only, and the key decides
+     * whether the account becomes an employee or an administrator.
      */
-    inviteKey: z.string().trim().max(40, "That doesn't look like an invite key").optional(),
+    inviteKey: z
+      .string()
+      .trim()
+      .min(1, "An invite key is required")
+      .max(40, "That doesn't look like an invite key"),
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
@@ -48,12 +52,10 @@ export const registerSchema = z
 export type RegisterInput = z.infer<typeof registerSchema>;
 
 /**
- * Administrators sign up on their own page, where the key is the whole point of
- * the form rather than an optional extra.
+ * Kept as a named alias: both sign-up screens now demand a key, so the two
+ * schemas are identical. The server decides the role from the key regardless.
  */
-export const adminRegisterSchema = registerSchema.safeExtend({
-  inviteKey: z.string().trim().min(1, "An invite key is required").max(40, "That doesn't look like an invite key"),
-});
+export const adminRegisterSchema = registerSchema;
 
 export const loginSchema = z.object({
   email: emailSchema,

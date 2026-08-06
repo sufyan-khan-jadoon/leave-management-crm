@@ -27,8 +27,11 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
         "inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap",
         "transition-[background-color,color,box-shadow,transform] duration-200 ease-standard",
         "hover:text-foreground active:scale-[0.98]",
-        "data-[state=active]:bg-card data-[state=active]:text-foreground",
-        "data-[state=active]:shadow-[inset_0_1px_0_0_var(--glass-highlight),0_1px_2px_-1px_var(--glass-shadow),0_4px_10px_-6px_var(--glass-shadow)]",
+        // The raised pill stays a light surface — the brand states itself in the
+        // label and the rim, which keeps a row of tabs quiet while still
+        // marking the selection in green.
+        "data-[state=active]:bg-card data-[state=active]:text-primary-ink",
+        "data-[state=active]:shadow-[inset_0_1px_0_0_var(--glass-highlight),inset_0_0_0_1px_color-mix(in_oklab,var(--brand)_30%,transparent),0_1px_2px_-1px_var(--glass-shadow),0_4px_10px_-6px_color-mix(in_oklab,var(--brand)_35%,transparent)]",
         "focus-visible:ring-ring/35 outline-none focus-visible:ring-[3px]",
         "disabled:pointer-events-none disabled:opacity-45",
         "[&_svg:not([class*='size-'])]:size-4",

@@ -59,7 +59,7 @@ function DropdownMenuItem({
       className={cn(
         menuItemClasses,
         "data-[inset]:pl-8",
-        "data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/12 data-[variant=destructive]:focus:text-destructive",
+        "data-[variant=destructive]:text-destructive-ink data-[variant=destructive]:focus:bg-destructive/12 data-[variant=destructive]:focus:text-destructive-ink",
         className,
       )}
       {...props}

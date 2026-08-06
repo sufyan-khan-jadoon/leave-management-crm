@@ -41,7 +41,11 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       className={cn(
         "group/row transition-colors duration-150 ease-standard",
-        "hover:bg-accent/45 data-[state=selected]:bg-accent/60",
+        // Hover resolves through `--accent`, which is a brand-tinted mint, so
+        // the row warms green without this file naming a colour.
+        "hover:bg-accent/60",
+        // Selection is stated in the brand green itself rather than the wash.
+        "data-[state=selected]:bg-brand/12",
         className,
       )}
       {...props}

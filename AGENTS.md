@@ -31,6 +31,93 @@ transitively, including `src/lib/auth/auth.config.ts` — keep Prisma and bcrypt
 API routes are excluded from the middleware matcher on purpose: they must return 401/403 JSON via
 `requireUser()` / `requireAdmin()`, not redirect a `fetch` to an HTML page.
 
+## Registration is invite-only
+
+Nobody self-registers. Every account starts from an `InviteKey`, and **the key's `role` is the
+only thing that decides what the holder becomes** — `auth.service.register` reads it off the key,
+never from the request body, so posting an employee key to the admin form still yields an employee.
+
+| Key role   | Issued by                                        | Resulting account                                |
+| ---------- | ------------------------------------------------ | ------------------------------------------------ |
+| `EMPLOYEE` | super admin, or an admin with `canInviteEmployees` | `ACTIVE` once the email is verified               |
+| `ADMIN`    | super admin only                                  | `PENDING_APPROVAL` until the super admin decides  |
+
+`SUPER_ADMIN` is deliberately not issuable — that role is seeded, so no key can mint another owner.
+
+**`canInviteEmployees` is off by default.** Being an admin is not by itself permission to onboard
+people; the super admin grants it per administrator. `permissionsFor()` reads it from the database
+on every issue rather than from the session, so withdrawing it takes effect on the next request
+instead of when a token expires — don't "optimise" it into the JWT.
+
+All the scoping lives in `invite.service.ts` and must stay in step: an admin sees and revokes only
+the `EMPLOYEE` keys they issued, and `revoke` reports anything outside that as *not found* rather
+than *forbidden*, so it cannot be used to probe for keys the caller may not see. Route handlers
+guard with the looser `requireAdmin` on purpose — what a caller may actually grant is settled in
+the service, against the role in the body. `/api/admin/invites` also returns `canIssue` purely so
+the UI can hide a form it may not submit; it mirrors the real check, never replaces it.
+
+`InviteKeySection` is shared by the super admin's access panel and the Employees screen.
+
+## Who may act on whose account
+
+`assertMayManage` in `employee.service.ts` is the single seniority rule, applied to **every** read
+and write of another account — `adminUpdate`, `setStatus`, `remove`, and `byIdForActor`:
+
+- nobody acts on their own account here (that is what `/profile` is for)
+- an admin manages `EMPLOYEE` accounts only
+- `ADMIN` accounts answer to the super admin alone
+- `SUPER_ADMIN` is unmanageable from the dashboard by anyone, itself included — suspending or
+  deleting it would leave nobody able to approve administrators
+
+Editing counts as a privileged action because changing an email address is the first half of an
+account takeover: the new address can then be sent a password reset. Refusals on reads are phrased
+as *not found*, so the endpoints cannot be used to discover which ids belong to administrators.
+
+Listing is gated in the route handler — `role=ADMIN` on `/api/admin/employees` requires super
+admin — because the roster is the route to every action on those accounts. `SUPER_ADMIN` is not a
+value `employeeQuerySchema` accepts, so it can never be listed.
+
+`setStatus` only toggles accounts that are already `ACTIVE` or `SUSPENDED`. An administrator in
+`PENDING_APPROVAL` or `REJECTED` belongs to the approval flow, which also checks the address was
+verified — a status toggle would route around that.
+
+## Administrators take leave too
+
+An admin is an `Employee` with `role = ADMIN`, and draws the same `MONTHLY_LEAVE_ALLOWANCE`. The
+`(employee)` layout therefore does **not** turn admins away — it keeps their admin navigation and
+lets them use the personal screens for their own leave. Every leave route guards with `requireUser`
+and keys off `employeeId`, so nothing there is employee-only.
+
+`ADMIN_NAV` is split into a `Manage` group and a `Personal` group; the sidebar prints each heading
+once, when the group changes. No self-approval hole exists to close: `bookLeave` writes rows
+already approved when they fit the allowance, so the policy decides, not the person — and `decide`
+re-checks the allowance before any manual override.
+
+## Brand colour — the FILL vs INK rule
+
+The Zovencia palette is fixed: **#0AEA0A** (brand green), **#023506** (dark green), black, white.
+All of it lives in `src/app/globals.css`; no component may name a colour literal.
+
+`#0AEA0A` is luminous — 12.8:1 on black but **1.64:1 on white**. So each semantic colour ships
+as a pair, and which one you reach for depends on whether the colour is a *shape* or a *letter*:
+
+| Use                                                        | Token                                      |
+| ---------------------------------------------------------- | ------------------------------------------ |
+| Fills, buttons, active pills, badges, progress, toggles, charts, focus rings, branding | `--primary` / `bg-primary`, `bg-brand` — **exactly #0AEA0A, never darkened** |
+| Green *text* or a bare green *icon* on a light surface      | `--primary-ink` / `text-primary-ink`       |
+
+`--success`, `--warning`, `--destructive` follow the same pattern (`-ink` suffix). Success *is*
+the brand green. In dark mode every `-ink` collapses back to the pure brand colour, because on a
+dark panel #0AEA0A already clears AA — the exception is only paid where it is actually needed.
+
+Never use an `-ink` token as a background, and never put `text-primary` back: that pairing is what
+the rule exists to prevent. When green text is hard to read, fix the *surface* (glass tint,
+opacity, border, weight) rather than the brand colour.
+
+The sidebar is a dark green slab in **both** themes. `glass-sidebar` re-declares `--foreground`,
+`--muted-foreground`, `--accent` and friends onto the panel, so its children recolour for dark
+ground through inheritance — restyle the tokens there, not the nav components.
+
 ## Conventions
 
 - Dates are calendar days. Normalise through `src/lib/date.ts` (UTC midnight) — never construct

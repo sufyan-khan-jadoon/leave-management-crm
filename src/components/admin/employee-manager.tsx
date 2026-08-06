@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import type { EmployeeStatus } from "@prisma/client";
 import {
   Ban,
   CircleCheck,
@@ -40,12 +41,57 @@ import { ApiClientError, apiClient } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
 import { initialsOf } from "@/lib/utils";
 import { formatDate } from "@/lib/date";
-import { EMPLOYEE_STATUS } from "@/lib/enums";
+import { EMPLOYEE_STATUS, ROLE, type InviteRole } from "@/lib/enums";
 import type { EmployeeView } from "@/types";
 
-export function EmployeeManager() {
-  const table = useEmployeeTable(10);
+/**
+ * Wording per population. The table itself is identical — an administrator is an
+ * employee holding a role, so managing one needs no separate screen.
+ */
+const COPY = {
+  [ROLE.EMPLOYEE]: {
+    noun: "employee",
+    plural: "employees",
+    column: "Employee",
+    searchLabel: "Search employees",
+    emptyTitle: "No employees yet",
+    emptyBody: "Employees appear here once they register with a key and verify their email.",
+    deleteBody: "along with their entire leave history",
+  },
+  [ROLE.ADMIN]: {
+    noun: "administrator",
+    plural: "administrators",
+    column: "Administrator",
+    searchLabel: "Search administrators",
+    emptyTitle: "No administrators yet",
+    emptyBody: "Administrators appear here once you approve their request.",
+    // Worth stating plainly: the cascade takes the audit trail with it.
+    deleteBody: "along with their leave history and the record of every invite key they issued",
+  },
+} as const;
+
+/**
+ * Every status gets its own badge, not just suspended-or-not.
+ *
+ * Employees are only ever ACTIVE or SUSPENDED, but administrators also pass
+ * through approval — so a declined administrator would otherwise be painted
+ * green and read as in good standing.
+ */
+const STATUS_BADGE: Record<EmployeeStatus, { label: string; variant: "success" | "destructive" | "warning" }> = {
+  [EMPLOYEE_STATUS.ACTIVE]: { label: "Active", variant: "success" },
+  [EMPLOYEE_STATUS.SUSPENDED]: { label: "Suspended", variant: "destructive" },
+  [EMPLOYEE_STATUS.PENDING_APPROVAL]: { label: "Pending approval", variant: "warning" },
+  [EMPLOYEE_STATUS.REJECTED]: { label: "Declined", variant: "destructive" },
+};
+
+/** Suspend/reactivate applies to settled accounts; the rest await a decision. */
+const isSettled = (status: EmployeeStatus) =>
+  status === EMPLOYEE_STATUS.ACTIVE || status === EMPLOYEE_STATUS.SUSPENDED;
+
+export function EmployeeManager({ role = ROLE.EMPLOYEE }: { role?: InviteRole }) {
+  const table = useEmployeeTable(10, role);
   const { filters, update, toggleSort, reset, hasActiveFilters, data, loading, error, refresh } = table;
+  const copy = COPY[role];
 
   const [editing, setEditing] = useState<EmployeeView | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -83,7 +129,7 @@ export function EmployeeManager() {
       toast.success(`${employee.name} was removed.`);
       await refresh();
     } catch (caught) {
-      toast.error(caught instanceof ApiClientError ? caught.message : "Could not delete this employee.");
+      toast.error(caught instanceof ApiClientError ? caught.message : `Could not delete this ${copy.noun}.`);
     }
   }
 
@@ -99,7 +145,7 @@ export function EmployeeManager() {
                 onChange={(event) => update({ search: event.target.value })}
                 placeholder="Search by name, email, department or position…"
                 className="pl-9"
-                aria-label="Search employees"
+                aria-label={copy.searchLabel}
               />
             </div>
 
@@ -112,6 +158,14 @@ export function EmployeeManager() {
                   <SelectItem value="ALL">All statuses</SelectItem>
                   <SelectItem value={EMPLOYEE_STATUS.ACTIVE}>Active</SelectItem>
                   <SelectItem value={EMPLOYEE_STATUS.SUSPENDED}>Suspended</SelectItem>
+                  {/* Only administrators pass through approval, so these two
+                      would match nothing on the employee tab. */}
+                  {role === ROLE.ADMIN && (
+                    <>
+                      <SelectItem value={EMPLOYEE_STATUS.PENDING_APPROVAL}>Pending approval</SelectItem>
+                      <SelectItem value={EMPLOYEE_STATUS.REJECTED}>Declined</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
 
@@ -146,17 +200,15 @@ export function EmployeeManager() {
           {loading && <TableSkeleton />}
 
           {!loading && error && (
-            <EmptyState icon={Users} title="Couldn't load employees" description={error} />
+            <EmptyState icon={Users} title={`Couldn't load ${copy.plural}`} description={error} />
           )}
 
           {!loading && !error && employees.length === 0 && (
             <EmptyState
               icon={Users}
-              title={hasActiveFilters ? "No matching employees" : "No employees yet"}
+              title={hasActiveFilters ? `No matching ${copy.plural}` : copy.emptyTitle}
               description={
-                hasActiveFilters
-                  ? "Try adjusting your search or filters."
-                  : "Employees appear here once they register and verify their email."
+                hasActiveFilters ? "Try adjusting your search or filters." : copy.emptyBody
               }
               action={
                 hasActiveFilters ? (
@@ -175,7 +227,7 @@ export function EmployeeManager() {
                   <TableRow>
                     <TableHead className="pl-4 sm:pl-6">
                       <SortButton
-                        label="Employee"
+                        label={copy.column}
                         active={filters.sortBy === "name"}
                         direction={filters.sortDir}
                         onClick={() => toggleSort("name")}
@@ -234,8 +286,8 @@ export function EmployeeManager() {
                         </TableCell>
 
                         <TableCell>
-                          <Badge variant={suspended ? "destructive" : "success"}>
-                            {suspended ? "Suspended" : "Active"}
+                          <Badge variant={STATUS_BADGE[employee.status].variant}>
+                            {STATUS_BADGE[employee.status].label}
                           </Badge>
                         </TableCell>
 
@@ -275,10 +327,14 @@ export function EmployeeManager() {
 
                               <DropdownMenuSeparator />
 
-                              <DropdownMenuItem onClick={() => setConfirming({ employee, action: "status" })}>
-                                {suspended ? <CircleCheck className="size-4" /> : <Ban className="size-4" />}
-                                {suspended ? "Reactivate" : "Suspend"}
-                              </DropdownMenuItem>
+                              {/* Hidden for accounts still in approval — the
+                                  service refuses the toggle for those. */}
+                              {isSettled(employee.status) && (
+                                <DropdownMenuItem onClick={() => setConfirming({ employee, action: "status" })}>
+                                  {suspended ? <CircleCheck className="size-4" /> : <Ban className="size-4" />}
+                                  {suspended ? "Reactivate" : "Suspend"}
+                                </DropdownMenuItem>
+                              )}
 
                               <DropdownMenuItem
                                 variant="destructive"
@@ -300,7 +356,7 @@ export function EmployeeManager() {
                 <PaginationControls
                   pagination={data.pagination}
                   onPageChange={(page) => update({ page })}
-                  label="employees"
+                  label={copy.plural}
                 />
               )}
             </div>
@@ -339,8 +395,8 @@ export function EmployeeManager() {
           open
           destructive
           onOpenChange={(open) => !open && setConfirming(null)}
-          title="Delete this employee?"
-          description={`This permanently removes ${confirming.employee.name} along with their entire leave history. This cannot be undone.`}
+          title={`Delete this ${copy.noun}?`}
+          description={`This permanently removes ${confirming.employee.name} ${copy.deleteBody}. This cannot be undone.`}
           confirmLabel="Delete permanently"
           onConfirm={async () => {
             await remove(confirming.employee);

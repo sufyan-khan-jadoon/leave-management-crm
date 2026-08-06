@@ -11,14 +11,17 @@ const statusSchema = z.object({
   status: z.enum([EMPLOYEE_STATUS.ACTIVE, EMPLOYEE_STATUS.SUSPENDED]),
 });
 
-/** Suspend or reactivate an employee account. */
+/**
+ * Suspend or reactivate an account. Which accounts are reachable depends on the
+ * caller's seniority — the service decides, not this handler.
+ */
 export async function PATCH(request: Request, context: RouteContext) {
   return handleRoute(async () => {
     const admin = await requireAdmin();
     const { id } = await context.params;
     const { status } = await parseBody(request, statusSchema);
 
-    const employee = await employeeService.setStatus(id, status, admin.id);
+    const employee = await employeeService.setStatus(id, status, admin);
 
     return ok({ employee });
   });

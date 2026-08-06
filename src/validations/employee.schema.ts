@@ -1,4 +1,4 @@
-import { EmployeeStatus } from "@prisma/client";
+import { EmployeeStatus, Role } from "@prisma/client";
 import { z } from "zod";
 
 const phoneSchema = z
@@ -52,6 +52,12 @@ export const adminEmployeeUpdateSchema = profileUpdateSchema.extend({
 export type AdminEmployeeUpdateInput = z.infer<typeof adminEmployeeUpdateSchema>;
 
 export const employeeQuerySchema = z.object({
+  /**
+   * Which population to list. Defaults to employees, so every existing caller
+   * keeps its behaviour; asking for ADMIN is gated to the super admin in the
+   * route handler. SUPER_ADMIN is not listable — there is nothing to manage.
+   */
+  role: z.enum([Role.EMPLOYEE, Role.ADMIN]).default(Role.EMPLOYEE),
   search: z.string().trim().max(120).optional(),
   department: z.string().trim().max(60).optional(),
   status: z.nativeEnum(EmployeeStatus).optional(),

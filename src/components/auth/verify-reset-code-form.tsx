@@ -113,7 +113,7 @@ export function VerifyResetCodeForm() {
           invalid={Boolean(error)}
         />
         {error ? (
-          <p className="text-destructive text-center text-xs font-medium">{error}</p>
+          <p className="text-destructive-ink text-center text-xs font-medium">{error}</p>
         ) : (
           <p className="text-muted-foreground text-center text-xs">
             The {OTP_LENGTH}-digit code expires {OTP_TTL_MINUTES} minutes after it is sent.

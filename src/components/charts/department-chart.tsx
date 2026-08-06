@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis
 import {
   CHART_PALETTE,
   axisTick,
+  barStroke,
   gridStroke,
   tooltipContentStyle,
   tooltipItemStyle,
@@ -29,14 +30,19 @@ export function DepartmentChart({ data }: { data: Array<{ department: string; co
           tick={axisTick}
         />
         <Tooltip
-          cursor={{ fill: "var(--color-muted)", opacity: 0.35 }}
+          cursor={{ fill: "var(--color-brand)", opacity: 0.08 }}
           contentStyle={tooltipContentStyle}
           itemStyle={tooltipItemStyle}
           labelStyle={tooltipLabelStyle}
         />
         <Bar dataKey="count" name="Leaves" radius={[0, 6, 6, 0]} barSize={18}>
           {top.map((entry, index) => (
-            <Cell key={entry.department} fill={CHART_PALETTE[index % CHART_PALETTE.length]} />
+            <Cell
+              key={entry.department}
+              fill={CHART_PALETTE[index % CHART_PALETTE.length]}
+              stroke={barStroke}
+              strokeWidth={1}
+            />
           ))}
         </Bar>
       </BarChart>

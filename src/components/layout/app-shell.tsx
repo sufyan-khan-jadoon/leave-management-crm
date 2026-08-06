@@ -51,7 +51,7 @@ export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, childre
 
       <aside
         className={cn(
-          "glass fixed z-50 flex flex-col transition-transform duration-300 ease-standard",
+          "glass-sidebar fixed z-50 flex flex-col transition-transform duration-300 ease-standard",
           "inset-y-3 left-3 w-[16.5rem] rounded-2xl",
           "lg:translate-x-0",
           drawerOpen ? "translate-x-0" : "-translate-x-[calc(100%+1rem)]",
@@ -86,32 +86,58 @@ export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, childre
         )}
 
         <nav className="scrollbar-thin flex-1 space-y-0.5 overflow-y-auto px-3 py-2">
-          {nav.map((item) => {
+          {nav.map((item, index) => {
             const active = isActiveRoute(pathname, item);
+            // Printed once, when the group changes — so the config stays a flat
+            // list and the heading cannot drift out of step with its items.
+            const heading = item.group && item.group !== nav[index - 1]?.group ? item.group : null;
 
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setDrawerOpen(false)}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium",
-                  "transition-[background-color,color,transform] duration-200 ease-standard active:scale-[0.98]",
-                  active
-                    ? "text-primary bg-primary/10 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_18%,transparent)]"
-                    : "text-muted-foreground hover:bg-accent/70 hover:text-foreground",
+              <div key={item.href}>
+                {heading && (
+                  <p
+                    className={cn(
+                      "text-muted-foreground/80 px-3 pb-1.5 text-[0.6875rem] font-semibold tracking-[0.08em] uppercase",
+                      index === 0 ? "pt-1" : "pt-4",
+                    )}
+                  >
+                    {heading}
+                  </p>
                 )}
-              >
-                <item.icon
+
+                <Link
+                  href={item.href}
+                  onClick={() => setDrawerOpen(false)}
+                  aria-current={active ? "page" : undefined}
                   className={cn(
-                    "size-4 shrink-0 transition-colors duration-200",
-                    active ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+                    "group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium",
+                    "transition-[background-color,color,transform] duration-200 ease-standard active:scale-[0.98]",
+                    active
+                      ? "text-primary-ink bg-brand/15 shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--brand)_28%,transparent)]"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
                   )}
-                  aria-hidden
-                />
-                {item.label}
-              </Link>
+                >
+                  {/* Brand-green rail on the active item. Animating scaleY off a
+                      centre origin lets it grow out of the row rather than blink. */}
+                  <span
+                    className={cn(
+                      "bg-brand absolute top-1/2 left-0 h-5 w-[3px] -translate-y-1/2 rounded-r-full",
+                      "shadow-[0_0_12px_0_color-mix(in_oklab,var(--brand)_70%,transparent)]",
+                      "origin-center transition-transform duration-300 ease-spring",
+                      active ? "scale-y-100" : "scale-y-0",
+                    )}
+                    aria-hidden
+                  />
+                  <item.icon
+                    className={cn(
+                      "size-4 shrink-0 transition-colors duration-200",
+                      active ? "text-brand" : "text-muted-foreground group-hover:text-foreground",
+                    )}
+                    aria-hidden
+                  />
+                  {item.label}
+                </Link>
+              </div>
             );
           })}
         </nav>

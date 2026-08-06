@@ -50,7 +50,7 @@ export default function RoleSelectionPage() {
             >
               <Card glass interactive className="h-full">
                 <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
-                  <div className="bg-primary/12 text-primary flex size-14 items-center justify-center rounded-full transition-[background-color,transform] duration-300 ease-spring group-hover:scale-105 group-hover:bg-primary/20">
+                  <div className="bg-primary/12 text-primary-ink flex size-14 items-center justify-center rounded-full transition-[background-color,transform] duration-300 ease-spring group-hover:scale-105 group-hover:bg-primary/20">
                     <Icon className="size-7" aria-hidden />
                   </div>
                   <div className="space-y-1.5">

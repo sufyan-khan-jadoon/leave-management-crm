@@ -31,10 +31,10 @@ function Toaster(props: ToasterProps) {
           closeButton:
             "!bg-transparent !border-0 !text-muted-foreground hover:!text-foreground hover:!bg-accent/70 !rounded-sm",
           icon: "!size-4",
-          success: "[&_[data-icon]]:!text-success",
-          error: "[&_[data-icon]]:!text-destructive",
-          warning: "[&_[data-icon]]:!text-warning",
-          info: "[&_[data-icon]]:!text-primary",
+          success: "[&_[data-icon]]:!text-success-ink",
+          error: "[&_[data-icon]]:!text-destructive-ink",
+          warning: "[&_[data-icon]]:!text-warning-ink",
+          info: "[&_[data-icon]]:!text-primary-ink",
         },
       }}
       {...props}

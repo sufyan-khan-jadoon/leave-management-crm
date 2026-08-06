@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 
-import { AdminRegisterForm } from "@/components/auth/admin-register-form";
+import { InviteRegisterForm } from "@/components/auth/invite-register-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROUTES } from "@/lib/constants";
 
@@ -12,7 +12,7 @@ export default function AdminRegisterPage() {
   return (
     <Card glass>
       <CardHeader className="space-y-3">
-        <div className="bg-primary/12 text-primary flex size-11 items-center justify-center rounded-xl">
+        <div className="bg-primary/12 text-primary-ink flex size-11 items-center justify-center rounded-xl">
           <KeyRound className="size-5" aria-hidden />
         </div>
         <div className="space-y-1.5">
@@ -24,11 +24,11 @@ export default function AdminRegisterPage() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <AdminRegisterForm />
+        <InviteRegisterForm variant="admin" />
 
         <p className="text-muted-foreground text-center text-sm">
           Not an administrator?{" "}
-          <Link href={ROUTES.register} className="text-primary font-medium hover:underline">
+          <Link href={ROUTES.register} className="text-primary-ink font-medium hover:underline">
             Employee sign up
           </Link>
         </p>

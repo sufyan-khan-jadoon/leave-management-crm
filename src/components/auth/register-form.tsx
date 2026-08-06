@@ -13,14 +13,14 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
-import { adminRegisterSchema, registerSchema, type RegisterInput } from "@/validations/auth.schema";
+import { registerSchema, type RegisterInput } from "@/validations/auth.schema";
 import { PasswordStrength } from "@/components/auth/password-strength";
 
 type RegisterFormProps = {
-  /** Administrators register on their own screen, where a key is mandatory. */
+  /** Set from the role the verified key grants — wording only. */
   variant?: "employee" | "admin";
-  /** Supplied by the admin screen once the key has been checked. */
-  inviteKey?: string;
+  /** Always supplied: `InviteRegisterForm` checks the key before rendering this. */
+  inviteKey: string;
 };
 
 export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormProps) {
@@ -29,8 +29,8 @@ export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormPr
   const isAdmin = variant === "admin";
 
   const form = useForm<RegisterInput>({
-    resolver: zodResolver(isAdmin ? adminRegisterSchema : registerSchema),
-    defaultValues: { name: "", email: "", password: "", confirmPassword: "", inviteKey: inviteKey ?? "" },
+    resolver: zodResolver(registerSchema),
+    defaultValues: { name: "", email: "", password: "", confirmPassword: "", inviteKey },
     mode: "onBlur",
   });
 
@@ -168,20 +168,11 @@ export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormPr
           Already have an account?{" "}
           <Link
             href={isAdmin ? ROUTES.adminLogin : ROUTES.login}
-            className="text-primary font-medium hover:underline"
+            className="text-primary-ink font-medium hover:underline"
           >
             Sign in
           </Link>
         </p>
-
-        {!isAdmin && (
-          <p className="text-muted-foreground text-center text-sm">
-            Have an invite key?{" "}
-            <Link href={ROUTES.adminRegister} className="text-primary font-medium hover:underline">
-              Register as an administrator
-            </Link>
-          </p>
-        )}
       </form>
     </Form>
   );

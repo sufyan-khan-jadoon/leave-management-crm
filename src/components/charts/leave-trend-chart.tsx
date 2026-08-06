@@ -21,10 +21,16 @@ import {
 import { monthLabel } from "@/lib/date";
 import type { MonthlyTrendPoint } from "@/types";
 
+/**
+ * Split by decision, so the series borrow the *status* colours rather than the
+ * green chart ramp — a reader who has learned "amber = pending" from the badges
+ * should not have to learn a second encoding to read the chart. Approved is the
+ * exact brand green, which is also what `--success` resolves to.
+ */
 const SERIES = [
-  { key: "approved", label: "Approved", color: "var(--color-chart-3)" },
-  { key: "pending", label: "Pending", color: "var(--color-chart-4)" },
-  { key: "rejected", label: "Rejected", color: "var(--color-chart-5)" },
+  { key: "approved", label: "Approved", color: "var(--color-success)" },
+  { key: "pending", label: "Pending", color: "var(--color-warning)" },
+  { key: "rejected", label: "Rejected", color: "var(--color-destructive)" },
 ] as const;
 
 /** Stacked monthly leave volume, split by decision. */

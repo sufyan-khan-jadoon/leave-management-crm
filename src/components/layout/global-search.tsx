@@ -146,7 +146,7 @@ function ResultRow({
         "transition-[background-color,transform] duration-150 ease-standard active:scale-[0.99]",
       )}
     >
-      <span className="bg-primary/10 text-primary flex size-8 shrink-0 items-center justify-center rounded-sm">
+      <span className="bg-primary/10 text-primary-ink flex size-8 shrink-0 items-center justify-center rounded-sm">
         {icon}
       </span>
       <span className="min-w-0 flex-1">

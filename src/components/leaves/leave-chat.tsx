@@ -267,7 +267,7 @@ export function LeaveChat({ className, bare = false }: { className?: string; bar
               <div
                 className={cn(
                   "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
-                  turn.role === "user" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+                  turn.role === "user" ? "bg-primary/10 text-primary-ink" : "bg-muted text-muted-foreground",
                 )}
                 aria-hidden
               >
@@ -319,9 +319,9 @@ export function LeaveChat({ className, bare = false }: { className?: string; bar
               className={cn(
                 "flex size-11 shrink-0 items-center justify-center rounded-full transition-colors",
                 listening
-                  ? "bg-primary/15 text-primary animate-pulse"
+                  ? "bg-primary/15 text-primary-ink animate-pulse"
                   : speaking
-                    ? "bg-success/15 text-success"
+                    ? "bg-success/15 text-success-ink"
                     : "bg-muted text-muted-foreground",
               )}
               aria-hidden

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { RegisterForm } from "@/components/auth/register-form";
+import { InviteRegisterForm } from "@/components/auth/invite-register-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata: Metadata = { title: "Create account" };
@@ -11,11 +11,12 @@ export default function RegisterPage() {
       <CardHeader className="space-y-1.5">
         <CardTitle className="text-2xl">Create your account</CardTitle>
         <CardDescription>
-          Just the essentials for now — you&apos;ll add your profile details after verifying your email.
+          Start with the invite key your administrator sent you — you&apos;ll add your profile details after
+          verifying your email.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <RegisterForm />
+        <InviteRegisterForm />
       </CardContent>
     </Card>
   );

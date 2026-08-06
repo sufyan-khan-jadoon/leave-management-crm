@@ -14,7 +14,7 @@ export default function AdminLoginPage() {
   return (
     <Card glass>
       <CardHeader className="space-y-3">
-        <div className="bg-primary/12 text-primary flex size-11 items-center justify-center rounded-xl">
+        <div className="bg-primary/12 text-primary-ink flex size-11 items-center justify-center rounded-xl">
           <ShieldCheck className="size-5" aria-hidden />
         </div>
         <div className="space-y-1.5">
@@ -29,14 +29,14 @@ export default function AdminLoginPage() {
 
         <p className="text-muted-foreground text-center text-sm">
           Have an invite key?{" "}
-          <Link href={ROUTES.adminRegister} className="text-primary font-medium hover:underline">
+          <Link href={ROUTES.adminRegister} className="text-primary-ink font-medium hover:underline">
             Register as an administrator
           </Link>
         </p>
 
         <p className="text-muted-foreground text-center text-sm">
           Not an administrator?{" "}
-          <Link href={ROUTES.login} className="text-primary font-medium hover:underline">
+          <Link href={ROUTES.login} className="text-primary-ink font-medium hover:underline">
             Employee sign in
           </Link>
         </p>

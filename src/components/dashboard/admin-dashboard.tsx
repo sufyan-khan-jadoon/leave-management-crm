@@ -111,7 +111,7 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <TrendingUp className="text-primary size-4" aria-hidden />
+                <TrendingUp className="text-primary-ink size-4" aria-hidden />
                 Monthly leave requests
               </CardTitle>
               <CardDescription>Volume and outcomes across the last six months.</CardDescription>
@@ -133,7 +133,7 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Building2 className="text-primary size-4" aria-hidden />
+                <Building2 className="text-primary-ink size-4" aria-hidden />
                 Department-wise leaves
               </CardTitle>
               <CardDescription>Where leave is concentrating across the organisation.</CardDescription>

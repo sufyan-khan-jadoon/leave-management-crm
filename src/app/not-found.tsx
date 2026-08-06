@@ -10,7 +10,7 @@ export default function NotFound() {
     <div className="app-aurora flex min-h-dvh items-center justify-center px-4">
       <Card glass className="animate-in fade-in-0 zoom-in-95 w-full max-w-md text-center duration-500 ease-standard">
         <CardContent className="space-y-4">
-          <div className="bg-primary/12 text-primary mx-auto flex size-12 items-center justify-center rounded-full">
+          <div className="bg-primary/12 text-primary-ink mx-auto flex size-12 items-center justify-center rounded-full">
             <Compass className="size-6" aria-hidden />
           </div>
 

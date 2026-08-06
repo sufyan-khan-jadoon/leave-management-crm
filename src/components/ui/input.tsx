@@ -14,7 +14,10 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
         "hover:bg-card/70",
         // The focus ring replaces the inset well entirely, so the control reads
         // as lifting out of the surface rather than gaining a second border.
-        "focus-visible:bg-card/80 focus-visible:shadow-[inset_0_0_0_1px_var(--ring),0_0_0_3px_color-mix(in_oklab,var(--ring)_28%,transparent)]",
+        // `--ring-edge` is a deep-green hairline outside the brand-green ring:
+        // it gives the neon something to sit against on a light surface without
+        // the ring itself being darkened away from #0AEA0A.
+        "focus-visible:bg-card/80 focus-visible:shadow-[inset_0_0_0_1px_var(--ring),0_0_0_1px_var(--ring-edge),0_0_0_4px_color-mix(in_oklab,var(--ring)_30%,transparent)]",
         "aria-invalid:shadow-[inset_0_0_0_1px_var(--destructive),0_0_0_3px_color-mix(in_oklab,var(--destructive)_22%,transparent)]",
         "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
         className,

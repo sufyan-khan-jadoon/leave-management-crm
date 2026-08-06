@@ -56,6 +56,15 @@ model Employee {
   role          Role           @default(EMPLOYEE)
   status        EmployeeStatus @default(ACTIVE)
 
+  /// Whether this administrator may issue employee invite keys.
+  ///
+  /// Off by default: being made an admin does not by itself confer the right to
+  /// onboard people. The super admin grants it per administrator, and it is read
+  /// from here on every issue rather than carried in the session, so revoking it
+  /// takes effect on the next request instead of when a token expires.
+  /// Meaningless for EMPLOYEE, and ignored for SUPER_ADMIN, who may always issue.
+  canInviteEmployees Boolean @default(false)
+
   // Profile fields — collected after email verification, not at registration.
   phone        String?
   department   String?
@@ -68,8 +77,8 @@ model Employee {
 
   leaves        Leave[]
   otpCodes      OtpCode[]
-  invitesIssued AdminInviteKey[] @relation("InviteIssuer")
-  inviteUsed    AdminInviteKey?  @relation("InviteRedeemer")
+  invitesIssued InviteKey[] @relation("InviteIssuer")
+  inviteUsed    InviteKey?  @relation("InviteRedeemer")
 
   @@index([department])
   @@index([status])
@@ -94,14 +103,20 @@ model OtpCode {
   @@map("otp_codes")
 }
 
-/// A one-shot invitation to register as an administrator.
+/// A one-shot invitation to register, as either an employee or an administrator.
 ///
 /// Single-use by design: redeeming one ties it to the account that used it, so
-/// a leaked key cannot onboard a stream of strangers and every admin can be
-/// traced back to the invitation they came through.
-model AdminInviteKey {
+/// a leaked key cannot onboard a stream of strangers and every account can be
+/// traced back to the invitation it came through.
+///
+/// `role` is what the key grants, and it is the only thing that decides what the
+/// holder becomes — registration reads the role off the key rather than from
+/// which page the form was posted from, so a key can never be used to claim a
+/// role it was not issued for. SUPER_ADMIN is deliberately not issuable.
+model InviteKey {
   id         String    @id @default(cuid())
   key        String    @unique
+  role       Role
   /// Free-text note of who the key was meant for.
   label      String?
   expiresAt  DateTime
@@ -116,7 +131,8 @@ model AdminInviteKey {
   redeemedBy   Employee? @relation("InviteRedeemer", fields: [redeemedById], references: [id], onDelete: SetNull)
 
   @@index([issuedById, createdAt])
-  @@map("admin_invite_keys")
+  @@index([role, createdAt])
+  @@map("invite_keys")
 }
 
 /// A single day of leave. Date and reason are extracted by the AI service;

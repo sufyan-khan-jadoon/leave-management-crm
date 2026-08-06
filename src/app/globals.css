@@ -4,12 +4,28 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------------------
- * Liquid Glass design tokens.
+ * Zovencia Liquid Glass — design tokens.
  *
- * The palette is deliberately near-neutral: surfaces carry the design through
- * translucency and light, not through hue. Saturated colour is reserved for
- * semantic state (success / warning / destructive) and the single accent used
- * on active navigation and primary actions.
+ * Surfaces still carry the design through translucency and light rather than
+ * hue; what changed is that the light is now green. Every neutral is pulled a
+ * few degrees toward the brand hue (~150) so white glass reads as *Zovencia*
+ * white rather than as generic grey.
+ *
+ * FILL vs INK — the one rule that keeps this brand accessible
+ * ----------------------------------------------------------
+ * `--brand` (#0AEA0A) is luminous: 12.8:1 on black but only 1.64:1 on white.
+ * That makes it perfect as a *fill* and unusable as a *letterform* on light.
+ * So each semantic colour ships as a pair:
+ *
+ *   --primary      the exact brand colour. Every filled or branded element —
+ *                  buttons, active pills, badges, progress, toggles, charts,
+ *                  focus rings, glass highlights — uses this, unmodified.
+ *   --primary-ink  the same hue darkened, used *only* where green becomes a
+ *                  letterform or a bare icon on a light surface.
+ *
+ * In dark mode the ink collapses back to the exact brand colour, because on a
+ * dark panel #0AEA0A already clears AA at 10.8:1 — the exception is only ever
+ * paid where it is actually needed.
  * ------------------------------------------------------------------------- */
 
 :root {
@@ -17,52 +33,84 @@
      from it so curvature stays proportional if the anchor is retuned. */
   --radius: 1.5rem;
 
-  --background: oklch(0.976 0.002 250);
-  --foreground: oklch(0.22 0.008 265);
+  /* Brand constants — identical in both themes, never derived, never tinted.
+     These two are the contract; everything else below is tuned around them. */
+  --brand: oklch(0.812 0.275 142.5); /* #0AEA0A */
+  --brand-deep: oklch(0.286 0.091 143.9); /* #023506 */
+
+  --background: oklch(0.978 0.007 150);
+  --foreground: oklch(0.205 0.024 152);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.008 265);
+  --card-foreground: oklch(0.205 0.024 152);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.008 265);
-  --primary: oklch(0.52 0.095 266);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.955 0.003 260);
-  --secondary-foreground: oklch(0.3 0.008 265);
-  --muted: oklch(0.958 0.003 260);
-  --muted-foreground: oklch(0.52 0.009 265);
-  --accent: oklch(0.945 0.008 266);
-  --accent-foreground: oklch(0.3 0.02 266);
+  --popover-foreground: oklch(0.205 0.024 152);
+
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-deep);
+  /* Letterforms only. 5.14:1 on white — see the FILL vs INK note above. */
+  --primary-ink: oklch(0.52 0.175 142.5);
+
+  --secondary: oklch(0.955 0.012 150);
+  --secondary-foreground: oklch(0.3 0.03 150);
+  --muted: oklch(0.958 0.01 150);
+  --muted-foreground: oklch(0.505 0.02 152);
+  /* Mint wash. Every hover in the app — table rows, menu items, ghost buttons —
+     resolves to this, so the green glow is inherited rather than re-declared. */
+  --accent: oklch(0.955 0.03 150);
+  --accent-foreground: oklch(0.3 0.05 150);
+
   --destructive: oklch(0.585 0.19 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.6 0.135 152);
-  --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.72 0.13 72);
+  --destructive-ink: oklch(0.505 0.195 26);
+  /* Success *is* the brand green — the brief maps success accents onto it. */
+  --success: var(--brand);
+  --success-foreground: var(--brand-deep);
+  --success-ink: var(--primary-ink);
+  --warning: oklch(0.76 0.15 70);
   --warning-foreground: oklch(0.24 0.04 72);
-  --border: oklch(0.9 0.004 265);
-  --input: oklch(0.91 0.004 265);
-  --ring: oklch(0.52 0.095 266);
+  --warning-ink: oklch(0.52 0.112 62);
 
-  /* Chart series: muted, evenly spaced in hue so they stay legible side by side
-     without any one reading as "the loud one". */
-  --chart-1: oklch(0.55 0.1 266);
-  --chart-2: oklch(0.62 0.09 205);
-  --chart-3: oklch(0.6 0.115 152);
-  --chart-4: oklch(0.72 0.12 72);
-  --chart-5: oklch(0.6 0.11 340);
+  --border: oklch(0.878 0.016 150);
+  --input: oklch(0.895 0.016 150);
+  --ring: var(--brand);
+  /* Deep-green containment edge drawn just outside a brand-green focus ring, so
+     the ring stays exactly #0AEA0A yet still separates from a light surface. */
+  --ring-edge: color-mix(in oklab, var(--brand-deep) 42%, transparent);
 
-  --sidebar: oklch(1 0 0 / 55%);
-  --sidebar-foreground: oklch(0.22 0.008 265);
-  --sidebar-border: oklch(1 0 0 / 55%);
+  /* Chart series: a single-hue luminance ramp from the brand green down to the
+     dark green. Monochrome keeps a dashboard calm, and series stay tellable
+     apart by lightness rather than by competing hues. */
+  --chart-1: var(--brand);
+  --chart-2: oklch(0.68 0.2 145);
+  --chart-3: oklch(0.55 0.16 147);
+  --chart-4: oklch(0.42 0.12 148);
+  --chart-5: oklch(0.3 0.09 144);
+
+  /* The sidebar is a dark green slab in *both* themes, so its tokens are theme
+     independent. `glass-sidebar` re-scopes the text tokens onto the panel. */
+  --sidebar: oklch(0.235 0.05 150 / 90%);
+  --sidebar-foreground: oklch(0.968 0.01 150);
+  --sidebar-muted-foreground: oklch(0.775 0.022 150);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-accent: oklch(1 0 0 / 8%);
+
+  /* Ambient wash tints. Kept as tokens so the aurora can be retuned per theme
+     without restating the three gradient geometries. */
+  --aurora-1: color-mix(in oklab, var(--brand) 17%, transparent);
+  --aurora-2: color-mix(in oklab, var(--brand-deep) 15%, transparent);
+  --aurora-3: color-mix(in oklab, var(--brand) 11%, transparent);
 
   /* Glass — tuned as a set. `bg` stays translucent enough for the aurora to
-     read through it; `highlight` is the specular top edge that sells depth. */
+     read through it; `highlight` is the specular top edge that sells depth.
+     Shadows carry a green cast so cards sit *in* the wash, not on top of it. */
   --glass-bg: oklch(1 0 0 / 62%);
   --glass-bg-strong: oklch(1 0 0 / 78%);
   --glass-bg-subtle: oklch(1 0 0 / 42%);
   --glass-border: oklch(1 0 0 / 70%);
-  --glass-hairline: oklch(0.55 0.01 265 / 12%);
+  --glass-hairline: oklch(0.45 0.03 150 / 12%);
   --glass-highlight: oklch(1 0 0 / 90%);
-  --glass-shadow: oklch(0.42 0.03 265 / 10%);
-  --glass-shadow-strong: oklch(0.38 0.03 265 / 16%);
+  --glass-shadow: oklch(0.35 0.06 150 / 10%);
+  --glass-shadow-strong: oklch(0.3 0.07 150 / 16%);
   --glass-blur: 20px;
   --glass-saturation: 180%;
 
@@ -81,48 +129,64 @@
 }
 
 .dark {
-  --background: oklch(0.155 0.004 265);
-  --foreground: oklch(0.96 0.002 260);
-  --card: oklch(0.205 0.005 265);
-  --card-foreground: oklch(0.96 0.002 260);
-  --popover: oklch(0.215 0.005 265);
-  --popover-foreground: oklch(0.96 0.002 260);
-  --primary: oklch(0.72 0.1 266);
-  --primary-foreground: oklch(0.17 0.01 265);
-  --secondary: oklch(0.26 0.006 265);
-  --secondary-foreground: oklch(0.96 0.002 260);
-  --muted: oklch(0.26 0.006 265);
-  --muted-foreground: oklch(0.71 0.008 265);
-  --accent: oklch(0.3 0.015 266);
-  --accent-foreground: oklch(0.96 0.002 260);
+  --background: oklch(0.158 0.018 152);
+  --foreground: oklch(0.962 0.008 150);
+  --card: oklch(0.208 0.02 152);
+  --card-foreground: oklch(0.962 0.008 150);
+  --popover: oklch(0.218 0.022 152);
+  --popover-foreground: oklch(0.962 0.008 150);
+
+  /* The brand green is *not* lightened for dark mode — it is already the
+     brightest thing on the panel, and altering it would break the identity. */
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-deep);
+  /* No derived green needed here: #0AEA0A is 10.8:1 on this card. */
+  --primary-ink: var(--brand);
+
+  --secondary: oklch(0.265 0.022 152);
+  --secondary-foreground: oklch(0.962 0.008 150);
+  --muted: oklch(0.265 0.022 152);
+  --muted-foreground: oklch(0.72 0.018 150);
+  --accent: oklch(0.305 0.038 150);
+  --accent-foreground: oklch(0.962 0.008 150);
+
   --destructive: oklch(0.66 0.17 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.7 0.13 152);
-  --success-foreground: oklch(0.16 0.02 152);
-  --warning: oklch(0.79 0.12 72);
+  --destructive-ink: oklch(0.7 0.17 25);
+  --success: var(--brand);
+  --success-foreground: var(--brand-deep);
+  --success-ink: var(--brand);
+  --warning: oklch(0.8 0.14 72);
   --warning-foreground: oklch(0.2 0.03 72);
+  --warning-ink: oklch(0.82 0.135 74);
+
   --border: oklch(1 0 0 / 11%);
   --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.72 0.1 266);
+  --ring: var(--brand);
+  --ring-edge: color-mix(in oklab, var(--brand-deep) 60%, transparent);
 
-  --chart-1: oklch(0.72 0.1 266);
-  --chart-2: oklch(0.74 0.09 205);
-  --chart-3: oklch(0.73 0.11 152);
-  --chart-4: oklch(0.8 0.12 72);
-  --chart-5: oklch(0.72 0.11 340);
+  /* Ramp re-tuned upward: on a dark panel the darkest steps of the light ramp
+     would sink into the background. */
+  --chart-1: var(--brand);
+  --chart-2: oklch(0.7 0.21 146);
+  --chart-3: oklch(0.58 0.152 148);
+  --chart-4: oklch(0.46 0.112 150);
+  --chart-5: oklch(0.36 0.1 145);
 
-  --sidebar: oklch(0.22 0.006 265 / 55%);
-  --sidebar-foreground: oklch(0.96 0.002 260);
-  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar: oklch(0.235 0.05 150 / 72%);
 
-  --glass-bg: oklch(0.25 0.006 265 / 55%);
-  --glass-bg-strong: oklch(0.24 0.006 265 / 78%);
-  --glass-bg-subtle: oklch(0.28 0.006 265 / 34%);
+  --aurora-1: color-mix(in oklab, var(--brand) 14%, transparent);
+  --aurora-2: color-mix(in oklab, var(--brand-deep) 60%, transparent);
+  --aurora-3: color-mix(in oklab, var(--brand) 9%, transparent);
+
+  --glass-bg: oklch(0.235 0.024 150 / 55%);
+  --glass-bg-strong: oklch(0.225 0.024 150 / 78%);
+  --glass-bg-subtle: oklch(0.27 0.024 150 / 34%);
   --glass-border: oklch(1 0 0 / 10%);
   --glass-hairline: oklch(1 0 0 / 8%);
   --glass-highlight: oklch(1 0 0 / 14%);
-  --glass-shadow: oklch(0 0 0 / 40%);
-  --glass-shadow-strong: oklch(0 0 0 / 55%);
+  --glass-shadow: oklch(0.06 0.03 150 / 45%);
+  --glass-shadow-strong: oklch(0.04 0.03 150 / 60%);
 }
 
 @theme inline {
@@ -132,8 +196,16 @@
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  /* `text-primary-ink` / `text-success-ink` etc. — the letterform half of the
+     FILL vs INK pair. Never use these as a background. */
+  --color-primary-ink: var(--primary-ink);
+  --color-success-ink: var(--success-ink);
+  --color-warning-ink: var(--warning-ink);
+  --color-destructive-ink: var(--destructive-ink);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -152,6 +224,7 @@
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
 
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -221,14 +294,18 @@
     letter-spacing: -0.026em;
   }
 
-  /* Keep focus rings visible for keyboard users without boxing every click. */
+  /* Keep focus rings visible for keyboard users without boxing every click.
+     The ring is the exact brand green; `--ring-edge` adds a deep-green
+     containment line just outside it so the neon still reads against a light
+     surface without the brand colour itself being darkened. */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
 
   ::selection {
-    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+    background-color: color-mix(in oklab, var(--brand) 26%, transparent);
+    color: var(--foreground);
   }
 }
 
@@ -292,7 +369,12 @@
 
 /* Ambient gradient wash behind auth screens and dashboard shells. Fixed so it
    stays put while content scrolls, which is what makes the glass read as glass
-   rather than as flat translucent paint. */
+   rather than as flat translucent paint.
+
+   Three very low-opacity greens only — brand at the top-left where the eye
+   lands first, dark green anchoring the top-right, brand again beneath the
+   fold. Deliberately under-saturated: this is the light the glass refracts,
+   not a background anyone should consciously notice. */
 @utility app-aurora {
   position: relative;
   isolation: isolate;
@@ -303,28 +385,52 @@
     inset: 0;
     z-index: -1;
     background:
-      radial-gradient(
-        58rem 38rem at 8% -12%,
-        color-mix(in oklab, var(--chart-1) 26%, transparent),
-        transparent 62%
-      ),
-      radial-gradient(
-        48rem 34rem at 98% 2%,
-        color-mix(in oklab, var(--chart-2) 22%, transparent),
-        transparent 60%
-      ),
-      radial-gradient(
-        44rem 38rem at 46% 112%,
-        color-mix(in oklab, var(--chart-5) 18%, transparent),
-        transparent 64%
-      );
+      radial-gradient(58rem 38rem at 8% -12%, var(--aurora-1), transparent 62%),
+      radial-gradient(48rem 34rem at 98% 2%, var(--aurora-2), transparent 60%),
+      radial-gradient(44rem 38rem at 46% 112%, var(--aurora-3), transparent 64%);
   }
+}
+
+/* The navigation slab. Dark green in both themes — it is the one surface that
+   ignores light/dark, because it is branding rather than chrome.
+
+   It re-declares the text tokens on itself rather than restyling its children:
+   `text-muted-foreground`, `hover:bg-accent`, `Badge`, and the nav links all
+   resolve through these custom properties, so scoping them here recolours the
+   entire panel for dark ground without touching a single component. */
+@utility glass-sidebar {
+  --foreground: var(--sidebar-foreground);
+  --card-foreground: var(--sidebar-foreground);
+  --muted-foreground: var(--sidebar-muted-foreground);
+  --border: var(--sidebar-border);
+  --accent: var(--sidebar-accent);
+  --accent-foreground: var(--sidebar-foreground);
+  --secondary: oklch(1 0 0 / 12%);
+  --secondary-foreground: oklch(0.94 0.012 150);
+  /* On dark ground the brand green needs no ink substitute — 5.4:1 and up. */
+  --primary-ink: var(--brand);
+  --glass-hairline: oklch(1 0 0 / 9%);
+  --glass-highlight: oklch(1 0 0 / 12%);
+
+  color: var(--sidebar-foreground);
+  background-color: var(--sidebar);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.3)) saturate(160%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.3)) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 0 oklch(1 0 0 / 12%),
+    inset 0 0 0 1px oklch(1 0 0 / 8%),
+    0 2px 4px -2px var(--glass-shadow),
+    0 20px 48px -16px var(--glass-shadow-strong),
+    0 48px 96px -40px var(--glass-shadow-strong);
 }
 
 /* ---------------------------------------------------------------------------
  * Motion
  * ------------------------------------------------------------------------- */
 
+/* Card lift. The rim warms toward the brand green on hover — the surface
+   catches a little more of the light it is already sitting in, rather than
+   gaining a border it did not have. */
 @utility hover-lift {
   transition:
     transform var(--duration-base) var(--ease-standard),
@@ -334,10 +440,11 @@
     transform: translateY(-2px);
     box-shadow:
       inset 0 1px 0 0 var(--glass-highlight),
-      inset 0 0 0 1px var(--glass-hairline),
+      inset 0 0 0 1px color-mix(in oklab, var(--brand) 22%, var(--glass-hairline)),
       0 2px 4px -2px var(--glass-shadow),
       0 16px 36px -12px var(--glass-shadow-strong),
-      0 36px 72px -32px var(--glass-shadow-strong);
+      0 36px 72px -32px var(--glass-shadow-strong),
+      0 20px 48px -28px color-mix(in oklab, var(--brand) 38%, transparent);
   }
 }
 
@@ -427,6 +534,14 @@
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     background-color: var(--card);
+  }
+
+  /* The sidebar keeps its brand identity when flattened — it just stops being
+     translucent. Opaque form of the same dark green. */
+  .glass-sidebar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: oklch(0.235 0.05 150);
   }
 }
 

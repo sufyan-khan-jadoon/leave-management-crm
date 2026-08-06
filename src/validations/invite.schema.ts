@@ -1,11 +1,24 @@
 import { z } from "zod";
 
+import { INVITE_ROLE_VALUES } from "@/lib/enums";
+
+/** Which role a key grants. Never widened to SUPER_ADMIN — see `InviteKey`. */
+export const inviteRoleSchema = z.enum(INVITE_ROLE_VALUES);
+
 export const issueInviteSchema = z.object({
+  role: inviteRoleSchema,
   /** Optional note of who the key is for, so a list of keys stays readable. */
   label: z.string().trim().max(80, "Keep the note under 80 characters").optional(),
 });
 
 export type IssueInviteInput = z.infer<typeof issueInviteSchema>;
+
+/** Narrows a list to one role; omitted means every role the viewer may see. */
+export const listInvitesSchema = z.object({ role: inviteRoleSchema.optional() });
+
+export const invitePermissionSchema = z.object({ canInviteEmployees: z.boolean() });
+
+export type InvitePermissionInput = z.infer<typeof invitePermissionSchema>;
 
 export const verifyInviteSchema = z.object({
   inviteKey: z.string().trim().min(1, "Enter your invite key").max(40, "That doesn't look like an invite key"),
