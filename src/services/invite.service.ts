@@ -112,21 +112,33 @@ export const inviteService = {
       : inviteRepository.list({ issuedById: viewer.id, role: Role.EMPLOYEE });
   },
 
-  async revoke(id: string, viewer: { id: string; role: Role }) {
+  /**
+   * Deletes a key nobody redeemed.
+   *
+   * Removed outright rather than flagged: an unredeemed key has no history worth
+   * keeping — nobody joined through it — and leaving a tombstone behind only
+   * grows a list whose whole job is to show what is currently outstanding. A key
+   * that *was* redeemed is refused, because it is the record of how one of your
+   * people got in.
+   *
+   * Open to whoever can already see the key, which means administrators can
+   * clear up after themselves without asking.
+   */
+  async discard(id: string, viewer: { id: string; role: Role }) {
     const invite = await inviteRepository.findById(id);
     if (!invite) throw new NotFoundError("That invite key no longer exists.");
 
     // Scoped the same way as `list`, so a key an admin cannot see is also a key
-    // they cannot revoke — and the wording does not confirm it exists.
+    // they cannot delete — and the wording does not confirm it exists.
     if (!isSuperAdminRole(viewer.role) && (invite.issuedById !== viewer.id || invite.role !== Role.EMPLOYEE)) {
       throw new NotFoundError("That invite key no longer exists.");
     }
 
     if (invite.redeemedAt) {
-      throw new ConflictError("That key has already been used and cannot be revoked.");
+      throw new ConflictError("That key has been used to create an account and cannot be deleted.");
     }
 
-    return inviteRepository.revoke(id);
+    return inviteRepository.delete(id);
   },
 
   /**

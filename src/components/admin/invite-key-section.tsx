@@ -107,15 +107,15 @@ export function InviteKeySection({
     }
   }
 
-  async function revoke(id: string) {
+  async function discard(id: string) {
     setBusy(id);
 
     try {
       await apiClient.delete(`/api/admin/invites/${id}`);
-      toast.success("Key revoked.");
+      toast.success("Key deleted.");
       await onChanged();
     } catch (error) {
-      toast.error(error instanceof ApiClientError ? error.message : "Couldn't revoke that key.");
+      toast.error(error instanceof ApiClientError ? error.message : "Couldn't delete that key.");
     } finally {
       setBusy(null);
     }
@@ -227,6 +227,9 @@ export function InviteKeySection({
             {invites.map((invite) => {
               const state = keyState(invite);
               const usable = !invite.revokedAt && !invite.redeemedAt;
+              // Anything nobody joined through can be cleared away — including
+              // keys already revoked, which otherwise had no way out of here.
+              const deletable = !invite.redeemedAt;
 
               return (
                 <li key={invite.id} className="flex flex-wrap items-center gap-3 py-3">
@@ -253,15 +256,15 @@ export function InviteKeySection({
                     {copied === invite.key ? "Copied" : "Copy"}
                   </Button>
 
-                  {usable && (
+                  {deletable && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => revoke(invite.id)}
+                      onClick={() => discard(invite.id)}
                       disabled={busy === invite.id}
                     >
                       <Trash2 className="size-4" />
-                      Revoke
+                      Delete
                     </Button>
                   )}
                 </li>

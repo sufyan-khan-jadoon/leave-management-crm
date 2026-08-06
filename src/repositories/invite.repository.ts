@@ -79,6 +79,11 @@ export const inviteRepository = {
     return result.count === 1;
   },
 
+  /** Removes a key outright. Only ever called for keys nobody redeemed. */
+  delete(id: string) {
+    return prisma.inviteKey.delete({ where: { id }, select: inviteSelect });
+  },
+
   revoke(id: string) {
     return prisma.inviteKey.update({
       where: { id },
