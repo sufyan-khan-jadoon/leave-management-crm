@@ -5,9 +5,11 @@ import { Check, Copy, KeyRound, Lock, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shared/empty-state";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { INVITE_TTL_DAYS } from "@/lib/constants";
 import { formatDateTime } from "@/lib/date";
@@ -25,20 +27,15 @@ export type InviteKey = {
   redeemedBy: { id: string; name: string; email: string; status: string } | null;
 };
 
-/** Wording differs per role; the mechanism behind them is identical. */
-const COPY: Record<InviteRole, { title: string; description: string; empty: string; placeholder: string }> = {
-  [ROLE.EMPLOYEE]: {
-    title: "Employee keys",
-    description: `Each key lets one person join as an employee and expires after ${INVITE_TTL_DAYS} days. They can sign in as soon as they verify their email — no approval needed.`,
-    empty: "Create one to invite your first employee.",
-    placeholder: "Who is this for? (optional)",
-  },
-  [ROLE.ADMIN]: {
-    title: "Administrator keys",
-    description: `Each key admits one administrator and expires after ${INVITE_TTL_DAYS} days. Whoever uses it still needs your approval before they can sign in.`,
-    empty: "Create one to invite your first administrator.",
-    placeholder: "Who is this for? (optional)",
-  },
+const ROLE_LABEL: Record<InviteRole, string> = {
+  [ROLE.EMPLOYEE]: "Employee",
+  [ROLE.ADMIN]: "Administrator",
+};
+
+/** What the holder gets, spelled out so the choice is not guesswork. */
+const ROLE_EFFECT: Record<InviteRole, string> = {
+  [ROLE.EMPLOYEE]: "Joins as an employee and can sign in as soon as their email is verified.",
+  [ROLE.ADMIN]: "Joins as an administrator, then waits for your approval before signing in.",
 };
 
 function keyState(invite: InviteKey): { label: string; tone: string } {
@@ -49,29 +46,30 @@ function keyState(invite: InviteKey): { label: string; tone: string } {
 }
 
 type InviteKeySectionProps = {
-  role: InviteRole;
-  /** The full list; this component picks out the keys for its own role. */
+  /**
+   * Roles this viewer may hand out. Two shows a picker; one issues that role
+   * directly; none locks the form. The server enforces this either way — what
+   * is rendered only ever reflects the decision, never makes it.
+   */
+  roles: InviteRole[];
   invites: InviteKey[];
-  /** False hides the form. The server enforces this regardless of what's shown. */
-  canIssue: boolean;
   onChanged: () => void | Promise<void>;
 };
 
 /**
- * Issue-and-manage panel for invite keys of one role.
+ * Issue-and-manage panel for invite keys.
  *
- * Shared by the super admin's access panel — which renders one of these per
- * role — and the employees screen, where an admin gets the employee one alone.
- * Which roles a viewer may actually issue is settled server-side; rendering this
- * only ever reflects that decision.
+ * The role is chosen at the moment of creation and travels on the key, so
+ * whoever redeems it becomes exactly what was picked here — registration reads
+ * the role off the key rather than off the sign-up form.
  */
-export function InviteKeySection({ role, invites, canIssue, onChanged }: InviteKeySectionProps) {
+export function InviteKeySection({ roles, invites, onChanged }: InviteKeySectionProps) {
+  const [role, setRole] = useState<InviteRole>(roles[0] ?? ROLE.EMPLOYEE);
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  const copy = COPY[role];
-  const rows = invites.filter((invite) => invite.role === role);
+  const canIssue = roles.length > 0;
 
   async function issue() {
     setBusy("issue");
@@ -79,7 +77,7 @@ export function InviteKeySection({ role, invites, canIssue, onChanged }: InviteK
     try {
       await apiClient.post("/api/admin/invites", { role, label: label.trim() || undefined });
       setLabel("");
-      toast.success(role === ROLE.ADMIN ? "Administrator key created." : "Employee key created.");
+      toast.success(`${ROLE_LABEL[role]} key created.`);
       await onChanged();
     } catch (error) {
       toast.error(error instanceof ApiClientError ? error.message : "Couldn't create a key.");
@@ -117,25 +115,49 @@ export function InviteKeySection({ role, invites, canIssue, onChanged }: InviteK
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <KeyRound className="text-primary-ink size-4" aria-hidden />
-          {copy.title}
+          Invite keys
         </CardTitle>
-        <CardDescription>{copy.description}</CardDescription>
+        <CardDescription>
+          Pick what the holder should become, create the key, and send it to them. Whoever signs up with it
+          gets that role automatically. Each key works once and expires after {INVITE_TTL_DAYS} days.
+        </CardDescription>
       </CardHeader>
+
       <CardContent className="space-y-4">
         {canIssue ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder={copy.placeholder}
-              maxLength={80}
-              className="max-w-xs"
-              aria-label={`Note for this ${role === ROLE.ADMIN ? "administrator" : "employee"} key`}
-            />
-            <Button onClick={issue} disabled={busy === "issue"} loading={busy === "issue"}>
-              {busy !== "issue" && <Plus className="size-4" />}
-              Create key
-            </Button>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {roles.length > 1 && (
+                <Select value={role} onValueChange={(value) => setRole(value as InviteRole)}>
+                  <SelectTrigger className="w-44" aria-label="Role this key grants">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roles.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {ROLE_LABEL[option]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              <Input
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                placeholder="Who is this for? (optional)"
+                maxLength={80}
+                className="max-w-xs"
+                aria-label="Note for this key"
+              />
+
+              <Button onClick={issue} disabled={busy === "issue"} loading={busy === "issue"}>
+                {busy !== "issue" && <Plus className="size-4" />}
+                Create key
+              </Button>
+            </div>
+
+            <p className="text-muted-foreground text-xs">{ROLE_EFFECT[role]}</p>
           </div>
         ) : (
           <p className="text-muted-foreground glass-inset rounded-lg p-3 text-sm">
@@ -144,23 +166,30 @@ export function InviteKeySection({ role, invites, canIssue, onChanged }: InviteK
           </p>
         )}
 
-        {rows.length === 0 ? (
+        {invites.length === 0 ? (
           <EmptyState
             icon={KeyRound}
             title="No keys yet"
-            description={canIssue ? copy.empty : "Keys you issue will appear here."}
+            description={canIssue ? "Create one to invite your first person." : "Keys you issue will appear here."}
             inset={false}
           />
         ) : (
           <ul className="divide-border/60 divide-y">
-            {rows.map((invite) => {
+            {invites.map((invite) => {
               const state = keyState(invite);
               const usable = !invite.revokedAt && !invite.redeemedAt;
 
               return (
                 <li key={invite.id} className="flex flex-wrap items-center gap-3 py-3">
                   <div className="mr-auto min-w-0">
-                    <p className="font-mono text-sm font-medium break-all">{invite.key}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-mono text-sm font-medium break-all">{invite.key}</p>
+                      {/* The role is the whole point of the key, so it is stated
+                          on the row rather than implied by which list it is in. */}
+                      <Badge variant={invite.role === ROLE.ADMIN ? "warning" : "success"}>
+                        {ROLE_LABEL[invite.role]}
+                      </Badge>
+                    </div>
                     <p className="text-muted-foreground truncate text-xs">
                       <span className={state.tone}>{state.label}</span>
                       {invite.label ? ` · ${invite.label}` : ""}

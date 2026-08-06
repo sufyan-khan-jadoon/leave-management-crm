@@ -128,10 +128,9 @@ export function AccessPanel() {
         </CardContent>
       </Card>
 
-      {/* The super admin may always issue, so `canIssue` is fixed here rather
-          than read back from the API. */}
-      <InviteKeySection role={ROLE.EMPLOYEE} invites={invites} canIssue onChanged={load} />
-      <InviteKeySection role={ROLE.ADMIN} invites={invites} canIssue onChanged={load} />
+      {/* The super admin may issue either role, so both are offered in the
+          picker rather than split across two panels. */}
+      <InviteKeySection roles={[ROLE.EMPLOYEE, ROLE.ADMIN]} invites={invites} onChanged={load} />
 
       <AdminPermissions admins={admins} onChanged={load} />
     </div>

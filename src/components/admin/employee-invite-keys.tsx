@@ -28,12 +28,9 @@ export function EmployeeInviteKeys() {
     );
   }
 
-  return (
-    <InviteKeySection
-      role={ROLE.EMPLOYEE}
-      invites={data?.items ?? []}
-      canIssue={data?.canIssue.employee ?? false}
-      onChanged={refresh}
-    />
-  );
+  // An admin may only ever hand out employee keys, so the picker collapses to
+  // nothing and the panel issues that role directly.
+  const roles = data?.canIssue.employee ? [ROLE.EMPLOYEE] : [];
+
+  return <InviteKeySection roles={roles} invites={data?.items ?? []} onChanged={refresh} />;
 }
