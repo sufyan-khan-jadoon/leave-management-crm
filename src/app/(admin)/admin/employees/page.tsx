@@ -23,12 +23,17 @@ export default async function AdminEmployeesPage() {
         title={isSuperAdmin ? "People" : "Employees"}
         description={
           isSuperAdmin
-            ? "Invite new people, and manage employees and administrators."
+            ? "Search, edit, suspend or remove employees and administrators."
             : "Invite new people, then search, edit, suspend or remove them."
         }
       />
       <div className="space-y-4">
-        <EmployeeInviteKeys />
+        {/* Only for administrators, whose sole route to issuing a key this is.
+            The super admin already has it on Access keys, alongside the
+            administrator keys — repeating it here would be the same panel
+            twice. */}
+        {!isSuperAdmin && <EmployeeInviteKeys />}
+
         {isSuperAdmin ? <PeopleManager /> : <EmployeeManager role={ROLE.EMPLOYEE} />}
       </div>
     </>
