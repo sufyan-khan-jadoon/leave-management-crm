@@ -31,6 +31,28 @@ transitively, including `src/lib/auth/auth.config.ts` — keep Prisma and bcrypt
 API routes are excluded from the middleware matcher on purpose: they must return 401/403 JSON via
 `requireUser()` / `requireAdmin()`, not redirect a `fetch` to an HTML page.
 
+## Registration is invite-only
+
+Nobody self-registers. Every account starts from an `InviteKey`, and **the key's `role` is the
+only thing that decides what the holder becomes** — `auth.service.register` reads it off the key,
+never from the request body, so posting an employee key to the admin form still yields an employee.
+
+| Key role   | Issued by                | Resulting account                          |
+| ---------- | ------------------------ | ------------------------------------------ |
+| `EMPLOYEE` | any admin or super admin | `ACTIVE` once the email is verified         |
+| `ADMIN`    | super admin only         | `PENDING_APPROVAL` until the super admin decides |
+
+`SUPER_ADMIN` is deliberately not issuable — that role is seeded, so no key can mint another owner.
+
+Both scoping rules live in `invite.service.ts` and must stay in step: an admin sees and revokes
+only the `EMPLOYEE` keys they issued, and `revoke` reports anything outside that as *not found*
+rather than *forbidden*, so it cannot be used to probe for keys the caller may not see. The route
+handlers guard with the looser `requireAdmin` on purpose — which role a caller may actually grant
+is settled in the service, against the role in the body.
+
+`InviteKeySection` is shared by the super admin's access panel and the Employees screen; give it a
+role and a list and it handles issuing, copying and revoking.
+
 ## Brand colour — the FILL vs INK rule
 
 The Zovencia palette is fixed: **#0AEA0A** (brand green), **#023506** (dark green), black, white.

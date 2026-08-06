@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { EmployeeInviteKeys } from "@/components/admin/employee-invite-keys";
 import { EmployeeManager } from "@/components/admin/employee-manager";
 import { PageHeader } from "@/components/layout/page-header";
 
@@ -10,9 +11,12 @@ export default function AdminEmployeesPage() {
     <>
       <PageHeader
         title="Employees"
-        description="Search, edit, suspend or remove people across the organisation."
+        description="Invite new people, then search, edit, suspend or remove them."
       />
-      <EmployeeManager />
+      <div className="space-y-4">
+        <EmployeeInviteKeys />
+        <EmployeeManager />
+      </div>
     </>
   );
 }

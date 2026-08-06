@@ -2,8 +2,9 @@ import { randomBytes } from "node:crypto";
 
 import { EmployeeStatus, Role } from "@prisma/client";
 
-import { ADMIN_INVITE_TTL_DAYS } from "@/lib/constants";
-import { ConflictError, NotFoundError, ValidationError } from "@/lib/errors";
+import { INVITE_TTL_DAYS } from "@/lib/constants";
+import { isSuperAdminRole } from "@/lib/enums";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { employeeRepository } from "@/repositories/employee.repository";
 import { inviteRepository } from "@/repositories/invite.repository";
 import { emailService } from "@/services/email/email.service";
@@ -20,21 +21,49 @@ function generateKey(): string {
   return (chars.match(/.{1,4}/g) ?? [chars]).join("-");
 }
 
+/**
+ * Who may hand out which key.
+ *
+ * An administrator can onboard staff but cannot mint peers — promoting someone
+ * to admin stays with the super admin, so a single compromised admin account
+ * cannot quietly widen its own circle.
+ */
+function assertMayIssue(issuer: { role: Role }, role: Role): void {
+  if (role === Role.ADMIN && !isSuperAdminRole(issuer.role)) {
+    throw new ForbiddenError("Only a super administrator can invite administrators.");
+  }
+}
+
 export const inviteService = {
-  /** Issues a single-use key for one prospective administrator. */
-  async issue(superAdminId: string, label: string | null) {
-    const expiresAt = new Date(Date.now() + ADMIN_INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
+  /** Issues a single-use key granting one role to one person. */
+  async issue(issuer: { id: string; role: Role }, role: Role, label: string | null) {
+    assertMayIssue(issuer, role);
 
-    return inviteRepository.create({ key: generateKey(), label, expiresAt, issuedById: superAdminId });
+    const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+    return inviteRepository.create({ key: generateKey(), role, label, expiresAt, issuedById: issuer.id });
   },
 
-  list(superAdminId: string) {
-    return inviteRepository.list(superAdminId);
+  /**
+   * The super admin sees every key, since they own onboarding for the whole
+   * organisation. An admin sees only the employee keys they issued themselves —
+   * enough to chase up an invite they sent, without exposing admin onboarding.
+   */
+  list(viewer: { id: string; role: Role }) {
+    return isSuperAdminRole(viewer.role)
+      ? inviteRepository.list()
+      : inviteRepository.list({ issuedById: viewer.id, role: Role.EMPLOYEE });
   },
 
-  async revoke(id: string) {
+  async revoke(id: string, viewer: { id: string; role: Role }) {
     const invite = await inviteRepository.findById(id);
     if (!invite) throw new NotFoundError("That invite key no longer exists.");
+
+    // Scoped the same way as `list`, so a key an admin cannot see is also a key
+    // they cannot revoke — and the wording does not confirm it exists.
+    if (!isSuperAdminRole(viewer.role) && (invite.issuedById !== viewer.id || invite.role !== Role.EMPLOYEE)) {
+      throw new NotFoundError("That invite key no longer exists.");
+    }
 
     if (invite.redeemedAt) {
       throw new ConflictError("That key has already been used and cannot be revoked.");
@@ -54,7 +83,7 @@ export const inviteService = {
     const unusable = !invite || invite.revokedAt || invite.redeemedAt || invite.expiresAt <= new Date();
 
     if (unusable) {
-      throw new ValidationError("That invite key is not valid. Ask your super administrator for a new one.");
+      throw new ValidationError("That invite key is not valid. Ask your administrator for a new one.");
     }
 
     return invite!;
@@ -65,7 +94,7 @@ export const inviteService = {
     const claimed = await inviteRepository.redeem(inviteId, employeeId);
 
     if (!claimed) {
-      throw new ValidationError("That invite key is not valid. Ask your super administrator for a new one.");
+      throw new ValidationError("That invite key is not valid. Ask your administrator for a new one.");
     }
   },
 

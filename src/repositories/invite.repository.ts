@@ -1,11 +1,12 @@
-import type { AdminInviteKey } from "@prisma/client";
+import type { InviteKey, Role } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
-/** The key itself is only ever returned to the super admin who issued it. */
+/** The key itself is only ever returned to someone allowed to issue keys. */
 const inviteSelect = {
   id: true,
   key: true,
+  role: true,
   label: true,
   expiresAt: true,
   revokedAt: true,
@@ -17,6 +18,7 @@ const inviteSelect = {
 export type InviteKeyDto = {
   id: string;
   key: string;
+  role: Role;
   label: string | null;
   expiresAt: Date;
   revokedAt: Date | null;
@@ -26,21 +28,26 @@ export type InviteKeyDto = {
 };
 
 export const inviteRepository = {
-  create(data: { key: string; label: string | null; expiresAt: Date; issuedById: string }) {
-    return prisma.adminInviteKey.create({ data, select: inviteSelect });
+  create(data: { key: string; role: Role; label: string | null; expiresAt: Date; issuedById: string }) {
+    return prisma.inviteKey.create({ data, select: inviteSelect });
   },
 
-  findByKey(key: string): Promise<AdminInviteKey | null> {
-    return prisma.adminInviteKey.findUnique({ where: { key } });
+  findByKey(key: string): Promise<InviteKey | null> {
+    return prisma.inviteKey.findUnique({ where: { key } });
   },
 
-  findById(id: string): Promise<AdminInviteKey | null> {
-    return prisma.adminInviteKey.findUnique({ where: { id } });
+  findById(id: string): Promise<InviteKey | null> {
+    return prisma.inviteKey.findUnique({ where: { id } });
   },
 
-  list(issuedById: string) {
-    return prisma.adminInviteKey.findMany({
-      where: { issuedById },
+  /**
+   * Both filters are optional and compose: the caller decides how wide the view
+   * is, so scoping stays an authorisation decision made in the service rather
+   * than something this layer assumes.
+   */
+  list(filter: { issuedById?: string; role?: Role } = {}) {
+    return prisma.inviteKey.findMany({
+      where: { issuedById: filter.issuedById, role: filter.role },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: inviteSelect,
@@ -55,7 +62,7 @@ export const inviteRepository = {
    * single-use key cannot admit two people.
    */
   async redeem(id: string, employeeId: string): Promise<boolean> {
-    const result = await prisma.adminInviteKey.updateMany({
+    const result = await prisma.inviteKey.updateMany({
       where: { id, redeemedAt: null, revokedAt: null },
       data: { redeemedAt: new Date(), redeemedById: employeeId },
     });
@@ -64,7 +71,7 @@ export const inviteRepository = {
   },
 
   revoke(id: string) {
-    return prisma.adminInviteKey.update({
+    return prisma.inviteKey.update({
       where: { id },
       data: { revokedAt: new Date() },
       select: inviteSelect,

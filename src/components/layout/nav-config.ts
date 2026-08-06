@@ -24,10 +24,14 @@ export const ADMIN_NAV: NavItem[] = [
   { href: ROUTES.adminLeaves, label: "Leave requests", icon: CalendarDays },
 ];
 
-/** The access panel belongs to the super admin alone. */
+/**
+ * The access panel belongs to the super admin alone: it is the only place
+ * administrator keys can be issued. Admins invite employees from the Employees
+ * screen instead.
+ */
 export const SUPER_ADMIN_NAV: NavItem[] = [
   ...ADMIN_NAV,
-  { href: ROUTES.adminAccess, label: "Admin access", icon: KeyRound },
+  { href: ROUTES.adminAccess, label: "Access keys", icon: KeyRound },
 ];
 
 export function isActiveRoute(pathname: string, item: NavItem): boolean {

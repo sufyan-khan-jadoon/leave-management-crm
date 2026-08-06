@@ -18,6 +18,9 @@ export async function POST(request: Request) {
 
     const invite = await inviteService.assertUsable(inviteKey);
 
-    return ok({ valid: true, label: invite.label });
+    // The role is returned so the form can say what the key grants before anyone
+    // fills it in. It is presentation only — registration reads the role from
+    // the key again server-side and never trusts what comes back here.
+    return ok({ valid: true, role: invite.role, label: invite.label });
   });
 }

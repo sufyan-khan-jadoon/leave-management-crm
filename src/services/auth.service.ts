@@ -89,7 +89,7 @@ export const authService = {
    * than leaking that the address is taken.
    */
   async register(input: RegisterInput): Promise<{ email: string; pendingApproval: boolean }> {
-    const inviteKey = input.inviteKey?.trim().toUpperCase() || undefined;
+    const inviteKey = input.inviteKey.trim().toUpperCase();
     const existing = await employeeRepository.findByEmail(input.email);
 
     if (existing) {
@@ -101,29 +101,32 @@ export const authService = {
       return { email: existing.email, pendingApproval: existing.status === EmployeeStatus.PENDING_APPROVAL };
     }
 
-    // Checked before the account exists so an invalid key never leaves a
-    // half-registered row behind.
-    const invite = inviteKey ? await inviteService.assertUsable(inviteKey) : null;
+    // Registration is invite-only for every role. Checked before the account
+    // exists so an invalid key never leaves a half-registered row behind.
+    const invite = await inviteService.assertUsable(inviteKey);
+
+    // The role comes off the key, never off the request body — which is what
+    // stops an employee key posted to the admin form from minting an admin.
+    const pendingApproval = invite.role === Role.ADMIN;
 
     const password = await hashPassword(input.password);
     const employee = await employeeRepository.create({
       name: input.name,
       email: input.email,
       password,
-      role: invite ? Role.ADMIN : Role.EMPLOYEE,
-      // An invited admin is inert until the super admin decides; an employee is
-      // active the moment they verify their address.
-      status: invite ? EmployeeStatus.PENDING_APPROVAL : EmployeeStatus.ACTIVE,
+      role: invite.role,
+      // An invited admin is inert until the super admin decides; an invited
+      // employee is active the moment they verify their address, because
+      // issuing them a key was already the decision.
+      status: pendingApproval ? EmployeeStatus.PENDING_APPROVAL : EmployeeStatus.ACTIVE,
     });
 
-    if (invite) {
-      await inviteService.redeem(invite.id, employee.id);
-    }
+    await inviteService.redeem(invite.id, employee.id);
 
     await emailService.sendWelcome(employee.email, employee.name);
     await this.issueOtp(employee.id, employee.email, employee.name);
 
-    return { email: employee.email, pendingApproval: Boolean(invite) };
+    return { email: employee.email, pendingApproval };
   },
 
   /** Issues a fresh OTP for one purpose, invalidating outstanding codes of it. */

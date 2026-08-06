@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { KeyRound } from "lucide-react";
 
-import { AdminRegisterForm } from "@/components/auth/admin-register-form";
+import { InviteRegisterForm } from "@/components/auth/invite-register-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROUTES } from "@/lib/constants";
 
@@ -24,7 +24,7 @@ export default function AdminRegisterPage() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <AdminRegisterForm />
+        <InviteRegisterForm variant="admin" />
 
         <p className="text-muted-foreground text-center text-sm">
           Not an administrator?{" "}

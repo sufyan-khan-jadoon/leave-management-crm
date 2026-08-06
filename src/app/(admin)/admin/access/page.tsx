@@ -7,7 +7,7 @@ import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
 import { isSuperAdminRole } from "@/lib/enums";
 
-export const metadata: Metadata = { title: "Admin access" };
+export const metadata: Metadata = { title: "Access keys" };
 
 export default async function AdminAccessPage() {
   const session = await auth();
@@ -21,8 +21,8 @@ export default async function AdminAccessPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
-        title="Admin access"
-        description="Invite administrators and approve their requests."
+        title="Access keys"
+        description="Invite employees and administrators, and approve administrator requests."
       />
       <AccessPanel />
     </div>

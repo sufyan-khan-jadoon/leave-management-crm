@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, KeyRound } from "lucide-react";
+import { ArrowRight, CheckCircle2, KeyRound, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 import { RegisterForm } from "@/components/auth/register-form";
@@ -11,19 +11,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
+import { ROLE } from "@/lib/enums";
+
+type Accepted = { key: string; role: string };
 
 /**
  * Two steps: prove the key, then sign up.
  *
  * Checking first means an invalid key is caught before anyone fills in a whole
  * form. It is a convenience only — registration re-checks and redeems the key
- * server-side, so nothing here is trusted.
+ * server-side, so nothing here is trusted, including the role it reports.
+ *
+ * Both sign-up screens share this: registration is invite-only for everyone now,
+ * and the key alone decides which role it grants. `variant` therefore changes
+ * only the wording and the sign-in link, never what the holder becomes.
  */
-export function AdminRegisterForm() {
+export function InviteRegisterForm({ variant = "employee" }: { variant?: "employee" | "admin" }) {
   const [inviteKey, setInviteKey] = useState("");
-  const [accepted, setAccepted] = useState<string | null>(null);
+  const [accepted, setAccepted] = useState<Accepted | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const isAdminScreen = variant === "admin";
 
   async function proceed(event: React.FormEvent) {
     event.preventDefault();
@@ -35,9 +44,9 @@ export function AdminRegisterForm() {
     setError(null);
 
     try {
-      await apiClient.post("/api/auth/verify-invite", { inviteKey: key });
+      const result = await apiClient.post<{ role: string }>("/api/auth/verify-invite", { inviteKey: key });
 
-      setAccepted(key);
+      setAccepted({ key, role: result.role });
       toast.success("Key accepted — now create your account.");
     } catch (caught) {
       const message =
@@ -73,7 +82,9 @@ export function AdminRegisterForm() {
             <p className="text-destructive-ink text-xs font-medium">{error}</p>
           ) : (
             <p className="text-muted-foreground text-xs">
-              Ask your super administrator for a key. Each one works once.
+              {isAdminScreen
+                ? "Ask your super administrator for a key. Each one works once."
+                : "Ask your administrator for a key. Each one works once."}
             </p>
           )}
         </div>
@@ -86,20 +97,25 @@ export function AdminRegisterForm() {
 
         <p className="text-muted-foreground text-center text-sm">
           Already registered?{" "}
-          <Link href={ROUTES.adminLogin} className="text-primary-ink font-medium hover:underline">
-            Administrator sign in
+          <Link
+            href={isAdminScreen ? ROUTES.adminLogin : ROUTES.login}
+            className="text-primary-ink font-medium hover:underline"
+          >
+            {isAdminScreen ? "Administrator sign in" : "Sign in"}
           </Link>
         </p>
       </form>
     );
   }
 
+  const grantsAdmin = accepted.role === ROLE.ADMIN;
+
   return (
     <div className="space-y-4">
-      <div className="bg-success/8 text-muted-foreground flex items-center gap-2 rounded-lg p-3 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--success)_28%,transparent)]">
+      <div className="bg-brand/8 text-muted-foreground flex items-center gap-2 rounded-lg p-3 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--brand)_28%,transparent)]">
         <CheckCircle2 className="text-success-ink size-4 shrink-0" aria-hidden />
         <span className="min-w-0">
-          Key verified — <span className="text-foreground font-mono">{accepted}</span>
+          Key verified — <span className="text-foreground font-mono">{accepted.key}</span>
         </span>
         <Button
           type="button"
@@ -115,7 +131,17 @@ export function AdminRegisterForm() {
         </Button>
       </div>
 
-      <RegisterForm variant="admin" inviteKey={accepted} />
+      {/* Said plainly because the key, not the page, decides the role — someone
+          who opened the employee screen with an admin key should not be surprised
+          by an approval step, and vice versa. */}
+      <p className="text-muted-foreground flex items-center gap-2 text-xs">
+        <ShieldCheck className="text-primary-ink size-3.5 shrink-0" aria-hidden />
+        {grantsAdmin
+          ? "This key creates an administrator account, which a super administrator must approve."
+          : "This key creates an employee account. You can sign in as soon as your email is verified."}
+      </p>
+
+      <RegisterForm variant={grantsAdmin ? "admin" : "employee"} inviteKey={accepted.key} />
     </div>
   );
 }

@@ -28,6 +28,14 @@ export function isSuperAdminRole(role: Role | string): boolean {
   return role === ROLE.SUPER_ADMIN;
 }
 
+/**
+ * The roles an invite key may grant. SUPER_ADMIN is absent on purpose: that role
+ * is seeded, never invited, so no key can ever mint another owner.
+ */
+export const INVITE_ROLE_VALUES = [ROLE.EMPLOYEE, ROLE.ADMIN] as const;
+
+export type InviteRole = (typeof INVITE_ROLE_VALUES)[number];
+
 export const EMPLOYEE_STATUS = {
   ACTIVE: "ACTIVE",
   SUSPENDED: "SUSPENDED",
