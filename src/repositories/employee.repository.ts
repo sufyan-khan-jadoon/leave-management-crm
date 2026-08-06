@@ -165,9 +165,9 @@ export const employeeRepository = {
   },
 
   /** Distinct department values currently in use, for filter dropdowns. */
-  async distinctDepartments(): Promise<string[]> {
+  async distinctDepartments(role: Role = Role.EMPLOYEE): Promise<string[]> {
     const rows = await prisma.employee.findMany({
-      where: { department: { not: null }, role: Role.EMPLOYEE },
+      where: { department: { not: null }, role },
       select: { department: true },
       distinct: ["department"],
       orderBy: { department: "asc" },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { EmployeeStatus } from "@prisma/client";
+import type { EmployeeStatus, Role } from "@prisma/client";
 
 import { useApiResource } from "@/hooks/use-api-resource";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
@@ -26,13 +26,19 @@ const INITIAL: EmployeeFilters = {
   page: 1,
 };
 
-export function useEmployeeTable(pageSize = 10) {
+/**
+ * `role` selects which population is listed. Changing it swaps the query path,
+ * which re-fetches through `useApiResource` — so the two tabs never show each
+ * other's rows mid-flight.
+ */
+export function useEmployeeTable(pageSize = 10, role: Role = "EMPLOYEE") {
   const [filters, setFilters] = useState<EmployeeFilters>(INITIAL);
   const debouncedSearch = useDebouncedValue(filters.search.trim(), 350);
 
   const path = useMemo(
     () =>
       `/api/admin/employees${toQueryString({
+        role,
         search: debouncedSearch || undefined,
         status: filters.status === "ALL" ? undefined : filters.status,
         department: filters.department === "ALL" ? undefined : filters.department,
@@ -41,7 +47,16 @@ export function useEmployeeTable(pageSize = 10) {
         page: filters.page,
         pageSize,
       })}`,
-    [debouncedSearch, filters.status, filters.department, filters.sortBy, filters.sortDir, filters.page, pageSize],
+    [
+      role,
+      debouncedSearch,
+      filters.status,
+      filters.department,
+      filters.sortBy,
+      filters.sortDir,
+      filters.page,
+      pageSize,
+    ],
   );
 
   const resource = useApiResource<PaginatedEmployees>(path);

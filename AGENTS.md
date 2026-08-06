@@ -58,6 +58,29 @@ the UI can hide a form it may not submit; it mirrors the real check, never repla
 
 `InviteKeySection` is shared by the super admin's access panel and the Employees screen.
 
+## Who may act on whose account
+
+`assertMayManage` in `employee.service.ts` is the single seniority rule, applied to **every** read
+and write of another account — `adminUpdate`, `setStatus`, `remove`, and `byIdForActor`:
+
+- nobody acts on their own account here (that is what `/profile` is for)
+- an admin manages `EMPLOYEE` accounts only
+- `ADMIN` accounts answer to the super admin alone
+- `SUPER_ADMIN` is unmanageable from the dashboard by anyone, itself included — suspending or
+  deleting it would leave nobody able to approve administrators
+
+Editing counts as a privileged action because changing an email address is the first half of an
+account takeover: the new address can then be sent a password reset. Refusals on reads are phrased
+as *not found*, so the endpoints cannot be used to discover which ids belong to administrators.
+
+Listing is gated in the route handler — `role=ADMIN` on `/api/admin/employees` requires super
+admin — because the roster is the route to every action on those accounts. `SUPER_ADMIN` is not a
+value `employeeQuerySchema` accepts, so it can never be listed.
+
+`setStatus` only toggles accounts that are already `ACTIVE` or `SUSPENDED`. An administrator in
+`PENDING_APPROVAL` or `REJECTED` belongs to the approval flow, which also checks the address was
+verified — a status toggle would route around that.
+
 ## Administrators take leave too
 
 An admin is an `Employee` with `role = ADMIN`, and draws the same `MONTHLY_LEAVE_ALLOWANCE`. The

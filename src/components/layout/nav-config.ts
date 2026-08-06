@@ -51,7 +51,11 @@ export const ADMIN_NAV: NavItem[] = [
 // ADMIN_NAV without a group still reaches the super admin instead of silently
 // vanishing from their sidebar.
 export const SUPER_ADMIN_NAV: NavItem[] = [
-  ...ADMIN_NAV.filter((item) => item.group !== "Personal"),
+  ...ADMIN_NAV.filter((item) => item.group !== "Personal").map((item) =>
+    // The same screen carries an extra tab for the super admin, so it is no
+    // longer only about employees.
+    item.href === ROUTES.adminEmployees ? { ...item, label: "People" } : item,
+  ),
   { href: ROUTES.adminAccess, label: "Access keys", icon: KeyRound, group: "Manage" },
   ...ADMIN_NAV.filter((item) => item.group === "Personal"),
 ];

@@ -1,6 +1,7 @@
 import { EmployeeStatus, Role } from "@prisma/client";
 
 import { toUtcDay } from "@/lib/date";
+import { isSuperAdminRole } from "@/lib/enums";
 import { ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
 import {
   employeeRepository,
@@ -11,10 +12,50 @@ import {
 import { emailService } from "@/services/email/email.service";
 import type { AdminEmployeeUpdateInput, ProfileSetupInput, ProfileUpdateInput } from "@/validations/employee.schema";
 
+/** Whoever is performing the action — role decides what they may reach. */
+export type Actor = { id: string; role: Role };
+
+/**
+ * Seniority rule for one account acting on another.
+ *
+ * An ordinary admin manages employees only. Administrator accounts answer to
+ * the super admin alone, and the super admin's own account is not manageable
+ * from the dashboard by anyone — including itself, since suspending or deleting
+ * it would leave the organisation with nobody able to approve administrators.
+ *
+ * Applied to reads as well as writes: an admin who cannot manage an account
+ * cannot fetch it either, and the refusal is phrased as "not found" so the
+ * endpoint cannot be used to confirm that an id belongs to an administrator.
+ */
+function assertMayManage(actor: Actor, target: EmployeeDto): void {
+  if (target.id === actor.id) {
+    throw new ForbiddenError("You cannot change your own account here. Use your profile instead.");
+  }
+
+  if (target.role === Role.SUPER_ADMIN) {
+    throw new ForbiddenError("The super administrator account cannot be managed from the dashboard.");
+  }
+
+  if (target.role === Role.ADMIN && !isSuperAdminRole(actor.role)) {
+    throw new ForbiddenError("Only a super administrator can manage administrator accounts.");
+  }
+}
+
 export const employeeService = {
   async byId(id: string): Promise<EmployeeDto> {
     const employee = await employeeRepository.findById(id);
     if (!employee) throw new NotFoundError("Employee not found.");
+    return employee;
+  },
+
+  /** `byId` for the admin dashboard, narrowed to what the viewer may see. */
+  async byIdForActor(id: string, actor: Actor): Promise<EmployeeDto> {
+    const employee = await this.byId(id);
+
+    if (employee.role !== Role.EMPLOYEE && !isSuperAdminRole(actor.role) && employee.id !== actor.id) {
+      throw new NotFoundError("Employee not found.");
+    }
+
     return employee;
   },
 
@@ -53,10 +94,18 @@ export const employeeService = {
     return updated;
   },
 
-  /** Admin edit — may change email and account status. */
-  async adminUpdate(employeeId: string, input: AdminEmployeeUpdateInput): Promise<EmployeeDto> {
+  /**
+   * Admin edit — may change email and account status.
+   *
+   * Guarded like the destructive actions: changing an address is the first half
+   * of an account takeover, since the new address can then be used to reset the
+   * password.
+   */
+  async adminUpdate(employeeId: string, input: AdminEmployeeUpdateInput, actor: Actor): Promise<EmployeeDto> {
     const employee = await employeeRepository.findById(employeeId);
     if (!employee) throw new NotFoundError("Employee not found.");
+
+    assertMayManage(actor, employee);
 
     if (input.email && normalizeEmail(input.email) !== employee.email) {
       const clash = await employeeRepository.findByEmail(input.email);
@@ -89,16 +138,22 @@ export const employeeService = {
     return updated;
   },
 
-  async setStatus(employeeId: string, status: EmployeeStatus, actingAdminId: string): Promise<EmployeeDto> {
-    if (employeeId === actingAdminId) {
-      throw new ForbiddenError("You cannot change the status of your own account.");
-    }
-
+  async setStatus(employeeId: string, status: EmployeeStatus, actor: Actor): Promise<EmployeeDto> {
     const employee = await employeeRepository.findById(employeeId);
     if (!employee) throw new NotFoundError("Employee not found.");
 
-    if (employee.role === Role.ADMIN) {
-      throw new ForbiddenError("Administrator accounts cannot be suspended.");
+    // Replaces a blanket "administrators cannot be suspended": the super admin
+    // now can, which is the point of managing them at all.
+    assertMayManage(actor, employee);
+
+    // Only settled accounts toggle. An administrator still awaiting a decision —
+    // or already declined — belongs to the approval flow, which additionally
+    // checks that the address was verified; letting a status toggle activate
+    // them here would route around that.
+    if (employee.status !== EmployeeStatus.ACTIVE && employee.status !== EmployeeStatus.SUSPENDED) {
+      throw new ConflictError(
+        "That account is still going through approval. Decide the request instead of changing its status.",
+      );
     }
 
     if (employee.status === status) {
@@ -115,18 +170,18 @@ export const employeeService = {
     return updated;
   },
 
-  /** Deletes an employee and, by cascade, their leave and OTP history. */
-  async remove(employeeId: string, actingAdminId: string): Promise<EmployeeDto> {
-    if (employeeId === actingAdminId) {
-      throw new ForbiddenError("You cannot delete your own account.");
-    }
-
+  /**
+   * Deletes an account and, by cascade, its leave and OTP history.
+   *
+   * Deleting an administrator also cascades the invite keys they issued, so the
+   * record of who let a given employee in goes with them. Suspending is the
+   * gentler option and is what the UI recommends.
+   */
+  async remove(employeeId: string, actor: Actor): Promise<EmployeeDto> {
     const employee = await employeeRepository.findById(employeeId);
     if (!employee) throw new NotFoundError("Employee not found.");
 
-    if (employee.role === Role.ADMIN) {
-      throw new ForbiddenError("Administrator accounts cannot be deleted from the dashboard.");
-    }
+    assertMayManage(actor, employee);
 
     return employeeRepository.delete(employeeId);
   },
@@ -135,7 +190,7 @@ export const employeeService = {
     return employeeRepository.list(filters);
   },
 
-  departments() {
-    return employeeRepository.distinctDepartments();
+  departments(role?: Role) {
+    return employeeRepository.distinctDepartments(role);
   },
 };
