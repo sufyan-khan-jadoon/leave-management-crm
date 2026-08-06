@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Check, Copy, KeyRound, Lock, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shared/empty-state";
@@ -52,6 +52,8 @@ type InviteKeySectionProps = {
   role: InviteRole;
   /** The full list; this component picks out the keys for its own role. */
   invites: InviteKey[];
+  /** False hides the form. The server enforces this regardless of what's shown. */
+  canIssue: boolean;
   onChanged: () => void | Promise<void>;
 };
 
@@ -63,7 +65,7 @@ type InviteKeySectionProps = {
  * Which roles a viewer may actually issue is settled server-side; rendering this
  * only ever reflects that decision.
  */
-export function InviteKeySection({ role, invites, onChanged }: InviteKeySectionProps) {
+export function InviteKeySection({ role, invites, canIssue, onChanged }: InviteKeySectionProps) {
   const [label, setLabel] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -120,23 +122,35 @@ export function InviteKeySection({ role, invites, onChanged }: InviteKeySectionP
         <CardDescription>{copy.description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            value={label}
-            onChange={(event) => setLabel(event.target.value)}
-            placeholder={copy.placeholder}
-            maxLength={80}
-            className="max-w-xs"
-            aria-label={`Note for this ${role === ROLE.ADMIN ? "administrator" : "employee"} key`}
-          />
-          <Button onClick={issue} disabled={busy === "issue"} loading={busy === "issue"}>
-            {busy !== "issue" && <Plus className="size-4" />}
-            Create key
-          </Button>
-        </div>
+        {canIssue ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              placeholder={copy.placeholder}
+              maxLength={80}
+              className="max-w-xs"
+              aria-label={`Note for this ${role === ROLE.ADMIN ? "administrator" : "employee"} key`}
+            />
+            <Button onClick={issue} disabled={busy === "issue"} loading={busy === "issue"}>
+              {busy !== "issue" && <Plus className="size-4" />}
+              Create key
+            </Button>
+          </div>
+        ) : (
+          <p className="text-muted-foreground glass-inset rounded-lg p-3 text-sm">
+            <Lock className="mr-1.5 inline size-3.5 -translate-y-px" aria-hidden />
+            Your super administrator has not given you permission to invite employees yet.
+          </p>
+        )}
 
         {rows.length === 0 ? (
-          <EmptyState icon={KeyRound} title="No keys yet" description={copy.empty} inset={false} />
+          <EmptyState
+            icon={KeyRound}
+            title="No keys yet"
+            description={canIssue ? copy.empty : "Keys you issue will appear here."}
+            inset={false}
+          />
         ) : (
           <ul className="divide-border/60 divide-y">
             {rows.map((invite) => {

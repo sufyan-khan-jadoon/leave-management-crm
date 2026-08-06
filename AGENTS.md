@@ -37,21 +37,38 @@ Nobody self-registers. Every account starts from an `InviteKey`, and **the key's
 only thing that decides what the holder becomes** — `auth.service.register` reads it off the key,
 never from the request body, so posting an employee key to the admin form still yields an employee.
 
-| Key role   | Issued by                | Resulting account                          |
-| ---------- | ------------------------ | ------------------------------------------ |
-| `EMPLOYEE` | any admin or super admin | `ACTIVE` once the email is verified         |
-| `ADMIN`    | super admin only         | `PENDING_APPROVAL` until the super admin decides |
+| Key role   | Issued by                                        | Resulting account                                |
+| ---------- | ------------------------------------------------ | ------------------------------------------------ |
+| `EMPLOYEE` | super admin, or an admin with `canInviteEmployees` | `ACTIVE` once the email is verified               |
+| `ADMIN`    | super admin only                                  | `PENDING_APPROVAL` until the super admin decides  |
 
 `SUPER_ADMIN` is deliberately not issuable — that role is seeded, so no key can mint another owner.
 
-Both scoping rules live in `invite.service.ts` and must stay in step: an admin sees and revokes
-only the `EMPLOYEE` keys they issued, and `revoke` reports anything outside that as *not found*
-rather than *forbidden*, so it cannot be used to probe for keys the caller may not see. The route
-handlers guard with the looser `requireAdmin` on purpose — which role a caller may actually grant
-is settled in the service, against the role in the body.
+**`canInviteEmployees` is off by default.** Being an admin is not by itself permission to onboard
+people; the super admin grants it per administrator. `permissionsFor()` reads it from the database
+on every issue rather than from the session, so withdrawing it takes effect on the next request
+instead of when a token expires — don't "optimise" it into the JWT.
 
-`InviteKeySection` is shared by the super admin's access panel and the Employees screen; give it a
-role and a list and it handles issuing, copying and revoking.
+All the scoping lives in `invite.service.ts` and must stay in step: an admin sees and revokes only
+the `EMPLOYEE` keys they issued, and `revoke` reports anything outside that as *not found* rather
+than *forbidden*, so it cannot be used to probe for keys the caller may not see. Route handlers
+guard with the looser `requireAdmin` on purpose — what a caller may actually grant is settled in
+the service, against the role in the body. `/api/admin/invites` also returns `canIssue` purely so
+the UI can hide a form it may not submit; it mirrors the real check, never replaces it.
+
+`InviteKeySection` is shared by the super admin's access panel and the Employees screen.
+
+## Administrators take leave too
+
+An admin is an `Employee` with `role = ADMIN`, and draws the same `MONTHLY_LEAVE_ALLOWANCE`. The
+`(employee)` layout therefore does **not** turn admins away — it keeps their admin navigation and
+lets them use the personal screens for their own leave. Every leave route guards with `requireUser`
+and keys off `employeeId`, so nothing there is employee-only.
+
+`ADMIN_NAV` is split into a `Manage` group and a `Personal` group; the sidebar prints each heading
+once, when the group changes. No self-approval hole exists to close: `bookLeave` writes rows
+already approved when they fit the allowance, so the policy decides, not the person — and `decide`
+re-checks the allowance before any manual override.
 
 ## Brand colour — the FILL vs INK rule
 

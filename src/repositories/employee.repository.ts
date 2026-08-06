@@ -10,6 +10,7 @@ export const employeeSelect = {
   emailVerified: true,
   role: true,
   status: true,
+  canInviteEmployees: true,
   phone: true,
   department: true,
   position: true,
@@ -70,6 +71,27 @@ export const employeeRepository = {
 
   updateStatus(id: string, status: EmployeeStatus): Promise<EmployeeDto> {
     return prisma.employee.update({ where: { id }, data: { status }, select: employeeSelect });
+  },
+
+  /**
+   * Active administrators, for the super admin's permission list. SUPER_ADMIN is
+   * excluded: it always may invite, so showing it with a toggle would imply the
+   * right is revocable.
+   */
+  listAdmins(): Promise<EmployeeDto[]> {
+    return prisma.employee.findMany({
+      where: { role: Role.ADMIN, status: EmployeeStatus.ACTIVE },
+      orderBy: { name: "asc" },
+      select: employeeSelect,
+    });
+  },
+
+  setInvitePermission(id: string, canInviteEmployees: boolean): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { canInviteEmployees },
+      select: employeeSelect,
+    });
   },
 
   create(data: {

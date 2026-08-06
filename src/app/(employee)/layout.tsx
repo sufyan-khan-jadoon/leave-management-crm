@@ -3,23 +3,34 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
-import { isAdminRole } from "@/lib/enums";
+import { isAdminRole, isSuperAdminRole } from "@/lib/enums";
 import { appConfig } from "@/lib/env";
 
+/**
+ * Wraps the personal screens: leave balance, requesting leave, history, profile.
+ *
+ * Administrators are deliberately *not* turned away here. They accrue the same
+ * monthly allowance as everyone else, so they need these screens for their own
+ * leave. What changes is the chrome — the shell keeps their administrator
+ * navigation, so moving between their own leave and the queue they manage does
+ * not feel like signing into a second application.
+ */
 export default async function EmployeeLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
 
   // Middleware already gates these routes; this is defence in depth for the
   // case where a page is reached through a path the matcher does not cover.
   if (!session?.user) redirect(ROUTES.login);
-  if (isAdminRole(session.user.role)) redirect(ROUTES.adminDashboard);
+
+  const isAdmin = isAdminRole(session.user.role);
 
   return (
     <AppShell
-      isAdmin={false}
+      isAdmin={isAdmin}
+      isSuperAdmin={isSuperAdminRole(session.user.role)}
       appName={appConfig.name}
       user={{
-        name: session.user.name ?? "Employee",
+        name: session.user.name ?? (isAdmin ? "Administrator" : "Employee"),
         email: session.user.email ?? "",
         image: session.user.image,
       }}

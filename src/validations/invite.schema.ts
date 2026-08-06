@@ -16,6 +16,10 @@ export type IssueInviteInput = z.infer<typeof issueInviteSchema>;
 /** Narrows a list to one role; omitted means every role the viewer may see. */
 export const listInvitesSchema = z.object({ role: inviteRoleSchema.optional() });
 
+export const invitePermissionSchema = z.object({ canInviteEmployees: z.boolean() });
+
+export type InvitePermissionInput = z.infer<typeof invitePermissionSchema>;
+
 export const verifyInviteSchema = z.object({
   inviteKey: z.string().trim().min(1, "Enter your invite key").max(40, "That doesn't look like an invite key"),
 });

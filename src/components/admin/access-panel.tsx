@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, Loader2, ShieldX, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { AdminPermissions, type Administrator } from "@/components/admin/admin-permissions";
 import { InviteKeySection, type InviteKey } from "@/components/admin/invite-key-section";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -29,18 +30,21 @@ type PendingAdmin = {
 export function AccessPanel() {
   const [invites, setInvites] = useState<InviteKey[]>([]);
   const [pending, setPending] = useState<PendingAdmin[]>([]);
+  const [admins, setAdmins] = useState<Administrator[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [keys, requests] = await Promise.all([
+      const [keys, requests, administrators] = await Promise.all([
         apiClient.get<{ items: InviteKey[] }>("/api/admin/invites"),
         apiClient.get<{ items: PendingAdmin[] }>("/api/admin/requests"),
+        apiClient.get<{ items: Administrator[] }>("/api/admin/administrators"),
       ]);
 
       setInvites(keys.items);
       setPending(requests.items);
+      setAdmins(administrators.items);
     } catch (error) {
       toast.error(error instanceof ApiClientError ? error.message : "Couldn't load the access panel.");
     } finally {
@@ -124,8 +128,12 @@ export function AccessPanel() {
         </CardContent>
       </Card>
 
-      <InviteKeySection role={ROLE.EMPLOYEE} invites={invites} onChanged={load} />
-      <InviteKeySection role={ROLE.ADMIN} invites={invites} onChanged={load} />
+      {/* The super admin may always issue, so `canIssue` is fixed here rather
+          than read back from the API. */}
+      <InviteKeySection role={ROLE.EMPLOYEE} invites={invites} canIssue onChanged={load} />
+      <InviteKeySection role={ROLE.ADMIN} invites={invites} canIssue onChanged={load} />
+
+      <AdminPermissions admins={admins} onChanged={load} />
     </div>
   );
 }

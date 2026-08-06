@@ -14,8 +14,10 @@ import { ROLE } from "@/lib/enums";
  * needing to know the rule. A super admin opening this screen sees every key,
  * the same set the access panel shows.
  */
+type InvitesResponse = { items: InviteKey[]; canIssue: { employee: boolean; admin: boolean } };
+
 export function EmployeeInviteKeys() {
-  const { data, loading, refresh } = useApiResource<{ items: InviteKey[] }>("/api/admin/invites");
+  const { data, loading, refresh } = useApiResource<InvitesResponse>("/api/admin/invites");
 
   if (loading && !data) {
     return (
@@ -26,5 +28,12 @@ export function EmployeeInviteKeys() {
     );
   }
 
-  return <InviteKeySection role={ROLE.EMPLOYEE} invites={data?.items ?? []} onChanged={refresh} />;
+  return (
+    <InviteKeySection
+      role={ROLE.EMPLOYEE}
+      invites={data?.items ?? []}
+      canIssue={data?.canIssue.employee ?? false}
+      onChanged={refresh}
+    />
+  );
 }

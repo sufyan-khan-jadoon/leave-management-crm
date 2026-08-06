@@ -11,7 +11,14 @@ import { issueInviteSchema } from "@/validations/invite.schema";
 export async function GET() {
   return handleRoute(async () => {
     const user = await requireAdmin();
-    return ok({ items: await inviteService.list(user) });
+    const [items, canIssue] = await Promise.all([
+      inviteService.list(user),
+      // Returned so the UI can hide a form the caller may not submit. It mirrors
+      // the check `issue` performs rather than replacing it.
+      inviteService.permissionsFor(user),
+    ]);
+
+    return ok({ items, canIssue });
   });
 }
 

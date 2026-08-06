@@ -21,27 +21,67 @@ function generateKey(): string {
   return (chars.match(/.{1,4}/g) ?? [chars]).join("-");
 }
 
+/** What a given viewer is allowed to hand out right now. */
+export type IssuePermissions = { employee: boolean; admin: boolean };
+
 /**
  * Who may hand out which key.
  *
- * An administrator can onboard staff but cannot mint peers — promoting someone
- * to admin stays with the super admin, so a single compromised admin account
- * cannot quietly widen its own circle.
+ * Administrator keys are the super admin's alone — promoting someone to admin
+ * cannot be delegated, so a single compromised admin account cannot quietly
+ * widen its own circle. Employee keys need an explicit grant per administrator:
+ * being an admin is not by itself permission to onboard people.
+ *
+ * The grant is read from the database on every call rather than taken from the
+ * session, so revoking it takes effect on the very next request instead of
+ * whenever that administrator's token happens to expire.
  */
-function assertMayIssue(issuer: { role: Role }, role: Role): void {
-  if (role === Role.ADMIN && !isSuperAdminRole(issuer.role)) {
-    throw new ForbiddenError("Only a super administrator can invite administrators.");
-  }
+async function permissionsFor(viewer: { id: string; role: Role }): Promise<IssuePermissions> {
+  if (isSuperAdminRole(viewer.role)) return { employee: true, admin: true };
+
+  const employee = await employeeRepository.findById(viewer.id);
+
+  return { employee: Boolean(employee?.canInviteEmployees), admin: false };
 }
 
 export const inviteService = {
+  permissionsFor,
+
   /** Issues a single-use key granting one role to one person. */
   async issue(issuer: { id: string; role: Role }, role: Role, label: string | null) {
-    assertMayIssue(issuer, role);
+    const allowed = await permissionsFor(issuer);
+
+    if (role === Role.ADMIN && !allowed.admin) {
+      throw new ForbiddenError("Only a super administrator can invite administrators.");
+    }
+
+    if (role === Role.EMPLOYEE && !allowed.employee) {
+      throw new ForbiddenError(
+        "You do not have permission to invite employees. Ask your super administrator to enable it.",
+      );
+    }
 
     const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000);
 
     return inviteRepository.create({ key: generateKey(), role, label, expiresAt, issuedById: issuer.id });
+  },
+
+  /** Administrators the super admin can grant or withdraw invite rights for. */
+  listAdmins() {
+    return employeeRepository.listAdmins();
+  },
+
+  async setInvitePermission(adminId: string, allowed: boolean) {
+    const employee = await employeeRepository.findById(adminId);
+    if (!employee) throw new NotFoundError("That account no longer exists.");
+
+    // Guards against handing the flag to an employee, where it would mean
+    // nothing, or to the super admin, whose right is not stored here at all.
+    if (employee.role !== Role.ADMIN) {
+      throw new ConflictError("Invite permissions apply to administrators only.");
+    }
+
+    return employeeRepository.setInvitePermission(adminId, allowed);
   },
 
   /**
