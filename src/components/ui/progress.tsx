@@ -22,7 +22,9 @@ function Progress({
       <ProgressPrimitive.Indicator
         className={cn(
           "bg-primary h-full w-full flex-1 rounded-full",
-          "shadow-[inset_0_1px_0_0_oklch(1_0_0/25%)]",
+          // Specular edge plus a brand bloom, so the filled portion looks lit
+          // rather than painted as the bar advances.
+          "shadow-[inset_0_1px_0_0_oklch(1_0_0/35%),0_0_10px_0_color-mix(in_oklab,var(--brand)_55%,transparent)]",
           "transition-transform duration-500 ease-standard",
           indicatorClassName,
         )}

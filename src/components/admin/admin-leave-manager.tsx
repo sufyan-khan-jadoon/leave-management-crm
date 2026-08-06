@@ -65,7 +65,7 @@ export function AdminLeaveManager() {
                   size="icon-sm"
                   disabled={pendingId === leave.id}
                   aria-label={`Approve leave for ${leave.employee.name}`}
-                  className="text-success hover:text-success hover:bg-success/10"
+                  className="text-success-ink hover:text-success-ink hover:bg-success/10"
                 >
                   <Check className="size-4" />
                 </Button>
@@ -86,7 +86,7 @@ export function AdminLeaveManager() {
                   size="icon-sm"
                   disabled={pendingId === leave.id}
                   aria-label={`Decline leave for ${leave.employee.name}`}
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  className="text-destructive-ink hover:text-destructive-ink hover:bg-destructive/10"
                 >
                   <X className="size-4" />
                 </Button>

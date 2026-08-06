@@ -15,7 +15,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
     <div className="app-aurora flex min-h-dvh items-center justify-center px-4">
       <Card glass className="animate-in fade-in-0 zoom-in-95 w-full max-w-md text-center duration-500 ease-standard">
         <CardContent className="space-y-4">
-          <div className="bg-destructive/12 text-destructive mx-auto flex size-12 items-center justify-center rounded-full">
+          <div className="bg-destructive/12 text-destructive-ink mx-auto flex size-12 items-center justify-center rounded-full">
             <AlertTriangle className="size-6" aria-hidden />
           </div>
 

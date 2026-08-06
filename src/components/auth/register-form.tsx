@@ -168,7 +168,7 @@ export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormPr
           Already have an account?{" "}
           <Link
             href={isAdmin ? ROUTES.adminLogin : ROUTES.login}
-            className="text-primary font-medium hover:underline"
+            className="text-primary-ink font-medium hover:underline"
           >
             Sign in
           </Link>
@@ -177,7 +177,7 @@ export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormPr
         {!isAdmin && (
           <p className="text-muted-foreground text-center text-sm">
             Have an invite key?{" "}
-            <Link href={ROUTES.adminRegister} className="text-primary font-medium hover:underline">
+            <Link href={ROUTES.adminRegister} className="text-primary-ink font-medium hover:underline">
               Register as an administrator
             </Link>
           </p>

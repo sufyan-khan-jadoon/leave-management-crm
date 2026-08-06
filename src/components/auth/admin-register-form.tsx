@@ -70,7 +70,7 @@ export function AdminRegisterForm() {
             aria-invalid={Boolean(error)}
           />
           {error ? (
-            <p className="text-destructive text-xs font-medium">{error}</p>
+            <p className="text-destructive-ink text-xs font-medium">{error}</p>
           ) : (
             <p className="text-muted-foreground text-xs">
               Ask your super administrator for a key. Each one works once.
@@ -86,7 +86,7 @@ export function AdminRegisterForm() {
 
         <p className="text-muted-foreground text-center text-sm">
           Already registered?{" "}
-          <Link href={ROUTES.adminLogin} className="text-primary font-medium hover:underline">
+          <Link href={ROUTES.adminLogin} className="text-primary-ink font-medium hover:underline">
             Administrator sign in
           </Link>
         </p>
@@ -97,7 +97,7 @@ export function AdminRegisterForm() {
   return (
     <div className="space-y-4">
       <div className="bg-success/8 text-muted-foreground flex items-center gap-2 rounded-lg p-3 text-sm shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--success)_28%,transparent)]">
-        <CheckCircle2 className="text-success size-4 shrink-0" aria-hidden />
+        <CheckCircle2 className="text-success-ink size-4 shrink-0" aria-hidden />
         <span className="min-w-0">
           Key verified — <span className="text-foreground font-mono">{accepted}</span>
         </span>

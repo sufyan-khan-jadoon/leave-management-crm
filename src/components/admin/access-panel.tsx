@@ -32,9 +32,9 @@ type PendingAdmin = {
 
 function keyState(invite: InviteKey): { label: string; tone: string } {
   if (invite.revokedAt) return { label: "Revoked", tone: "text-muted-foreground" };
-  if (invite.redeemedAt) return { label: "Used", tone: "text-success" };
-  if (new Date(invite.expiresAt) <= new Date()) return { label: "Expired", tone: "text-destructive" };
-  return { label: "Unused", tone: "text-primary" };
+  if (invite.redeemedAt) return { label: "Used", tone: "text-success-ink" };
+  if (new Date(invite.expiresAt) <= new Date()) return { label: "Expired", tone: "text-destructive-ink" };
+  return { label: "Unused", tone: "text-primary-ink" };
 }
 
 export function AccessPanel() {

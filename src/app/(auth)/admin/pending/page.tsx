@@ -12,7 +12,7 @@ export default function AdminPendingPage() {
   return (
     <Card glass>
       <CardHeader className="space-y-3">
-        <div className="bg-warning/12 text-warning flex size-11 items-center justify-center rounded-xl">
+        <div className="bg-warning/12 text-warning-ink flex size-11 items-center justify-center rounded-xl">
           <Clock3 className="size-5" aria-hidden />
         </div>
         <div className="space-y-1.5">
@@ -26,7 +26,7 @@ export default function AdminPendingPage() {
       <CardContent>
         <p className="text-muted-foreground text-center text-sm">
           Already approved?{" "}
-          <Link href={ROUTES.adminLogin} className="text-primary font-medium hover:underline">
+          <Link href={ROUTES.adminLogin} className="text-primary-ink font-medium hover:underline">
             Administrator sign in
           </Link>
         </p>

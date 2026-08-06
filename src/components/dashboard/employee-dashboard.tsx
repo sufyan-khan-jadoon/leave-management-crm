@@ -116,7 +116,7 @@ export function EmployeeDashboard({ firstName }: { firstName: string }) {
         <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="text-primary size-4" aria-hidden />
+              <Sparkles className="text-primary-ink size-4" aria-hidden />
               Request leave
             </CardTitle>
             <CardDescription>
@@ -132,7 +132,7 @@ export function EmployeeDashboard({ firstName }: { firstName: string }) {
           <Card className="lg:col-span-3">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <TrendingUp className="text-primary size-4" aria-hidden />
+                <TrendingUp className="text-primary-ink size-4" aria-hidden />
                 Your leave over time
               </CardTitle>
               <CardDescription>Requests across the last six months.</CardDescription>

@@ -31,6 +31,31 @@ transitively, including `src/lib/auth/auth.config.ts` — keep Prisma and bcrypt
 API routes are excluded from the middleware matcher on purpose: they must return 401/403 JSON via
 `requireUser()` / `requireAdmin()`, not redirect a `fetch` to an HTML page.
 
+## Brand colour — the FILL vs INK rule
+
+The Zovencia palette is fixed: **#0AEA0A** (brand green), **#023506** (dark green), black, white.
+All of it lives in `src/app/globals.css`; no component may name a colour literal.
+
+`#0AEA0A` is luminous — 12.8:1 on black but **1.64:1 on white**. So each semantic colour ships
+as a pair, and which one you reach for depends on whether the colour is a *shape* or a *letter*:
+
+| Use                                                        | Token                                      |
+| ---------------------------------------------------------- | ------------------------------------------ |
+| Fills, buttons, active pills, badges, progress, toggles, charts, focus rings, branding | `--primary` / `bg-primary`, `bg-brand` — **exactly #0AEA0A, never darkened** |
+| Green *text* or a bare green *icon* on a light surface      | `--primary-ink` / `text-primary-ink`       |
+
+`--success`, `--warning`, `--destructive` follow the same pattern (`-ink` suffix). Success *is*
+the brand green. In dark mode every `-ink` collapses back to the pure brand colour, because on a
+dark panel #0AEA0A already clears AA — the exception is only paid where it is actually needed.
+
+Never use an `-ink` token as a background, and never put `text-primary` back: that pairing is what
+the rule exists to prevent. When green text is hard to read, fix the *surface* (glass tint,
+opacity, border, weight) rather than the brand colour.
+
+The sidebar is a dark green slab in **both** themes. `glass-sidebar` re-declares `--foreground`,
+`--muted-foreground`, `--accent` and friends onto the panel, so its children recolour for dark
+ground through inheritance — restyle the tokens there, not the nav components.
+
 ## Conventions
 
 - Dates are calendar days. Normalise through `src/lib/date.ts` (UTC midnight) — never construct

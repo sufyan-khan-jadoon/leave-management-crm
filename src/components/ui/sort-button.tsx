@@ -36,7 +36,7 @@ export function SortButton({ label, active, direction = "desc", onClick }: SortB
       <Icon
         className={cn(
           "size-3 transition-opacity duration-200",
-          active ? "text-primary opacity-100" : "opacity-40",
+          active ? "text-primary-ink opacity-100" : "opacity-40",
         )}
         aria-hidden
       />

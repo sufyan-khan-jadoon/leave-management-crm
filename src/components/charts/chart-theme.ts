@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 
 /** Shared Recharts styling so both charts read as one system. */
 
+/** A single-hue ramp: brand green stepping down to the dark green. */
 export const CHART_PALETTE = [
   "var(--color-chart-1)",
   "var(--color-chart-2)",
@@ -13,6 +14,14 @@ export const CHART_PALETTE = [
 export const axisTick = { fill: "var(--color-muted-foreground)", fontSize: 12 } as const;
 
 export const gridStroke = "color-mix(in oklab, var(--color-border) 70%, transparent)";
+
+/**
+ * The brand green is luminous enough that a bar of it sits at only ~1.6:1
+ * against a light surface. Rather than darken the fill — which would break the
+ * brand — each bar carries a deep-green hairline so its silhouette stays
+ * readable. This is the "adjust the border, not the colour" route.
+ */
+export const barStroke = "color-mix(in oklab, var(--brand-deep) 55%, transparent)";
 
 /** Matches the `glass-strong` utility — Recharts only takes inline styles here. */
 export const tooltipContentStyle: CSSProperties = {

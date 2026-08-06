@@ -9,6 +9,12 @@ import { cn } from "@/lib/utils";
  * Solid variants carry a specular top edge (`inset 0 1px 0`) and a tinted glow
  * that only appears on hover — the same two-part lighting model the glass
  * surfaces use, scaled down to control size.
+ *
+ * The brand fill stays flat #0AEA0A rather than becoming a two-stop gradient:
+ * the "gradient" read comes from a white inset sheen falling down from the top
+ * edge, which is light rather than pigment, so the brand colour underneath is
+ * never darkened. The glow beneath is the brand green at low alpha, which is
+ * what makes the button look lit from within on both themes.
  */
 const buttonVariants = cva(
   cn(
@@ -23,9 +29,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: cn(
-          "bg-primary text-primary-foreground",
-          "shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_1px_2px_-1px_var(--glass-shadow),0_6px_16px_-8px_color-mix(in_oklab,var(--primary)_55%,transparent)]",
-          "hover:bg-primary/92 hover:shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_2px_4px_-2px_var(--glass-shadow),0_10px_24px_-8px_color-mix(in_oklab,var(--primary)_65%,transparent)]",
+          "bg-primary text-primary-foreground font-semibold",
+          "shadow-[inset_0_1px_0_0_oklch(1_0_0/38%),inset_0_7px_14px_-8px_oklch(1_0_0/30%),0_1px_2px_-1px_var(--glass-shadow),0_6px_18px_-8px_color-mix(in_oklab,var(--brand)_60%,transparent)]",
+          "hover:shadow-[inset_0_1px_0_0_oklch(1_0_0/45%),inset_0_7px_14px_-8px_oklch(1_0_0/38%),0_2px_4px_-2px_var(--glass-shadow),0_12px_30px_-8px_color-mix(in_oklab,var(--brand)_78%,transparent)]",
         ),
         destructive: cn(
           "bg-destructive text-destructive-foreground",
@@ -34,9 +40,9 @@ const buttonVariants = cva(
           "focus-visible:ring-destructive/35",
         ),
         success: cn(
-          "bg-success text-success-foreground",
-          "shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_1px_2px_-1px_var(--glass-shadow),0_6px_16px_-8px_color-mix(in_oklab,var(--success)_55%,transparent)]",
-          "hover:bg-success/92 hover:shadow-[inset_0_1px_0_0_oklch(1_0_0/25%),0_2px_4px_-2px_var(--glass-shadow),0_10px_24px_-8px_color-mix(in_oklab,var(--success)_65%,transparent)]",
+          "bg-success text-success-foreground font-semibold",
+          "shadow-[inset_0_1px_0_0_oklch(1_0_0/38%),inset_0_7px_14px_-8px_oklch(1_0_0/30%),0_1px_2px_-1px_var(--glass-shadow),0_6px_18px_-8px_color-mix(in_oklab,var(--success)_60%,transparent)]",
+          "hover:shadow-[inset_0_1px_0_0_oklch(1_0_0/45%),inset_0_7px_14px_-8px_oklch(1_0_0/38%),0_2px_4px_-2px_var(--glass-shadow),0_12px_30px_-8px_color-mix(in_oklab,var(--success)_78%,transparent)]",
           "focus-visible:ring-success/35",
         ),
         outline: cn(
@@ -51,7 +57,7 @@ const buttonVariants = cva(
         /** Floating translucent control — for chrome that sits over content. */
         glass: "glass text-foreground rounded-md hover:bg-accent/45",
         ghost: "text-foreground/80 hover:bg-accent/70 hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline active:scale-100",
+        link: "text-primary-ink underline-offset-4 hover:underline active:scale-100",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
