@@ -54,7 +54,7 @@ export const SUPER_ADMIN_NAV: NavItem[] = [
   ...ADMIN_NAV.filter((item) => item.group !== "Personal").map((item) =>
     // The same screen carries an extra tab for the super admin, so it is no
     // longer only about employees.
-    item.href === ROUTES.adminEmployees ? { ...item, label: "People" } : item,
+    item.href === ROUTES.adminEmployees ? { ...item, label: "Members" } : item,
   ),
   { href: ROUTES.adminAccess, label: "Access keys", icon: KeyRound, group: "Manage" },
   ...ADMIN_NAV.filter((item) => item.group === "Personal"),

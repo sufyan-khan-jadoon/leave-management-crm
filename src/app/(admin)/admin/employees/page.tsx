@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 
 import { EmployeeInviteKeys } from "@/components/admin/employee-invite-keys";
 import { EmployeeManager } from "@/components/admin/employee-manager";
-import { PeopleManager } from "@/components/admin/people-manager";
+import { MembersManager } from "@/components/admin/members-manager";
 import { PageHeader } from "@/components/layout/page-header";
 import { auth } from "@/lib/auth/auth";
 import { ROLE, isSuperAdminRole } from "@/lib/enums";
 
-export const metadata: Metadata = { title: "People" };
+export const metadata: Metadata = { title: "Members" };
 
 export default async function AdminEmployeesPage() {
   const session = await auth();
@@ -20,7 +20,7 @@ export default async function AdminEmployeesPage() {
   return (
     <>
       <PageHeader
-        title={isSuperAdmin ? "People" : "Employees"}
+        title={isSuperAdmin ? "Members" : "Employees"}
         description={
           isSuperAdmin
             ? "Search, edit, suspend or remove employees and administrators."
@@ -34,7 +34,7 @@ export default async function AdminEmployeesPage() {
             twice. */}
         {!isSuperAdmin && <EmployeeInviteKeys />}
 
-        {isSuperAdmin ? <PeopleManager /> : <EmployeeManager role={ROLE.EMPLOYEE} />}
+        {isSuperAdmin ? <MembersManager /> : <EmployeeManager role={ROLE.EMPLOYEE} />}
       </div>
     </>
   );

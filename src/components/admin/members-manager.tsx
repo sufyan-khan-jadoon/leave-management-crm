@@ -13,7 +13,7 @@ import { ROLE } from "@/lib/enums";
  * page position stay independent — switching back to Employees does not reset
  * what you had narrowed it down to.
  */
-export function PeopleManager() {
+export function MembersManager() {
   return (
     <Tabs defaultValue={ROLE.EMPLOYEE} className="space-y-4">
       <TabsList>
