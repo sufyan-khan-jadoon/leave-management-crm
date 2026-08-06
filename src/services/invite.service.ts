@@ -134,7 +134,11 @@ export const inviteService = {
       throw new NotFoundError("That invite key no longer exists.");
     }
 
-    if (invite.redeemedAt) {
+    // A redeemed key is protected only while the account it created still
+    // exists — that is what it is the record of. Once the account is gone the
+    // key describes nothing, so it can be cleared. New deletions cascade at the
+    // database level; this covers rows orphaned before that rule existed.
+    if (invite.redeemedAt && invite.redeemedById) {
       throw new ConflictError("That key has been used to create an account and cannot be deleted.");
     }
 

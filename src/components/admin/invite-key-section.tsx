@@ -228,8 +228,10 @@ export function InviteKeySection({
               const state = keyState(invite);
               const usable = !invite.revokedAt && !invite.redeemedAt;
               // Anything nobody joined through can be cleared away — including
-              // keys already revoked, which otherwise had no way out of here.
-              const deletable = !invite.redeemedAt;
+              // keys already revoked, which otherwise had no way out of here,
+              // and keys whose account has since been deleted, which describe
+              // nothing any more.
+              const deletable = !invite.redeemedAt || !invite.redeemedBy;
 
               return (
                 <li key={invite.id} className="flex flex-wrap items-center gap-3 py-3">
@@ -247,6 +249,7 @@ export function InviteKeySection({
                       <span className={state.tone}>{state.label}</span>
                       {invite.label ? ` · ${invite.label}` : ""}
                       {invite.redeemedBy ? ` · used by ${invite.redeemedBy.email}` : ""}
+                      {invite.redeemedAt && !invite.redeemedBy ? " · account deleted" : ""}
                       {usable ? ` · expires ${formatDateTime(invite.expiresAt)}` : ""}
                     </p>
                   </div>

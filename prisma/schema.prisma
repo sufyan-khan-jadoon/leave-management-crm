@@ -147,8 +147,12 @@ model InviteKey {
   issuedById String
   issuedBy   Employee @relation("InviteIssuer", fields: [issuedById], references: [id], onDelete: Cascade)
 
+  /// Cascades: a key exists to record how one particular account came to be, so
+  /// once that account is deleted the key has nothing left to describe. Leaving
+  /// it behind — which `SetNull` did — produced "Used" rows pointing at nobody
+  /// that could never be cleared away.
   redeemedById String?   @unique
-  redeemedBy   Employee? @relation("InviteRedeemer", fields: [redeemedById], references: [id], onDelete: SetNull)
+  redeemedBy   Employee? @relation("InviteRedeemer", fields: [redeemedById], references: [id], onDelete: Cascade)
 
   @@index([issuedById, createdAt])
   @@index([role, createdAt])
