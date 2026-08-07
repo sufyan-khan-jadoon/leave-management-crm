@@ -43,6 +43,11 @@ export const employeeRepository = {
     return prisma.employee.findUnique({ where: { email: normalizeEmail(email) } });
   },
 
+  /** As above, by id — for re-proving the password of an already signed-in user. */
+  findByIdWithSecret(id: string): Promise<Employee | null> {
+    return prisma.employee.findUnique({ where: { id } });
+  },
+
   findByEmail(email: string): Promise<EmployeeDto | null> {
     return prisma.employee.findUnique({
       where: { email: normalizeEmail(email) },

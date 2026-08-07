@@ -270,6 +270,35 @@ export const authService = {
   },
 
   /**
+   * Changes the password of the signed-in account, from the profile screen.
+   *
+   * The current password is re-proven rather than taken on the session's word:
+   * a live session only shows someone reached the machine, and this is the one
+   * change that would shut the real owner out of their own account. It is the
+   * same standard the reset flow meets with an emailed code.
+   *
+   * Role plays no part — an administrator's password is no more and no less
+   * theirs to change than anyone else's.
+   */
+  async changePassword(employeeId: string, currentPassword: string, password: string): Promise<void> {
+    const employee = await employeeRepository.findByIdWithSecret(employeeId);
+    if (!employee) throw new NotFoundError("Employee not found.");
+
+    const valid = await verifyPassword(currentPassword, employee.password);
+
+    // Keyed to the field so the form marks the box that was wrong, rather than
+    // leaving it ambiguous which of the three is being complained about.
+    if (!valid) {
+      throw new ValidationError("That is not your current password.", {
+        currentPassword: "That is not your current password.",
+      });
+    }
+
+    await employeeRepository.updatePassword(employee.id, await hashPassword(password));
+    await emailService.sendPasswordChanged(employee.email, employee.name);
+  },
+
+  /**
    * Credential check used by the NextAuth authorize callback.
    * Returns null for bad credentials so the provider surfaces a generic
    * failure; throws only for states the user must be told about explicitly.

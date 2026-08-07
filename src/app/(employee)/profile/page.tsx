@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { CalendarDays, Mail, Phone, ShieldCheck } from "lucide-react";
 
 import { PageHeader } from "@/components/layout/page-header";
+import { ChangePasswordForm } from "@/components/profile/change-password-form";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +70,21 @@ export default async function ProfilePage() {
           </CardHeader>
           <CardContent>
             <ProfileForm employee={employee} mode="edit" />
+          </CardContent>
+        </Card>
+
+        {/* Own row: a password change is a different kind of act from editing a
+            phone number, and sharing a card would invite one Save to be read as
+            covering both. */}
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle className="text-base">Password</CardTitle>
+            <CardDescription>
+              Confirm the password you use now, then choose a new one. We&apos;ll email you when it changes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="max-w-md">
+            <ChangePasswordForm />
           </CardContent>
         </Card>
       </div>

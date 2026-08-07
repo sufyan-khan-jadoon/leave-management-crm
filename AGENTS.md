@@ -104,6 +104,22 @@ value `employeeQuerySchema` accepts, so it can never be listed.
 `PENDING_APPROVAL` or `REJECTED` belongs to the approval flow, which also checks the address was
 verified — a status toggle would route around that.
 
+## Passwords are changed by their owner alone
+
+`PUT /api/profile/password` is the self-service change, on the `/profile` screen every role
+shares. It guards with `requireUser` and nothing more: seniority has no bearing on a password,
+because there is no way to aim this at another account — the id comes off the session and the
+body carries only passwords.
+
+The current password is re-proven even though the caller is signed in. A session shows someone
+reached the machine, not that they are the owner, and this is the one change that locks the owner
+out; the emailed code plays that part in the reset flow. `assertMayManage` is deliberately *not*
+extended to let an admin set somebody else's password — `/forgot-password` already exists, and it
+proves control of the mailbox rather than asking anyone to vouch.
+
+A wrong current password is refused with `ValidationError` keyed to `currentPassword`, so the form
+marks the box that was actually wrong.
+
 ## Administrators take leave too
 
 An admin is an `Employee` with `role = ADMIN`, and draws the same `MONTHLY_LEAVE_ALLOWANCE`. The
