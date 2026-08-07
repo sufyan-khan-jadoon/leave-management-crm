@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { auth } from "@/lib/auth/auth";
+import { chromeUser } from "@/lib/auth/chrome-user";
 import { ROUTES } from "@/lib/constants";
 import { isAdminRole, isSuperAdminRole } from "@/lib/enums";
 import { appConfig } from "@/lib/env";
@@ -24,16 +25,15 @@ export default async function EmployeeLayout({ children }: { children: React.Rea
 
   const isAdmin = isAdminRole(session.user.role);
 
+  const user = await chromeUser(session.user.id, isAdmin ? "Administrator" : "Employee");
+  if (!user) redirect(ROUTES.login);
+
   return (
     <AppShell
       isAdmin={isAdmin}
       isSuperAdmin={isSuperAdminRole(session.user.role)}
       appName={appConfig.name}
-      user={{
-        name: session.user.name ?? (isAdmin ? "Administrator" : "Employee"),
-        email: session.user.email ?? "",
-        image: session.user.image,
-      }}
+      user={user}
     >
       {children}
     </AppShell>

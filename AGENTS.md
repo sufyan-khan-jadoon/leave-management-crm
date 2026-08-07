@@ -81,6 +81,21 @@ administrator?" without knowing the password.
 Being sent to the wrong screen is a mistake, not an attack, so the message names the right one and
 the address is carried across in the query string rather than retyped.
 
+## The session is a snapshot; the chrome is not
+
+The JWT is written once at sign-in and never revisited, so anything copied into it is frozen at
+that moment. The sidebar and topbar therefore read the name and avatar through `chromeUser()`,
+which queries the database on every render — otherwise a photo uploaded from `/profile` would not
+reach the corner of the screen until the token expired a week later.
+
+**Never put the profile photo in the token.** Avatars are stored as data URLs, so a modest one is
+tens of kilobytes, and session state rides along on every request as a cookie — Vercel caps
+request headers far below that. `AuthenticatedEmployee` deliberately has no `image` field.
+
+`profileComplete` is the exception that proves the rule: it is one boolean, and `ProfileForm`
+refreshes it explicitly through `useSession().update()` because `middleware.ts` reads it on the
+Edge, where a database query is not available.
+
 ## Who may act on whose account
 
 `assertMayManage` in `employee.service.ts` is the single seniority rule, applied to **every** read

@@ -19,6 +19,15 @@ import { inviteService } from "@/services/invite.service";
 import { jobRoleService } from "@/services/job-role.service";
 import type { LoginInput, RegisterInput, VerifyOtpInput } from "@/validations/auth.schema";
 
+/**
+ * What the sign-in callback hands to NextAuth, and so what ends up in the JWT.
+ *
+ * The profile photo is deliberately absent. Avatars are stored as data URLs, and
+ * the session travels as a cookie on every request — putting one in here would
+ * add tens of kilobytes to every header. The chrome reads it from the database
+ * instead, which also means a new photo shows up straight away rather than at
+ * the next sign-in. See `chromeUser`.
+ */
 export type AuthenticatedEmployee = {
   id: string;
   name: string;
@@ -26,7 +35,6 @@ export type AuthenticatedEmployee = {
   role: Role;
   status: EmployeeStatus;
   profileComplete: boolean;
-  image: string | null;
 };
 
 /** A profile is complete once every field required for leave routing is set. */
@@ -348,7 +356,6 @@ export const authService = {
       role: employee.role,
       status: employee.status,
       profileComplete: isProfileComplete(employee),
-      image: employee.profilePhoto,
     };
   },
 };
