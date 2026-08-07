@@ -47,7 +47,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 - Overview cards: total / active employees, approved / pending / rejected leaves
 - Monthly leave trend and department-wise breakdown charts, plus a recent activity feed
 - Employee management: search, filter, sort, edit, suspend, reactivate, delete
-- Leave management: search, filter, sort, approve, reject, drill into any employee profile
+- Leave oversight: search, filter, sort and drill into any employee profile — requests are decided automatically, so there is nothing to approve
 - CSV export that always matches the filters currently on screen
 
 **Platform**
@@ -55,7 +55,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 - Light / dark / system themes with glassmorphic surfaces
 - Responsive from mobile through desktop
 - Loading skeletons, empty states, toast notifications and confirmation dialogs throughout
-- Transactional email on invitation, registration, verification, approval, rejection, profile update and account status change
+- Transactional email on invitation, registration, verification, leave approval, administrator decisions, profile update and account status change
 
 ---
 
@@ -343,15 +343,16 @@ Robustness measures, all covered by the verification harness:
 
 ## Leave approval logic
 
-Each employee may have **4 approved leaves per calendar month**.
+Each employee may have **4 approved leaves per calendar month**. The allowance decides every
+request as it is made — there is no review step and no administrator approval.
 
 ```
 new request for date D
         ↓
 count APPROVED leaves in the calendar month containing D
         ↓
-   count < 4  ──→ APPROVED   → approval email, remaining balance shown
-   count ≥ 4  ──→ REJECTED   → rejection email with the HR message
+   count < 4  ──→ booked as APPROVED  → approval email, remaining balance shown
+   count ≥ 4  ──→ refused outright    → the HR message, in the chat, nothing written
 ```
 
 When the allowance is exhausted the response is exactly:
@@ -361,8 +362,9 @@ When the allowance is exhausted the response is exactly:
 Details worth knowing:
 
 - The quota is evaluated against the month the **leave falls in**, not the month the request is made — a request filed in March for an April date draws on April's allowance.
-- Automatic approval can never exceed 4. The admin override path enforces the same ceiling, so approving a fifth leave is blocked there too.
-- Duplicate requests for a date the employee already has pending or approved are rejected with a conflict.
+- Nothing can exceed 4. There is no manual override to enforce the ceiling separately: administrators cannot approve or decline leave at all, so the policy is the only path.
+- A refused request writes no row. The employee is told in the conversation rather than by a rejection email afterwards.
+- Duplicate requests for a date the employee already holds are rejected with a conflict.
 - All date maths is done in UTC (`src/lib/date.ts`) so a leave on the 14th reads as the 14th regardless of server timezone.
 
 ---
@@ -380,7 +382,7 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET` | `/api/dashboard` | Employee | Dashboard payload in one round trip |
 | `GET` | `/api/leaves` | Auth | List leaves (employees scoped to their own) |
 | `POST` | `/api/leaves/ai` | Employee | Natural-language leave request |
-| `GET/PATCH/DELETE` | `/api/leaves/[id]` | Auth / Admin | Read; approve-reject; delete |
+| `GET/DELETE` | `/api/leaves/[id]` | Auth / Admin | Read; delete. No status endpoint — the allowance decides |
 | `GET` | `/api/leaves/export` | Auth | CSV export honouring current filters |
 | `GET` | `/api/search` | Auth | Global search, scoped by role |
 | `GET` | `/api/admin/stats` | Admin | Overview, charts, recent activity |

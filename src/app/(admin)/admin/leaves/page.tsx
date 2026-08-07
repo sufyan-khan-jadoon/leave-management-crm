@@ -10,7 +10,7 @@ export default function AdminLeavesPage() {
     <>
       <PageHeader
         title="Leave requests"
-        description="Search, filter and override any leave decision across the organisation."
+        description="Search, filter and export leave across the organisation. Requests are decided automatically against the monthly allowance."
       />
       <AdminLeaveManager />
     </>

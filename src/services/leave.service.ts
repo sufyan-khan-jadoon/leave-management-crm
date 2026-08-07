@@ -10,7 +10,7 @@ import {
   todayUtc,
   utcDayRange,
 } from "@/lib/date";
-import { ConflictError, ForbiddenError, NotFoundError } from "@/lib/errors";
+import { ConflictError, NotFoundError } from "@/lib/errors";
 import { employeeRepository } from "@/repositories/employee.repository";
 import {
   leaveRepository,
@@ -139,6 +139,11 @@ export const leaveService = {
    * Books a previously planned range. The plan is recomputed here rather than
    * taken on trust, so a proposal that has gone stale — the allowance used up
    * in another tab, a clashing request added since — cannot slip through.
+   *
+   * This is the only thing that ever decides a leave. A request that fits the
+   * allowance is written approved and a request that does not is refused
+   * outright, so nothing is ever left waiting on a person: there is deliberately
+   * no administrator override, and no queue for one to work through.
    */
   async bookLeave(
     employeeId: string,
@@ -163,52 +168,6 @@ export const leaveService = {
     );
 
     return { leaves, dates: plan.dates, reason: plan.reason, remainingAfter: plan.remainingAfter ?? 0 };
-  },
-
-  /** Admin override of an automatic decision. */
-  async decide(leaveId: string, status: LeaveStatus, adminId: string): Promise<LeaveWithEmployeeDto> {
-    const existing = await leaveRepository.findById(leaveId);
-    if (!existing) throw new NotFoundError("Leave request not found.");
-
-    if (existing.status === status) {
-      throw new ConflictError(`This request is already ${status.toLowerCase()}.`);
-    }
-
-    // Approving beyond the allowance must stay a deliberate admin action, so it
-    // is blocked here just as it is in the automatic path.
-    if (status === LeaveStatus.APPROVED) {
-      const approved = await leaveRepository.countApprovedInMonth(existing.employeeId, existing.leaveDate);
-      if (approved >= MONTHLY_LEAVE_ALLOWANCE) {
-        throw new ForbiddenError(
-          `${existing.employee.name} has already used all ${MONTHLY_LEAVE_ALLOWANCE} approved leaves for that month.`,
-        );
-      }
-    }
-
-    const updated = await leaveRepository.updateStatus(leaveId, status, adminId);
-    const approvedAfter = await leaveRepository.countApprovedInMonth(updated.employeeId, updated.leaveDate);
-    const remaining = Math.max(0, MONTHLY_LEAVE_ALLOWANCE - approvedAfter);
-
-    if (status === LeaveStatus.APPROVED) {
-      await emailService.sendLeaveApproved(
-        updated.employee.email,
-        updated.employee.name,
-        // An admin decides one row at a time, even when it came from a range.
-        [updated.leaveDate],
-        updated.reason,
-        remaining,
-      );
-    } else {
-      await emailService.sendLeaveRejected(
-        updated.employee.email,
-        updated.employee.name,
-        updated.leaveDate,
-        updated.reason,
-        "An administrator reviewed and declined this request. Please contact HR if you have questions.",
-      );
-    }
-
-    return updated;
   },
 
   async balanceFor(employeeId: string, reference: Date = new Date()): Promise<LeaveBalance> {

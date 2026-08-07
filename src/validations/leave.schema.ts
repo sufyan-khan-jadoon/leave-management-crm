@@ -31,12 +31,6 @@ export const leaveConfirmSchema = z.object({
 
 export type LeaveConfirmInput = z.infer<typeof leaveConfirmSchema>;
 
-export const leaveDecisionSchema = z.object({
-  status: z.enum([LeaveStatus.APPROVED, LeaveStatus.REJECTED]),
-});
-
-export type LeaveDecisionInput = z.infer<typeof leaveDecisionSchema>;
-
 export const leaveQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   status: z.nativeEnum(LeaveStatus).optional(),

@@ -223,22 +223,10 @@ export function leaveApprovedTemplate(name: string, dates: Date[], reason: strin
   };
 }
 
-export function leaveRejectedTemplate(name: string, leaveDate: Date, reason: string, explanation: string): Template {
-  return {
-    subject: `Leave request declined for ${formatDate(leaveDate)}`,
-    html: layout(
-      "Your leave request was declined",
-      `<p>Hi ${esc(name)}, unfortunately your leave request could not be approved.</p>
-       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;border:1px solid #eceef6;border-radius:12px;">
-         <tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">Date</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(formatDate(leaveDate))}</td></tr>
-         <tr><td style="padding:14px 18px;color:#8b90a8;font-size:13px;">Reason</td><td style="padding:14px 18px;font-weight:600;color:#16192b;">${esc(reason)}</td></tr>
-       </table>
-       <p style="padding:14px 18px;background:#fff5f5;border-left:3px solid #e5484d;border-radius:6px;color:#16192b;">${esc(explanation)}</p>`,
-      { label: "View leave history", url: `${appConfig.url}/leaves` },
-    ),
-    text: `Hi ${name}, your leave request for ${formatDate(leaveDate)} (${reason}) was declined.\n\n${explanation}`,
-  };
-}
+// A "your leave was declined" template used to live here. Nothing can send one
+// any more: a request that does not fit the allowance is refused in the chat
+// before a row is written, so the employee is told there and then rather than
+// by email afterwards, and no administrator can decline one that did fit.
 
 export function profileUpdatedTemplate(name: string, changedBy: "you" | "an administrator"): Template {
   return {

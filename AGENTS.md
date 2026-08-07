@@ -159,6 +159,23 @@ proves control of the mailbox rather than asking anyone to vouch.
 A wrong current password is refused with `ValidationError` keyed to `currentPassword`, so the form
 marks the box that was actually wrong.
 
+## The allowance decides; nobody approves
+
+Leave has no review step. `bookLeave` recomputes the plan and either writes the days already
+`APPROVED` or refuses the request with a `ConflictError` the assistant relays there and then — so a
+request is settled the moment it is made, and never waits on a person.
+
+There is deliberately **no administrator approve/decline path**: no `PATCH /api/leaves/[id]`, no
+`decide` on the service, no buttons on the Manage screen. Adding one back would reintroduce exactly
+the discretion the policy exists to remove, and would let an admin approve past
+`MONTHLY_LEAVE_ALLOWANCE` by hand. The admin leave screen is read-only — search, filter, export, and
+open the person behind a row.
+
+`LeaveStatus.PENDING` and `REJECTED` are therefore write-dead: nothing creates them any more. They
+stay in the enum so rows predating this still render, and `Leave.decidedById` / `decidedAt` stay on
+the model for the same reason. Don't read a `PENDING` row as "waiting for someone" — nobody is
+coming.
+
 ## Administrators take leave too
 
 An admin is an `Employee` with `role = ADMIN`, and draws the same `MONTHLY_LEAVE_ALLOWANCE`. The
@@ -167,10 +184,10 @@ lets them use the personal screens for their own leave. Every leave route guards
 and keys off `employeeId`, so nothing there is employee-only.
 
 `ADMIN_NAV` is split into a `Manage` group and a `Personal` group; the sidebar prints each heading
-once, when the group changes. No self-approval hole exists to close: `bookLeave` writes rows
-already approved when they fit the allowance, so the policy decides, not the person — and `decide`
-re-checks the allowance before any manual override. The leave assistant is therefore open to
-admins too — signing out and back in as somebody else was never a security boundary, only a chore.
+once, when the group changes. No self-approval hole exists to close, because there is no approval:
+`bookLeave` writes rows already approved when they fit the allowance and refuses them outright when
+they do not, so the policy decides and nobody can overrule it. The leave assistant is therefore open
+to admins too — signing out and back in as somebody else was never a security boundary, only a chore.
 
 Scope is the thing to keep an eye on. `/api/leaves` reads `employeeId` from the query **for an
 admin**, so leaving it off hands them the whole roster — right for the Manage screen, wrong for

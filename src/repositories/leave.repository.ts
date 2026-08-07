@@ -51,14 +51,6 @@ export const leaveRepository = {
     return prisma.leave.create({ data, select: leaveSelect });
   },
 
-  updateStatus(id: string, status: LeaveStatus, decidedById: string): Promise<LeaveWithEmployeeDto> {
-    return prisma.leave.update({
-      where: { id },
-      data: { status, decidedById, decidedAt: new Date() },
-      select: leaveWithEmployeeSelect,
-    });
-  },
-
   delete(id: string): Promise<LeaveDto> {
     return prisma.leave.delete({ where: { id }, select: leaveSelect });
   },
