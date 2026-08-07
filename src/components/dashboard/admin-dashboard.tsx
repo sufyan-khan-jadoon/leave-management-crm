@@ -1,10 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  Shield,
   TrendingUp,
   UserCheck,
   Users,
@@ -23,78 +25,138 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApiResource } from "@/hooks/use-api-resource";
 import { ROUTES } from "@/lib/constants";
+import { ROLE, type InviteRole } from "@/lib/enums";
 import { initialsOf } from "@/lib/utils";
 import { formatDate, relativeTime } from "@/lib/date";
 import type { AdminDashboardView } from "@/types";
 
-export function AdminDashboard({ firstName }: { firstName: string }) {
-  const { data, loading, error } = useApiResource<AdminDashboardView>("/api/admin/stats");
+/** Everything on the screen changes with this, so the wording follows it too. */
+const POPULATION_COPY = {
+  [ROLE.EMPLOYEE]: {
+    total: "Total employees",
+    active: "Active employees",
+    description: "Leave activity across your employees.",
+    emptyTrend: "Leave activity will chart here once employees start submitting.",
+  },
+  [ROLE.ADMIN]: {
+    total: "Total administrators",
+    active: "Active administrators",
+    description: "Leave activity across your administrators.",
+    emptyTrend: "Leave activity will chart here once administrators start submitting.",
+  },
+} as const;
 
-  if (loading) return <DashboardSkeleton />;
+export function AdminDashboard({
+  firstName,
+  canViewAdmins,
+}: {
+  firstName: string;
+  /** Super admin only. The API enforces this too — see the stats route. */
+  canViewAdmins: boolean;
+}) {
+  const [population, setPopulation] = useState<InviteRole>(ROLE.EMPLOYEE);
+
+  // Refetches on switch, because the path changes. Every figure below is
+  // measured over this population, not merely relabelled for it.
+  const { data, loading, error } = useApiResource<AdminDashboardView>(
+    `/api/admin/stats?population=${population}`,
+  );
+
+  const copy = POPULATION_COPY[population];
+
+  const populationToggle = canViewAdmins ? (
+    <div className="bg-muted/60 inline-flex items-center rounded-lg p-1" role="group" aria-label="Population">
+      {[ROLE.EMPLOYEE, ROLE.ADMIN].map((option) => (
+        <Button
+          key={option}
+          type="button"
+          size="sm"
+          variant={population === option ? "default" : "ghost"}
+          onClick={() => setPopulation(option)}
+          aria-pressed={population === option}
+        >
+          {option === ROLE.EMPLOYEE ? <Users className="size-4" /> : <Shield className="size-4" />}
+          {option === ROLE.EMPLOYEE ? "Employees" : "Admins"}
+        </Button>
+      ))}
+    </div>
+  ) : (
+    <Button variant="outline" asChild>
+      <Link href={ROUTES.adminEmployees}>
+        <Users className="size-4" />
+        Employees
+      </Link>
+    </Button>
+  );
+
+  const header = (
+    <PageHeader
+      title={`Good to see you, ${firstName}`}
+      description={copy.description}
+      actions={
+        <>
+          {populationToggle}
+          <Button asChild>
+            <Link href={ROUTES.adminLeaves}>
+              <CalendarDays className="size-4" />
+              Leave requests
+            </Link>
+          </Button>
+        </>
+      }
+    />
+  );
+
+  // The header stays put while the panels reload, so switching population does
+  // not tear the toggle off the screen the moment it is clicked.
+  if (loading) {
+    return (
+      <>
+        {header}
+        <DashboardSkeleton />
+      </>
+    );
+  }
 
   if (error || !data) {
     return (
-      <EmptyState
-        icon={XCircle}
-        title="Couldn't load the dashboard"
-        description={error ?? "Please refresh the page to try again."}
-      />
+      <>
+        {header}
+        <EmptyState
+          icon={XCircle}
+          title="Couldn't load the dashboard"
+          description={error ?? "Please refresh the page to try again."}
+        />
+      </>
     );
   }
 
   const { overview, monthlyTrend, departmentBreakdown, recentActivity } = data;
 
-  // The super admin is responsible for administrators too, so their headcount
-  // covers both and says so. An ordinary admin's counts employees alone, and
-  // labelling it "members" would imply a roster they cannot see.
-  const wholeOrganisation = overview.scope === "organisation";
-  const breakdown = overview.roleBreakdown;
-
   const headcountHint =
-    wholeOrganisation && breakdown
-      ? `${breakdown.employees} employee${breakdown.employees === 1 ? "" : "s"} · ${breakdown.administrators} administrator${breakdown.administrators === 1 ? "" : "s"}`
+    overview.awaitingApproval > 0
+      ? `${overview.suspendedMembers} suspended · ${overview.awaitingApproval} awaiting approval`
       : `${overview.suspendedMembers} suspended`;
 
   return (
     <>
-      <PageHeader
-        title={`Good to see you, ${firstName}`}
-        description="Organisation-wide leave activity at a glance."
-        actions={
-          <>
-            <Button variant="outline" asChild>
-              <Link href={ROUTES.adminEmployees}>
-                <Users className="size-4" />
-                Employees
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href={ROUTES.adminLeaves}>
-                <CalendarDays className="size-4" />
-                Leave requests
-              </Link>
-            </Button>
-          </>
-        }
-      />
+      {header}
 
       <div className="grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            label={wholeOrganisation ? "Total members" : "Total employees"}
+            label={copy.total}
             value={overview.totalMembers}
             icon={Users}
             tone="primary"
             hint={headcountHint}
           />
           <StatCard
-            label={wholeOrganisation ? "Active members" : "Active employees"}
+            label={copy.active}
             value={overview.activeMembers}
             icon={UserCheck}
             tone="success"
-            // Suspended moves here for the super admin, whose total card is
-            // already spending its hint on the employee/administrator split.
-            hint={wholeOrganisation ? `${overview.suspendedMembers} suspended` : "Able to sign in"}
+            hint="Able to sign in"
           />
           <StatCard
             label="Approved leaves"
@@ -128,7 +190,7 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
                 <EmptyState
                   icon={CalendarDays}
                   title="No requests yet"
-                  description="Leave activity will chart here once employees start submitting."
+                  description={copy.emptyTrend}
                   inset={false}
                 />
               )}
@@ -150,7 +212,7 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
                 <EmptyState
                   icon={Building2}
                   title="No department data"
-                  description="Once employees complete their profiles, this breakdown will populate."
+                  description="Once profiles carry a department, this breakdown will populate."
                   inset={false}
                 />
               )}

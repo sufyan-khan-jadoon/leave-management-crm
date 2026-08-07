@@ -1,4 +1,4 @@
-import { LeaveStatus, type Prisma } from "@prisma/client";
+import { LeaveStatus, type Prisma, type Role } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { endOfUtcMonth, startOfUtcMonth } from "@/lib/date";
@@ -178,14 +178,24 @@ export const leaveRepository = {
       .then((rows) => rows.map((row) => ({ status: row.status, count: row._count._all })));
   },
 
-  /** Leave counts grouped by month for the trend chart. */
+  /**
+   * Leave counts grouped by month for the trend chart.
+   *
+   * `roles` narrows to one population — the admin overview reports on employees
+   * and administrators separately, and their leave is what makes the two views
+   * different rather than just differently labelled.
+   */
   async monthlyTotals(
     from: Date,
     to: Date,
-    employeeId?: string,
+    filter: { employeeId?: string; roles?: Role[] } = {},
   ): Promise<Array<{ month: Date; status: LeaveStatus; count: number }>> {
     const rows = await prisma.leave.findMany({
-      where: { leaveDate: { gte: from, lt: to }, ...(employeeId ? { employeeId } : {}) },
+      where: {
+        leaveDate: { gte: from, lt: to },
+        ...(filter.employeeId ? { employeeId: filter.employeeId } : {}),
+        ...(filter.roles ? { employee: { role: { in: filter.roles } } } : {}),
+      },
       select: { leaveDate: true, status: true },
     });
 
@@ -203,12 +213,14 @@ export const leaveRepository = {
     return [...buckets.values()].sort((a, b) => a.month.getTime() - b.month.getTime());
   },
 
-  /** Approved-leave counts per department, for the admin breakdown chart. */
-  async departmentTotals(from?: Date, to?: Date): Promise<Array<{ department: string; count: number }>> {
+  /** Leave counts per department, for the admin breakdown chart. */
+  async departmentTotals(
+    filter: { from?: Date; to?: Date; roles?: Role[] } = {},
+  ): Promise<Array<{ department: string; count: number }>> {
     const rows = await prisma.leave.findMany({
       where: {
-        ...(from && to ? { leaveDate: { gte: from, lt: to } } : {}),
-        employee: { department: { not: null } },
+        ...(filter.from && filter.to ? { leaveDate: { gte: filter.from, lt: filter.to } } : {}),
+        employee: { department: { not: null }, ...(filter.roles ? { role: { in: filter.roles } } : {}) },
       },
       select: { employee: { select: { department: true } } },
     });
@@ -224,8 +236,9 @@ export const leaveRepository = {
       .sort((a, b) => b.count - a.count);
   },
 
-  recent(limit: number): Promise<LeaveWithEmployeeDto[]> {
+  recent(limit: number, roles?: Role[]): Promise<LeaveWithEmployeeDto[]> {
     return prisma.leave.findMany({
+      where: roles ? { employee: { role: { in: roles } } } : undefined,
       select: leaveWithEmployeeSelect,
       orderBy: { createdAt: "desc" },
       take: limit,

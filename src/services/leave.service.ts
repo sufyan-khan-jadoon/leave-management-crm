@@ -1,4 +1,4 @@
-import { LeaveStatus } from "@prisma/client";
+import { LeaveStatus, type Role } from "@prisma/client";
 
 import { MAX_LEAVE_DAYS_PER_REQUEST, MONTHLY_LEAVE_ALLOWANCE } from "@/lib/constants";
 import {
@@ -213,11 +213,16 @@ export const leaveService = {
     return counts;
   },
 
-  /** Month-by-month series for the trend chart, zero-filled for empty months. */
-  async monthlyTrend(months: number, employeeId?: string) {
+  /**
+   * Month-by-month series for the trend chart, zero-filled for empty months.
+   *
+   * Narrow with `employeeId` for one person's own chart, or `role` for a whole
+   * population; omit both for the organisation.
+   */
+  async monthlyTrend(months: number, filter: { employeeId?: string; roles?: Role[] } = {}) {
     const to = endOfUtcMonth(new Date());
     const from = addUtcMonths(startOfUtcMonth(new Date()), -(months - 1));
-    const rows = await leaveRepository.monthlyTotals(from, to, employeeId);
+    const rows = await leaveRepository.monthlyTotals(from, to, filter);
 
     const series: Array<{ month: Date; approved: number; pending: number; rejected: number; total: number }> = [];
 

@@ -70,12 +70,12 @@ export type EmployeeDashboardData = {
 };
 
 export type AdminOverviewView = {
-  /** "organisation" includes administrators; "employees" does not. */
-  scope: "organisation" | "employees";
+  /** Which population every figure below is measured over. */
+  population: "EMPLOYEE" | "ADMIN";
   totalMembers: number;
   activeMembers: number;
   suspendedMembers: number;
-  roleBreakdown: { employees: number; administrators: number } | null;
+  awaitingApproval: number;
   approvedLeaves: number;
   rejectedLeaves: number;
   leavesThisMonth: number;

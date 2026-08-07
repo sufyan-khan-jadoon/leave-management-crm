@@ -12,7 +12,7 @@ export async function GET() {
       employeeService.byId(user.id),
       leaveService.balanceFor(user.id),
       leaveService.lifetimeCounts(user.id),
-      leaveService.monthlyTrend(6, user.id),
+      leaveService.monthlyTrend(6, { employeeId: user.id }),
       leaveService.list({
         employeeId: user.id,
         page: 1,

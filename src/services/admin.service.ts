@@ -1,25 +1,39 @@
 import { EmployeeStatus, LeaveStatus, Role } from "@prisma/client";
 
 import { endOfUtcMonth, startOfUtcMonth } from "@/lib/date";
-import { isSuperAdminRole } from "@/lib/enums";
 import { employeeRepository } from "@/repositories/employee.repository";
 import { leaveRepository, type LeaveWithEmployeeDto } from "@/repositories/leave.repository";
 import { leaveService } from "@/services/leave.service";
 
-/** Who the headcount covers — the same split the Members screen makes. */
-export type OverviewScope = "organisation" | "employees";
+/**
+ * Which population the overview reports on — the same split the Members screen
+ * makes. `SUPER_ADMIN` is absent because that account is managed nowhere.
+ */
+export type OverviewPopulation = typeof Role.EMPLOYEE | typeof Role.ADMIN;
 
 export type AdminOverview = {
-  scope: OverviewScope;
+  population: OverviewPopulation;
   totalMembers: number;
   activeMembers: number;
   suspendedMembers: number;
-  /** Only populated for the super admin, who alone may see administrators. */
-  roleBreakdown: { employees: number; administrators: number } | null;
+  /** Administrators only: employees never sit in PENDING_APPROVAL. */
+  awaitingApproval: number;
   approvedLeaves: number;
   rejectedLeaves: number;
   leavesThisMonth: number;
 };
+
+/**
+ * The roles a population covers.
+ *
+ * The super admin counts as an administrator here, unlike on the Members
+ * screen, which lists only what can be managed. This is a report rather than a
+ * roster: leaving that account out would mean its leave was counted in neither
+ * view and simply vanished from the organisation's figures.
+ */
+function rolesIn(population: OverviewPopulation): Role[] {
+  return population === Role.ADMIN ? [Role.ADMIN, Role.SUPER_ADMIN] : [Role.EMPLOYEE];
+}
 
 export type AdminDashboardData = {
   overview: AdminOverview;
@@ -30,47 +44,41 @@ export type AdminDashboardData = {
 
 export const adminService = {
   /**
-   * Headline numbers, scoped to whom the viewer is responsible for.
+   * Headline numbers for one population.
    *
-   * The super admin owns administrator onboarding, so their overview counts
-   * administrators alongside employees and reports the split. An ordinary admin
-   * sees employees only: `/api/admin/employees` already refuses them the
-   * administrator roster, and a headcount would give away its size just as
-   * effectively.
-   *
-   * `SUPER_ADMIN` is counted for neither, which keeps the total consistent with
-   * the Members screen — that role cannot be listed or managed there either.
+   * Both the headcount and the leave figures are narrowed to it, so switching
+   * between employees and administrators changes what is being measured rather
+   * than only what the cards are called. `SUPER_ADMIN` belongs to neither
+   * population, which keeps these totals consistent with the Members screen —
+   * that role cannot be listed or managed there either.
    */
-  async overview(viewer: { role: Role }): Promise<AdminOverview> {
+  async overview(population: OverviewPopulation): Promise<AdminOverview> {
     const now = new Date();
-    const superAdmin = isSuperAdminRole(viewer.role);
-    const roles = superAdmin ? [Role.EMPLOYEE, Role.ADMIN] : [Role.EMPLOYEE];
+    const roles = rolesIn(population);
+    const ofPopulation = { employee: { role: { in: roles } } };
 
     const [headcount, leaveRows, thisMonth] = await Promise.all([
       employeeRepository.countByRoleAndStatus(roles),
-      leaveRepository.countByStatus(),
+      leaveRepository.countByStatus(ofPopulation),
       leaveRepository.countByStatus({
+        ...ofPopulation,
         leaveDate: { gte: startOfUtcMonth(now), lt: endOfUtcMonth(now) },
       }),
     ]);
 
     const leaveCounts = new Map(leaveRows.map((row) => [row.status, row.count]));
-    const sum = (rows: typeof headcount) => rows.reduce((total, row) => total + row.count, 0);
+    const countWhere = (predicate: (status: EmployeeStatus) => boolean) =>
+      headcount.reduce((total, row) => (predicate(row.status) ? total + row.count : total), 0);
 
     return {
-      scope: superAdmin ? "organisation" : "employees",
+      population,
       // Every status, not just active plus suspended: an administrator awaiting
       // approval is a real person on the books, and would otherwise be counted
       // nowhere at all.
-      totalMembers: sum(headcount),
-      activeMembers: sum(headcount.filter((row) => row.status === EmployeeStatus.ACTIVE)),
-      suspendedMembers: sum(headcount.filter((row) => row.status === EmployeeStatus.SUSPENDED)),
-      roleBreakdown: superAdmin
-        ? {
-            employees: sum(headcount.filter((row) => row.role === Role.EMPLOYEE)),
-            administrators: sum(headcount.filter((row) => row.role === Role.ADMIN)),
-          }
-        : null,
+      totalMembers: headcount.reduce((total, row) => total + row.count, 0),
+      activeMembers: countWhere((status) => status === EmployeeStatus.ACTIVE),
+      suspendedMembers: countWhere((status) => status === EmployeeStatus.SUSPENDED),
+      awaitingApproval: countWhere((status) => status === EmployeeStatus.PENDING_APPROVAL),
       // No pending total: nothing creates a PENDING leave any more, so it would
       // be a permanent zero dressed up as a metric.
       approvedLeaves: leaveCounts.get(LeaveStatus.APPROVED) ?? 0,
@@ -79,12 +87,14 @@ export const adminService = {
     };
   },
 
-  async dashboard(viewer: { role: Role }): Promise<AdminDashboardData> {
+  async dashboard(population: OverviewPopulation): Promise<AdminDashboardData> {
+    const roles = rolesIn(population);
+
     const [overview, monthlyTrend, departmentBreakdown, recentActivity] = await Promise.all([
-      this.overview(viewer),
-      leaveService.monthlyTrend(6),
-      leaveRepository.departmentTotals(),
-      leaveRepository.recent(8),
+      this.overview(population),
+      leaveService.monthlyTrend(6, { roles }),
+      leaveRepository.departmentTotals({ roles }),
+      leaveRepository.recent(8, roles),
     ]);
 
     return { overview, monthlyTrend, departmentBreakdown, recentActivity };

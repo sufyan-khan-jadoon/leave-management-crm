@@ -68,3 +68,14 @@ export const employeeQuerySchema = z.object({
 });
 
 export type EmployeeQuery = z.infer<typeof employeeQuerySchema>;
+
+/**
+ * Which population the admin overview reports on. Defaults to employees and is
+ * gated to the super admin for ADMIN in the route handler, exactly as the
+ * roster is — the dashboard would otherwise be a way around that gate.
+ */
+export const adminStatsQuerySchema = z.object({
+  population: z.enum([Role.EMPLOYEE, Role.ADMIN]).default(Role.EMPLOYEE),
+});
+
+export type AdminStatsQuery = z.infer<typeof adminStatsQuerySchema>;
