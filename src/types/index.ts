@@ -70,9 +70,12 @@ export type EmployeeDashboardData = {
 };
 
 export type AdminOverviewView = {
-  totalEmployees: number;
-  activeEmployees: number;
-  suspendedEmployees: number;
+  /** "organisation" includes administrators; "employees" does not. */
+  scope: "organisation" | "employees";
+  totalMembers: number;
+  activeMembers: number;
+  suspendedMembers: number;
+  roleBreakdown: { employees: number; administrators: number } | null;
   approvedLeaves: number;
   rejectedLeaves: number;
   leavesThisMonth: number;

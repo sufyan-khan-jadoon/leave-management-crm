@@ -44,6 +44,17 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
 
   const { overview, monthlyTrend, departmentBreakdown, recentActivity } = data;
 
+  // The super admin is responsible for administrators too, so their headcount
+  // covers both and says so. An ordinary admin's counts employees alone, and
+  // labelling it "members" would imply a roster they cannot see.
+  const wholeOrganisation = overview.scope === "organisation";
+  const breakdown = overview.roleBreakdown;
+
+  const headcountHint =
+    wholeOrganisation && breakdown
+      ? `${breakdown.employees} employee${breakdown.employees === 1 ? "" : "s"} · ${breakdown.administrators} administrator${breakdown.administrators === 1 ? "" : "s"}`
+      : `${overview.suspendedMembers} suspended`;
+
   return (
     <>
       <PageHeader
@@ -70,18 +81,20 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
       <div className="grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
-            label="Total employees"
-            value={overview.totalEmployees}
+            label={wholeOrganisation ? "Total members" : "Total employees"}
+            value={overview.totalMembers}
             icon={Users}
             tone="primary"
-            hint={`${overview.suspendedEmployees} suspended`}
+            hint={headcountHint}
           />
           <StatCard
-            label="Active employees"
-            value={overview.activeEmployees}
+            label={wholeOrganisation ? "Active members" : "Active employees"}
+            value={overview.activeMembers}
             icon={UserCheck}
             tone="success"
-            hint="Able to sign in"
+            // Suspended moves here for the super admin, whose total card is
+            // already spending its hint on the employee/administrator split.
+            hint={wholeOrganisation ? `${overview.suspendedMembers} suspended` : "Able to sign in"}
           />
           <StatCard
             label="Approved leaves"

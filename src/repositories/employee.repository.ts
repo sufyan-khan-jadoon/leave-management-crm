@@ -161,10 +161,20 @@ export const employeeRepository = {
     return { items, total };
   },
 
-  countByStatus(): Promise<Array<{ status: EmployeeStatus; _count: number }>> {
+  /**
+   * Headcount grouped by role and status, for the roles the caller asks for.
+   *
+   * Grouped by both so a single query answers "how many people are there" and
+   * "how many of them are administrators" — the overview needs the split, and
+   * administrators pass through statuses employees never do, so collapsing to
+   * status alone would hide anyone awaiting approval.
+   */
+  countByRoleAndStatus(
+    roles: Role[],
+  ): Promise<Array<{ role: Role; status: EmployeeStatus; count: number }>> {
     return prisma.employee
-      .groupBy({ by: ["status"], where: { role: Role.EMPLOYEE }, _count: { _all: true } })
-      .then((rows) => rows.map((row) => ({ status: row.status, _count: row._count._all })));
+      .groupBy({ by: ["role", "status"], where: { role: { in: roles } }, _count: { _all: true } })
+      .then((rows) => rows.map((row) => ({ role: row.role, status: row.status, count: row._count._all })));
   },
 
   countEmployees(where?: Prisma.EmployeeWhereInput): Promise<number> {
