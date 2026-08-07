@@ -57,9 +57,18 @@ export type RegisterInput = z.infer<typeof registerSchema>;
  */
 export const adminRegisterSchema = registerSchema;
 
+/** The two sign-in screens. Each admits exactly one kind of account. */
+export const LOGIN_PORTALS = ["employee", "admin"] as const;
+
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1, "Password is required"),
+  /**
+   * Which screen the attempt came from. Required rather than defaulted: a
+   * request that omits it fails validation and is refused outright, so the
+   * check cannot be skipped by simply leaving the field off.
+   */
+  portal: z.enum(LOGIN_PORTALS),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

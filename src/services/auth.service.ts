@@ -9,7 +9,7 @@ import {
   OTP_TTL_MINUTES,
 } from "@/lib/constants";
 import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } from "@/lib/errors";
-import { OTP_PURPOSE, canSignIn } from "@/lib/enums";
+import { OTP_PURPOSE, canSignIn, isAdminRole } from "@/lib/enums";
 import type { ResetTicket } from "@/lib/auth/reset-ticket";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { employeeRepository, type EmployeeDto } from "@/repositories/employee.repository";
@@ -280,6 +280,19 @@ export const authService = {
 
     const valid = await verifyPassword(input.password, employee.password);
     if (!valid) return null;
+
+    // Each screen admits one kind of account. Checked only once the password has
+    // been proven: doing it earlier would turn the sign-in form into a way of
+    // asking "is this address an administrator?" without knowing the password.
+    const wantsAdminPortal = input.portal === "admin";
+
+    if (isAdminRole(employee.role) !== wantsAdminPortal) {
+      throw new ForbiddenError(
+        wantsAdminPortal
+          ? "This is the administrator sign in. Please use the employee page."
+          : "Administrators sign in from the administrator page.",
+      );
+    }
 
     if (!employee.emailVerified) {
       throw new ForbiddenError("Please verify your email address before signing in.");

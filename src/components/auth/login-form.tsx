@@ -34,7 +34,10 @@ export function LoginForm({ variant = "employee" }: LoginFormProps) {
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    // `portal` is submitted with the credentials so the server can refuse an
+    // account that belongs on the other screen. It is never rendered.
+    // The address is carried over when the other screen redirected them here.
+    defaultValues: { email: searchParams.get("email") ?? "", password: "", portal: variant },
   });
 
   const callbackUrl =
@@ -61,6 +64,16 @@ export function LoginForm({ variant = "employee" }: LoginFormProps) {
       if (message.toLowerCase().includes("verify your email")) {
         toast.error(message);
         router.push(`${ROUTES.verifyEmail}?email=${encodeURIComponent(values.email)}`);
+        return;
+      }
+
+      // Signed in at the wrong door. They have already proven the password, so
+      // carry the address across rather than making them type it again.
+      if (message.includes("administrator page") || message.includes("employee page")) {
+        const destination = variant === "admin" ? ROUTES.login : ROUTES.adminLogin;
+
+        toast.error(message);
+        router.push(`${destination}?email=${encodeURIComponent(values.email)}`);
         return;
       }
 

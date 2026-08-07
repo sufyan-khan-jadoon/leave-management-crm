@@ -68,6 +68,19 @@ the UI can hide a form it may not submit; it mirrors the real check, never repla
 
 `InviteKeySection` is shared by the super admin's access panel and the Employees screen.
 
+## Each sign-in screen admits one kind of account
+
+`/login` takes employees, `/admin/login` takes administrators, and neither accepts the other. The
+screen submits a `portal` field alongside the credentials and `authenticate` refuses a mismatch.
+
+`portal` is **required, never defaulted** — a request that omits it fails validation outright, so
+the check cannot be skipped by leaving the field off. The comparison happens *after* the password
+is verified: doing it earlier would turn the sign-in form into a way of asking "is this address an
+administrator?" without knowing the password.
+
+Being sent to the wrong screen is a mistake, not an attack, so the message names the right one and
+the address is carried across in the query string rather than retyped.
+
 ## Who may act on whose account
 
 `assertMayManage` in `employee.service.ts` is the single seniority rule, applied to **every** read
