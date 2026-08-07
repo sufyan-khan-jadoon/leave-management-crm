@@ -30,8 +30,12 @@ const INITIAL: LeaveFilters = {
  * Owns the filter/sort/pagination state for a leave table and derives both the
  * fetch URL and the CSV export URL from it, so the download always matches
  * what is on screen.
+ *
+ * `employeeId` pins the table to one person. The personal screens pass the
+ * viewer's own id because an admin is not scoped for them: the endpoint answers
+ * an admin with the whole roster unless it is told whose leave to return.
  */
-export function useLeaveTable(pageSize = 10) {
+export function useLeaveTable(pageSize = 10, employeeId?: string) {
   const [filters, setFilters] = useState<LeaveFilters>(INITIAL);
   const debouncedSearch = useDebouncedValue(filters.search.trim(), 350);
 
@@ -40,12 +44,22 @@ export function useLeaveTable(pageSize = 10) {
       search: debouncedSearch || undefined,
       status: filters.status === "ALL" ? undefined : filters.status,
       department: filters.department === "ALL" ? undefined : filters.department,
+      employeeId,
       sortBy: filters.sortBy,
       sortDir: filters.sortDir,
       page: filters.page,
       pageSize,
     }),
-    [debouncedSearch, filters.status, filters.department, filters.sortBy, filters.sortDir, filters.page, pageSize],
+    [
+      debouncedSearch,
+      filters.status,
+      filters.department,
+      filters.sortBy,
+      filters.sortDir,
+      filters.page,
+      employeeId,
+      pageSize,
+    ],
   );
 
   const resource = useApiResource<PaginatedLeaves>(`/api/leaves${toQueryString(query)}`);

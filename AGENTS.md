@@ -114,7 +114,17 @@ and keys off `employeeId`, so nothing there is employee-only.
 `ADMIN_NAV` is split into a `Manage` group and a `Personal` group; the sidebar prints each heading
 once, when the group changes. No self-approval hole exists to close: `bookLeave` writes rows
 already approved when they fit the allowance, so the policy decides, not the person — and `decide`
-re-checks the allowance before any manual override.
+re-checks the allowance before any manual override. The leave assistant is therefore open to
+admins too — signing out and back in as somebody else was never a security boundary, only a chore.
+
+Scope is the thing to keep an eye on. `/api/leaves` reads `employeeId` from the query **for an
+admin**, so leaving it off hands them the whole roster — right for the Manage screen, wrong for
+`My history`. The personal screens pass the viewer's own id into `useLeaveTable` rather than
+relying on the default, which also keeps the CSV export in step.
+
+Admins are waved past `/profile/setup` by the middleware, so an admin can reach the personal
+screens with a blank department and joining date. `/api/leaves/chat` refuses that either way;
+`ProfileRequiredNotice` stands in for the assistant so the refusal comes with somewhere to go.
 
 ## Brand colour — the FILL vs INK rule
 

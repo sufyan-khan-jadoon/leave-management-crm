@@ -9,5 +9,10 @@ export default async function DashboardPage() {
   const session = await auth();
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
 
-  return <EmployeeDashboard firstName={firstName} />;
+  return (
+    <EmployeeDashboard
+      firstName={firstName}
+      profileComplete={Boolean(session?.user?.profileComplete)}
+    />
+  );
 }

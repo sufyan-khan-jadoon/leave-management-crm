@@ -13,6 +13,7 @@ import {
 
 import { LeaveTrendChart } from "@/components/charts/leave-trend-chart";
 import { LeaveChat } from "@/components/leaves/leave-chat";
+import { ProfileRequiredNotice } from "@/components/leaves/profile-required-notice";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LeaveStatusBadge } from "@/components/shared/leave-status-badge";
@@ -27,7 +28,13 @@ import { ROUTES } from "@/lib/constants";
 import { formatDate, relativeTime } from "@/lib/date";
 import type { EmployeeDashboardData } from "@/types";
 
-export function EmployeeDashboard({ firstName }: { firstName: string }) {
+export function EmployeeDashboard({
+  firstName,
+  profileComplete,
+}: {
+  firstName: string;
+  profileComplete: boolean;
+}) {
   const { data, loading, error } = useApiResource<EmployeeDashboardData>("/api/dashboard");
 
   if (loading) return <DashboardSkeleton />;
@@ -124,7 +131,7 @@ export function EmployeeDashboard({ firstName }: { firstName: string }) {
             </CardDescription>
           </CardHeader>
           <CardContent className="px-0 pb-0">
-            <LeaveChat bare />
+            {profileComplete ? <LeaveChat bare /> : <ProfileRequiredNotice inset={false} />}
           </CardContent>
         </Card>
 

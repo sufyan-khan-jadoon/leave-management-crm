@@ -2,7 +2,6 @@ import { handleRoute, ok, parseBody } from "@/lib/api";
 import { requireUser } from "@/lib/auth/guards";
 import { ForbiddenError } from "@/lib/errors";
 import { RATE_LIMITS, enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { isAdminRole } from "@/lib/enums";
 import { leaveChatService } from "@/services/leave-chat.service";
 import { leaveChatSchema } from "@/validations/leave.schema";
 
@@ -11,14 +10,13 @@ import { leaveChatSchema } from "@/validations/leave.schema";
  *
  * Answers only; nothing is booked here. When the request is complete the reply
  * carries a proposal the employee has to confirm through /chat/confirm.
+ *
+ * Administrators are not turned away: they draw the same allowance, and the
+ * assistant keys off the caller's own id, so this is always their own leave.
  */
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const user = await requireUser();
-
-    if (isAdminRole(user.role)) {
-      throw new ForbiddenError("Administrators submit leave from an employee account.");
-    }
 
     if (!user.profileComplete) {
       throw new ForbiddenError("Complete your profile before requesting leave.");

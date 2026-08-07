@@ -2,7 +2,6 @@ import { created, handleRoute, parseBody } from "@/lib/api";
 import { requireUser } from "@/lib/auth/guards";
 import { ForbiddenError } from "@/lib/errors";
 import { RATE_LIMITS, enforceRateLimit, rateLimitKey } from "@/lib/rate-limit";
-import { isAdminRole } from "@/lib/enums";
 import { leaveChatService } from "@/services/leave-chat.service";
 import { leaveConfirmSchema } from "@/validations/leave.schema";
 
@@ -12,14 +11,14 @@ import { leaveConfirmSchema } from "@/validations/leave.schema";
  * The proposal is re-planned from scratch rather than trusted, so an edited
  * payload, a stale tab, or an allowance used up in the meantime is caught here
  * and refused with a conflict.
+ *
+ * An administrator booking their own leave is no self-approval hole: the row is
+ * written approved only because it fits the allowance the policy already
+ * granted them, exactly as it would be for anyone else.
  */
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const user = await requireUser();
-
-    if (isAdminRole(user.role)) {
-      throw new ForbiddenError("Administrators submit leave from an employee account.");
-    }
 
     if (!user.profileComplete) {
       throw new ForbiddenError("Complete your profile before requesting leave.");
