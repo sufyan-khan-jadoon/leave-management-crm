@@ -10,7 +10,6 @@ export type AdminOverview = {
   activeEmployees: number;
   suspendedEmployees: number;
   approvedLeaves: number;
-  pendingLeaves: number;
   rejectedLeaves: number;
   leavesThisMonth: number;
 };
@@ -44,8 +43,9 @@ export const adminService = {
       totalEmployees: active + suspended,
       activeEmployees: active,
       suspendedEmployees: suspended,
+      // No pending total: nothing creates a PENDING leave any more, so it would
+      // be a permanent zero dressed up as a metric.
       approvedLeaves: leaveCounts.get(LeaveStatus.APPROVED) ?? 0,
-      pendingLeaves: leaveCounts.get(LeaveStatus.PENDING) ?? 0,
       rejectedLeaves: leaveCounts.get(LeaveStatus.REJECTED) ?? 0,
       leavesThisMonth: thisMonth.reduce((sum, row) => sum + row.count, 0),
     };

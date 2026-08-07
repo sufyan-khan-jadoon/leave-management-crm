@@ -6,7 +6,6 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
-  Clock,
   Mail,
   Phone,
   ShieldCheck,
@@ -106,7 +105,7 @@ export default async function AdminEmployeeDetailPage({ params }: { params: Prom
         </Card>
 
         <div className="space-y-4 lg:col-span-2">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <StatCard
               label="Remaining"
               value={`${balance.remaining}/${MONTHLY_LEAVE_ALLOWANCE}`}
@@ -115,7 +114,6 @@ export default async function AdminEmployeeDetailPage({ params }: { params: Prom
               hint="This month"
             />
             <StatCard label="Approved" value={counts.APPROVED} icon={CheckCircle2} tone="success" hint="All time" />
-            <StatCard label="Pending" value={counts.PENDING} icon={Clock} tone="warning" hint="Awaiting review" />
             <StatCard label="Rejected" value={counts.REJECTED} icon={XCircle} tone="destructive" hint="All time" />
           </div>
 

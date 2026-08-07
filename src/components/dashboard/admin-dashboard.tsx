@@ -5,7 +5,6 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
-  Clock,
   TrendingUp,
   UserCheck,
   Users,
@@ -69,7 +68,7 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
       />
 
       <div className="grid gap-4">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             label="Total employees"
             value={overview.totalEmployees}
@@ -90,13 +89,6 @@ export function AdminDashboard({ firstName }: { firstName: string }) {
             icon={CheckCircle2}
             tone="success"
             hint="All time"
-          />
-          <StatCard
-            label="Pending leaves"
-            value={overview.pendingLeaves}
-            icon={Clock}
-            tone="warning"
-            hint="Awaiting a decision"
           />
           <StatCard
             label="Rejected leaves"
@@ -209,8 +201,8 @@ function DashboardSkeleton() {
         <Skeleton className="h-4 w-96" />
       </div>
       <div className="grid gap-4">
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {Array.from({ length: 5 }, (_, index) => (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
             <StatCardSkeleton key={index} />
           ))}
         </div>

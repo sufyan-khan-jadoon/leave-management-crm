@@ -74,7 +74,6 @@ export type AdminOverviewView = {
   activeEmployees: number;
   suspendedEmployees: number;
   approvedLeaves: number;
-  pendingLeaves: number;
   rejectedLeaves: number;
   leavesThisMonth: number;
 };

@@ -5,7 +5,6 @@ import {
   CalendarClock,
   CalendarDays,
   CheckCircle2,
-  Clock,
   Sparkles,
   TrendingUp,
   XCircle,
@@ -95,7 +94,7 @@ export function EmployeeDashboard({
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <StatCard
             label="Used this month"
             value={balance.approvedThisMonth}
@@ -110,7 +109,6 @@ export function EmployeeDashboard({
             tone="success"
             hint="All time"
           />
-          <StatCard label="Pending" value={counts.PENDING} icon={Clock} tone="warning" hint="Awaiting review" />
           <StatCard
             label="Rejected"
             value={counts.REJECTED}
