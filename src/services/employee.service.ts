@@ -173,7 +173,7 @@ export const employeeService = {
   /**
    * Deletes an account and, by cascade, its leave and OTP history.
    *
-   * Deleting an administrator also cascades the invite keys they issued, so the
+   * Deleting an administrator also cascades the invitations they sent, so the
    * record of who let a given employee in goes with them. Suspending is the
    * gentler option and is what the UI recommends.
    */

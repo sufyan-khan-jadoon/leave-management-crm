@@ -157,9 +157,9 @@ export function LoginForm({ variant = "employee" }: LoginFormProps) {
         {variant === "employee" && (
           <>
             <p className="text-muted-foreground text-center text-sm">
-              Don&apos;t have an account?{" "}
+              Have an invitation?{" "}
               <Link href={ROUTES.register} className="text-primary-ink font-medium hover:underline">
-                Create one
+                Create your account
               </Link>
             </p>
 

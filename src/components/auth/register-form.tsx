@@ -9,7 +9,15 @@ import { Eye, EyeOff, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
@@ -17,20 +25,22 @@ import { registerSchema, type RegisterInput } from "@/validations/auth.schema";
 import { PasswordStrength } from "@/components/auth/password-strength";
 
 type RegisterFormProps = {
-  /** Set from the role the verified key grants — wording only. */
+  /** Set from the role the invitation grants — wording only. */
   variant?: "employee" | "admin";
-  /** Always supplied: `InviteRegisterForm` checks the key before rendering this. */
-  inviteKey: string;
+  /** Always supplied: `InvitationGate` resolves the link before rendering this. */
+  token: string;
+  /** The invited address. Fixed, not a field — see the note on the input below. */
+  email: string;
 };
 
-export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormProps) {
+export function RegisterForm({ variant = "employee", token, email }: RegisterFormProps) {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const isAdmin = variant === "admin";
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: "", email: "", password: "", confirmPassword: "", inviteKey },
+    defaultValues: { name: "", email, password: "", confirmPassword: "", token },
     mode: "onBlur",
   });
 
@@ -87,6 +97,10 @@ export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormPr
           )}
         />
 
+        {/* Read-only rather than hidden: the address is worth seeing, since it
+            is the one this account will be reachable at. Editing it would only
+            produce a refusal — an invitation admits the mailbox it was sent to,
+            and the server compares the two rather than taking this on trust. */}
         <FormField
           control={form.control}
           name="email"
@@ -94,14 +108,9 @@ export function RegisterForm({ variant = "employee", inviteKey }: RegisterFormPr
             <FormItem>
               <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@company.com"
-                  disabled={form.formState.isSubmitting}
-                  {...field}
-                />
+                <Input type="email" autoComplete="email" readOnly aria-readonly {...field} />
               </FormControl>
+              <FormDescription>The address you were invited at.</FormDescription>
               <FormMessage />
             </FormItem>
           )}

@@ -105,7 +105,7 @@ export const employeeRepository = {
     password: string;
     role?: Role;
     status?: EmployeeStatus;
-    /** Set from the invite key's job role, when it carried one. */
+    /** Set from the invitation's job role, when it carried one. */
     position?: string;
   }): Promise<EmployeeDto> {
     return prisma.employee.create({

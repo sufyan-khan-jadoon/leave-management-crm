@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { EmployeeInviteKeys } from "@/components/admin/employee-invite-keys";
+import { EmployeeInvitations } from "@/components/admin/employee-invitations";
 import { EmployeeManager } from "@/components/admin/employee-manager";
 import { MembersManager } from "@/components/admin/members-manager";
 import { PageHeader } from "@/components/layout/page-header";
@@ -28,11 +28,10 @@ export default async function AdminEmployeesPage() {
         }
       />
       <div className="space-y-4">
-        {/* Only for administrators, whose sole route to issuing a key this is.
-            The super admin already has it on Access keys, alongside the
-            administrator keys — repeating it here would be the same panel
-            twice. */}
-        {!isSuperAdmin && <EmployeeInviteKeys />}
+        {/* Only for administrators, whose sole route to inviting anyone this is.
+            The super admin already has it on Access, alongside administrator
+            invitations — repeating it here would be the same panel twice. */}
+        {!isSuperAdmin && <EmployeeInvitations />}
 
         {isSuperAdmin ? <MembersManager /> : <EmployeeManager role={ROLE.EMPLOYEE} />}
       </div>

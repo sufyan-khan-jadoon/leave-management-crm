@@ -17,11 +17,11 @@ export type Administrator = {
 };
 
 /**
- * Grants administrators the right to issue employee keys.
+ * Grants administrators the right to invite employees.
  *
  * Off by default — being made an administrator does not by itself confer the
  * right to onboard people. Toggling here is the whole grant: the permission is
- * read from the database on every issue, so withdrawing it stops the next
+ * read from the database on every invitation, so withdrawing it stops the next
  * attempt rather than waiting for a session to expire.
  */
 export function AdminPermissions({

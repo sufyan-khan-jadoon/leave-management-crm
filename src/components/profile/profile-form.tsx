@@ -34,7 +34,7 @@ export function ProfileForm({ employee, mode, onSaved }: ProfileFormProps) {
   const router = useRouter();
   const { update } = useSession();
 
-  // A job title that already exists came from the invite key, since this is the
+  // A job title that already exists came from the invitation, since this is the
   // only self-service form that writes one. It is assigned rather than claimed,
   // so it is shown but not editable here — administrators can still change it
   // from the Members screen, which uses a different form.

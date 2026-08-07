@@ -20,14 +20,14 @@ datasource db {
 enum Role {
   EMPLOYEE
   ADMIN
-  /// Owns admin onboarding: issues invite keys and approves admin requests.
+  /// Owns admin onboarding: invites administrators and approves their requests.
   SUPER_ADMIN
 }
 
 enum EmployeeStatus {
   ACTIVE
   SUSPENDED
-  /// An admin who registered with an invite key and is awaiting a decision.
+  /// An admin who accepted an invitation and is awaiting a decision.
   PENDING_APPROVAL
   /// Refused by the super admin. Kept so the address cannot simply re-register.
   REJECTED
@@ -46,6 +46,14 @@ enum OtpPurpose {
   PASSWORD_RESET
 }
 
+/// Where an invitation has got to. "Expired" is deliberately absent: it is read
+/// off `expiresAt` rather than stored, so no scheduled job is needed to keep the
+/// column honest, and an invitation cannot sit open because nothing ran.
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+}
+
 /// A person in the system. Admins are Employees with role = ADMIN.
 model Employee {
   id            String         @id @default(cuid())
@@ -56,13 +64,14 @@ model Employee {
   role          Role           @default(EMPLOYEE)
   status        EmployeeStatus @default(ACTIVE)
 
-  /// Whether this administrator may issue employee invite keys.
+  /// Whether this administrator may invite employees.
   ///
   /// Off by default: being made an admin does not by itself confer the right to
   /// onboard people. The super admin grants it per administrator, and it is read
-  /// from here on every issue rather than carried in the session, so revoking it
-  /// takes effect on the next request instead of when a token expires.
-  /// Meaningless for EMPLOYEE, and ignored for SUPER_ADMIN, who may always issue.
+  /// from here on every invitation rather than carried in the session, so
+  /// revoking it takes effect on the next request instead of when a token
+  /// expires. Meaningless for EMPLOYEE, and ignored for SUPER_ADMIN, who may
+  /// always invite.
   canInviteEmployees Boolean @default(false)
 
   // Profile fields — collected after email verification, not at registration.
@@ -75,10 +84,10 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  leaves        Leave[]
-  otpCodes      OtpCode[]
-  invitesIssued InviteKey[] @relation("InviteIssuer")
-  inviteUsed    InviteKey?  @relation("InviteRedeemer")
+  leaves             Leave[]
+  otpCodes           OtpCode[]
+  invitationsSent    Invitation[] @relation("InvitationIssuer")
+  invitationAccepted Invitation?  @relation("InvitationAcceptor")
 
   @@index([department])
   @@index([status])
@@ -103,60 +112,67 @@ model OtpCode {
   @@map("otp_codes")
 }
 
-/// A one-shot invitation to register, as either an employee or an administrator.
-///
-/// Single-use by design: redeeming one ties it to the account that used it, so
-/// a leaked key cannot onboard a stream of strangers and every account can be
-/// traced back to the invitation it came through.
-///
-/// `role` is what the key grants, and it is the only thing that decides what the
-/// holder becomes — registration reads the role off the key rather than from
-/// which page the form was posted from, so a key can never be used to claim a
-/// role it was not issued for. SUPER_ADMIN is deliberately not issuable.
-/// A job title an administrator can hand out with an invite key.
+/// A job title an administrator can assign when inviting someone.
 ///
 /// Curated rather than free text so the same job is spelled one way across the
 /// organisation — "Software Engineer" and "software engineer" would otherwise
-/// both appear in filters. Redeeming a key stamps the name onto the new
+/// both appear in filters. Accepting an invitation stamps the name onto the new
 /// account's `position`; it deliberately does not become a third field
 /// competing with `position` and `department` to describe the same thing.
 model JobRole {
-  id        String      @id @default(cuid())
-  name      String      @unique
-  createdAt DateTime    @default(now())
-  invites   InviteKey[]
+  id          String       @id @default(cuid())
+  name        String       @unique
+  createdAt   DateTime     @default(now())
+  invitations Invitation[]
 
   @@map("job_roles")
 }
 
-model InviteKey {
-  id         String    @id @default(cuid())
-  key        String    @unique
-  role       Role
-  /// Job title the holder is given on sign-up. Optional: a key may simply admit
-  /// someone and leave the title to be filled in at profile setup.
-  jobRoleId  String?
-  jobRole    JobRole?  @relation(fields: [jobRoleId], references: [id], onDelete: SetNull)
-  /// Free-text note of who the key was meant for.
-  label      String?
+/// An invitation to register, addressed to one email address.
+///
+/// The address is the whole point: an invitation admits exactly the mailbox it
+/// was sent to, so it cannot be forwarded to onboard somebody else. `role` is
+/// what the invitation grants, and it is the only thing that decides what the
+/// holder becomes — registration reads the role off the invitation rather than
+/// from which page the form was posted from. SUPER_ADMIN is deliberately not
+/// issuable, so no invitation can ever mint another owner.
+model Invitation {
+  id    String @id @default(cuid())
+  /// Normalised to lower case, and unique: one open invitation per address, so
+  /// two administrators cannot invite the same person to two different roles.
+  email String @unique
+
+  /// SHA-256 of the token that travels in the emailed link.
+  ///
+  /// Hashed rather than stored plainly for the same reason passwords are: the
+  /// raw token is a bearer credential, and a leaked database backup would
+  /// otherwise hand over every open invitation. The link is the only copy.
+  tokenHash String @unique
+
+  role Role
+
+  /// Job title the invitee is given on sign-up. Optional: an invitation may
+  /// simply admit someone and leave the title to be filled in at profile setup.
+  jobRoleId String?
+  jobRole   JobRole? @relation(fields: [jobRoleId], references: [id], onDelete: SetNull)
+
+  status     InvitationStatus @default(PENDING)
   expiresAt  DateTime
-  revokedAt  DateTime?
-  redeemedAt DateTime?
-  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+  createdAt  DateTime         @default(now())
 
-  issuedById String
-  issuedBy   Employee @relation("InviteIssuer", fields: [issuedById], references: [id], onDelete: Cascade)
+  invitedById String
+  invitedBy   Employee @relation("InvitationIssuer", fields: [invitedById], references: [id], onDelete: Cascade)
 
-  /// Cascades: a key exists to record how one particular account came to be, so
-  /// once that account is deleted the key has nothing left to describe. Leaving
-  /// it behind — which `SetNull` did — produced "Used" rows pointing at nobody
-  /// that could never be cleared away.
-  redeemedById String?   @unique
-  redeemedBy   Employee? @relation("InviteRedeemer", fields: [redeemedById], references: [id], onDelete: Cascade)
+  /// Cascades: an accepted invitation exists to record how one particular
+  /// account came to be, so once that account is deleted it describes nothing.
+  /// Deleting it also frees the address to be invited again.
+  acceptedById String?   @unique
+  acceptedBy   Employee? @relation("InvitationAcceptor", fields: [acceptedById], references: [id], onDelete: Cascade)
 
-  @@index([issuedById, createdAt])
+  @@index([invitedById, createdAt])
   @@index([role, createdAt])
-  @@map("invite_keys")
+  @@map("invitations")
 }
 
 /// A single day of leave. Date and reason are extracted by the AI service;

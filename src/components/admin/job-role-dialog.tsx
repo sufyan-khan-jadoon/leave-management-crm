@@ -15,14 +15,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 
-export type JobRole = { id: string; name: string; inviteCount: number };
+export type JobRole = { id: string; name: string; invitationCount: number };
 
 /**
  * Curates the shared list of job titles.
  *
- * Reachable from the invite form, because that is where you discover the title
- * you need is missing — sending someone off to a settings screen mid-task is
- * how a list like this ends up unused.
+ * Reachable from the invitation form, because that is where you discover the
+ * title you need is missing — sending someone off to a settings screen mid-task
+ * is how a list like this ends up unused.
  */
 export function JobRoleDialog({
   open,
@@ -82,8 +82,8 @@ export function JobRoleDialog({
             Job roles
           </DialogTitle>
           <DialogDescription>
-            Titles you can assign when creating an invite key. Removing one leaves everyone who already
-            holds it unchanged.
+            Titles you can assign when inviting someone. Removing one leaves everyone who already holds it
+            unchanged.
           </DialogDescription>
         </DialogHeader>
 
@@ -103,7 +103,7 @@ export function JobRoleDialog({
 
         {roles.length === 0 ? (
           <p className="text-muted-foreground py-2 text-sm">
-            No roles yet. Add one above and it becomes selectable on every invite key.
+            No roles yet. Add one above and it becomes selectable on every invitation.
           </p>
         ) : (
           <ul className="scrollbar-thin divide-border/60 max-h-64 divide-y overflow-y-auto">
@@ -111,9 +111,9 @@ export function JobRoleDialog({
               <li key={role.id} className="flex items-center gap-3 py-2">
                 <div className="mr-auto min-w-0">
                   <p className="truncate text-sm font-medium">{role.name}</p>
-                  {role.inviteCount > 0 && (
+                  {role.invitationCount > 0 && (
                     <p className="text-muted-foreground text-xs">
-                      on {role.inviteCount} key{role.inviteCount === 1 ? "" : "s"}
+                      on {role.invitationCount} invitation{role.invitationCount === 1 ? "" : "s"}
                     </p>
                   )}
                 </div>

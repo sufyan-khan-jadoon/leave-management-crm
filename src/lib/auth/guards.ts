@@ -29,7 +29,7 @@ export async function requireAdmin(): Promise<SessionUser> {
   return user;
 }
 
-/** Guards the access panel: issuing invite keys and deciding admin requests. */
+/** Guards the access panel: inviting administrators and deciding their requests. */
 export async function requireSuperAdmin(): Promise<SessionUser> {
   const user = await requireUser();
 

@@ -25,8 +25,6 @@ export const RATE_LIMITS = {
   // Keyed by account, not IP: this one guards a guessing attack on the current
   // password from a machine the owner left signed in.
   changePassword: { limit: 5, windowSeconds: 900 },
-  // Tight: this is the only endpoint that confirms a key exists.
-  verifyInvite: { limit: 10, windowSeconds: 900 },
   aiLeave: { limit: 15, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 

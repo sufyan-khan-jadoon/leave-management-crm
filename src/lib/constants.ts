@@ -22,7 +22,7 @@ export const OTP_MAX_ATTEMPTS = 5;
 
 export const OTP_LENGTH = 6;
 
-/** How long an unused invite key stays valid, whichever role it grants. */
+/** How long an unaccepted invitation stays valid, whichever role it grants. */
 export const INVITE_TTL_DAYS = 7;
 
 /** Upper bound on a single request, so a slip of the tongue cannot book a year. */

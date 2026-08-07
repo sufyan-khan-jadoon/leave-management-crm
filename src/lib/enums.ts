@@ -7,7 +7,7 @@
  * literals instead. The `satisfies` clauses keep them locked to the schema:
  * renaming a value in schema.prisma fails the typecheck here.
  */
-import type { EmployeeStatus, LeaveStatus, OtpPurpose, Role } from "@prisma/client";
+import type { EmployeeStatus, InvitationStatus, LeaveStatus, OtpPurpose, Role } from "@prisma/client";
 
 export const ROLE = {
   EMPLOYEE: "EMPLOYEE",
@@ -29,12 +29,20 @@ export function isSuperAdminRole(role: Role | string): boolean {
 }
 
 /**
- * The roles an invite key may grant. SUPER_ADMIN is absent on purpose: that role
- * is seeded, never invited, so no key can ever mint another owner.
+ * The roles an invitation may grant. SUPER_ADMIN is absent on purpose: that role
+ * is seeded, never invited, so no invitation can ever mint another owner.
  */
 export const INVITE_ROLE_VALUES = [ROLE.EMPLOYEE, ROLE.ADMIN] as const;
 
 export type InviteRole = (typeof INVITE_ROLE_VALUES)[number];
+
+export const INVITATION_STATUS = {
+  PENDING: "PENDING",
+  ACCEPTED: "ACCEPTED",
+} as const satisfies Record<InvitationStatus, InvitationStatus>;
+
+/** Named `State` so it does not shadow the Prisma type imported above. */
+export type InvitationState = (typeof INVITATION_STATUS)[keyof typeof INVITATION_STATUS];
 
 export const EMPLOYEE_STATUS = {
   ACTIVE: "ACTIVE",

@@ -1,4 +1,4 @@
-import { CalendarDays, KeyRound, LayoutDashboard, Sparkles, User, Users } from "lucide-react";
+import { CalendarDays, LayoutDashboard, ShieldCheck, Sparkles, User, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ROUTES } from "@/lib/constants";
@@ -44,8 +44,8 @@ export const ADMIN_NAV: NavItem[] = [
 
 /**
  * The access panel belongs to the super admin alone: it is the only place
- * administrator keys are issued and invite permissions are granted. Admins
- * invite employees from the Employees screen instead, once allowed to.
+ * administrators are invited and invite permissions are granted. Admins invite
+ * employees from the Employees screen instead, once allowed to.
  */
 // Splits on "not personal" rather than on "is manage", so an item added to
 // ADMIN_NAV without a group still reaches the super admin instead of silently
@@ -56,7 +56,7 @@ export const SUPER_ADMIN_NAV: NavItem[] = [
     // longer only about employees.
     item.href === ROUTES.adminEmployees ? { ...item, label: "Members" } : item,
   ),
-  { href: ROUTES.adminAccess, label: "Access keys", icon: KeyRound, group: "Manage" },
+  { href: ROUTES.adminAccess, label: "Access", icon: ShieldCheck, group: "Manage" },
   ...ADMIN_NAV.filter((item) => item.group === "Personal"),
 ];
 

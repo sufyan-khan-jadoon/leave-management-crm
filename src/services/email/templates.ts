@@ -1,3 +1,5 @@
+import type { Role } from "@prisma/client";
+
 import { appConfig } from "@/lib/env";
 import { MONTHLY_LEAVE_ALLOWANCE, OTP_TTL_MINUTES } from "@/lib/constants";
 import { formatDate, formatDateRange } from "@/lib/date";
@@ -71,6 +73,51 @@ export function welcomeTemplate(name: string): Template {
       { label: "Go to sign in", url: `${appConfig.url}/login` },
     ),
     text: `Welcome aboard, ${name}!\n\nYour ${appConfig.name} account has been created. Check your inbox for a 6-digit verification code, then sign in at ${appConfig.url}/login.`,
+  };
+}
+
+/**
+ * The invitation itself — the one email that has to carry a working link, since
+ * there is no other way into the application.
+ *
+ * The assigned role is stated plainly. An administrator invitation ends in an
+ * approval step rather than a sign-in, and someone told only "you've been
+ * invited" would reasonably read that wait as a fault.
+ */
+export function invitationTemplate(options: {
+  role: Role;
+  jobTitle: string | null;
+  inviterName: string;
+  url: string;
+  expiresAt: Date;
+}): Template {
+  const isAdmin = options.role === "ADMIN";
+  const roleLabel = isAdmin ? "Administrator" : "Employee";
+  const expiry = formatDate(options.expiresAt);
+
+  const detail = (label: string, value: string) =>
+    `<tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">${esc(label)}</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(value)}</td></tr>`;
+
+  return {
+    subject: `You're invited to ${appConfig.name}`,
+    html: layout(
+      `You've been invited to ${esc(appConfig.name)}`,
+      `<p>${esc(options.inviterName)} has invited you to join ${esc(appConfig.name)}, where you'll request and track your leave.</p>
+       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;border:1px solid #eceef6;border-radius:12px;">
+         ${detail("Your role", roleLabel)}
+         ${options.jobTitle ? detail("Your job title", options.jobTitle) : ""}
+         ${detail("Invitation valid until", expiry)}
+       </table>
+       <p>Use the button below to create your account. It's tied to this email address, so register with the address this message was sent to.</p>
+       ${
+         isAdmin
+           ? `<p>Once you've verified your email, a super administrator reviews your request before you can sign in.</p>`
+           : `<p>Once you've verified your email, you can sign in straight away.</p>`
+       }
+       <p style="color:#8b90a8;">This invitation expires on ${esc(expiry)}. If it lapses, ask ${esc(options.inviterName)} to send another. If you weren't expecting it, you can ignore this email.</p>`,
+      { label: "Accept invitation", url: options.url },
+    ),
+    text: `${options.inviterName} has invited you to join ${appConfig.name} as ${isAdmin ? "an administrator" : "an employee"}${options.jobTitle ? ` (${options.jobTitle})` : ""}.\n\nCreate your account here:\n${options.url}\n\nRegister with the address this message was sent to. The invitation expires on ${expiry}.`,
   };
 }
 

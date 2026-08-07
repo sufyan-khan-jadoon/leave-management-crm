@@ -2,17 +2,17 @@ import type { JobRole } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
-export type JobRoleDto = { id: string; name: string; createdAt: Date; inviteCount: number };
+export type JobRoleDto = { id: string; name: string; createdAt: Date; invitationCount: number };
 
 export const jobRoleRepository = {
-  /** Alphabetical, with how many keys reference each — deletion needs to warn. */
+  /** Alphabetical, with how many invitations reference each — deletion warns. */
   async list(): Promise<JobRoleDto[]> {
     const rows = await prisma.jobRole.findMany({
       orderBy: { name: "asc" },
-      select: { id: true, name: true, createdAt: true, _count: { select: { invites: true } } },
+      select: { id: true, name: true, createdAt: true, _count: { select: { invitations: true } } },
     });
 
-    return rows.map(({ _count, ...role }) => ({ ...role, inviteCount: _count.invites }));
+    return rows.map(({ _count, ...role }) => ({ ...role, invitationCount: _count.invitations }));
   },
 
   findByName(name: string): Promise<JobRole | null> {

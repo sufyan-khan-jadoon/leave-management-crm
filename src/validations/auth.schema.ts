@@ -23,6 +23,21 @@ export const passwordSchema = z
   .regex(/[0-9]/, "Include at least one number")
   .regex(/[^A-Za-z0-9]/, "Include at least one special character");
 
+/**
+ * The secret from an invitation link.
+ *
+ * Bounded rather than pinned to an exact length so the check reads as "roughly
+ * the right shape" — the authoritative test is whether it matches a stored
+ * hash, which no amount of validation here can stand in for. It lives beside
+ * the register schema, its only consumer, rather than with the administrator's
+ * invitation schemas, which would make the two files import each other.
+ */
+export const invitationTokenSchema = z
+  .string()
+  .trim()
+  .min(20, "That invitation link is not valid")
+  .max(200, "That invitation link is not valid");
+
 export const registerSchema = z
   .object({
     name: z
@@ -31,18 +46,22 @@ export const registerSchema = z
       .min(2, "Name must be at least 2 characters")
       .max(80, "Name must be 80 characters or fewer")
       .regex(/^[\p{L}\p{M}'\-.\s]+$/u, "Name may only contain letters, spaces, hyphens and apostrophes"),
+    /**
+     * The address the invitation was sent to.
+     *
+     * Submitted even though the form shows it read-only, and compared against
+     * the invitation server-side — a field the browser was told not to edit is
+     * not a field the server may assume was left alone.
+     */
     email: emailSchema,
     password: passwordSchema,
     confirmPassword: z.string(),
     /**
-     * Required for everyone: registration is invite-only, and the key decides
-     * whether the account becomes an employee or an administrator.
+     * Required for everyone: registration is by invitation only, and the
+     * invitation the token names decides whether the account becomes an
+     * employee or an administrator.
      */
-    inviteKey: z
-      .string()
-      .trim()
-      .min(1, "An invite key is required")
-      .max(40, "That doesn't look like an invite key"),
+    token: invitationTokenSchema,
   })
   .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords do not match",
@@ -50,12 +69,6 @@ export const registerSchema = z
   });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
-
-/**
- * Kept as a named alias: both sign-up screens now demand a key, so the two
- * schemas are identical. The server decides the role from the key regardless.
- */
-export const adminRegisterSchema = registerSchema;
 
 /** The two sign-in screens. Each admits exactly one kind of account. */
 export const LOGIN_PORTALS = ["employee", "admin"] as const;

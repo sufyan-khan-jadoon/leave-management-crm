@@ -1,30 +1,36 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { KeyRound } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 
-import { InviteRegisterForm } from "@/components/auth/invite-register-form";
+import { InvitationGate } from "@/components/auth/invitation-gate";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ROUTES } from "@/lib/constants";
 
 export const metadata: Metadata = { title: "Administrator registration" };
 
-export default function AdminRegisterPage() {
+export default async function AdminRegisterPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string }>;
+}) {
+  const { token } = await searchParams;
+
   return (
     <Card glass>
       <CardHeader className="space-y-3">
         <div className="bg-primary/12 text-primary-ink flex size-11 items-center justify-center rounded-xl">
-          <KeyRound className="size-5" aria-hidden />
+          <ShieldCheck className="size-5" aria-hidden />
         </div>
         <div className="space-y-1.5">
           <CardTitle className="text-2xl">Administrator registration</CardTitle>
           <CardDescription>
-            Enter the invite key your super administrator gave you, then create your account. We&apos;ll
-            email you a code — verifying it sends your request for approval automatically.
+            Create your account from the invitation your super administrator emailed you. We&apos;ll send a
+            code — verifying it sends your request for approval automatically.
           </CardDescription>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <InviteRegisterForm variant="admin" />
+        <InvitationGate token={token} variant="admin" />
 
         <p className="text-muted-foreground text-center text-sm">
           Not an administrator?{" "}

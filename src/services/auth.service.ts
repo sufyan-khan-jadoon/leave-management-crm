@@ -12,10 +12,10 @@ import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, Validatio
 import { OTP_PURPOSE, canSignIn, isAdminRole } from "@/lib/enums";
 import type { ResetTicket } from "@/lib/auth/reset-ticket";
 import { hashPassword, verifyPassword } from "@/lib/password";
-import { employeeRepository, type EmployeeDto } from "@/repositories/employee.repository";
+import { employeeRepository, normalizeEmail, type EmployeeDto } from "@/repositories/employee.repository";
 import { otpRepository } from "@/repositories/otp.repository";
 import { emailService } from "@/services/email/email.service";
-import { inviteService } from "@/services/invite.service";
+import { invitationService } from "@/services/invitation.service";
 import { jobRoleService } from "@/services/job-role.service";
 import type { LoginInput, RegisterInput, VerifyOtpInput } from "@/validations/auth.schema";
 
@@ -93,14 +93,30 @@ async function consumeOtp(employeeId: string, code: string, purpose: OtpPurpose)
 
 export const authService = {
   /**
-   * Creates an unverified account and dispatches the welcome + OTP emails.
-   * Re-registering an existing but unverified address reissues a code rather
-   * than leaking that the address is taken.
+   * Creates an unverified account from an invitation, and dispatches the
+   * welcome + OTP emails.
+   *
+   * The address is not the registrant's to choose: it is fixed by the
+   * invitation, and a submitted address that differs is refused rather than
+   * used. Otherwise a link sent to an employee could be answered with a
+   * colleague's address, or with one nobody controls.
    */
   async register(input: RegisterInput): Promise<{ email: string; pendingApproval: boolean }> {
-    const inviteKey = input.inviteKey.trim().toUpperCase();
-    const existing = await employeeRepository.findByEmail(input.email);
+    // Resolved first, so nothing else happens for a link that names nothing.
+    const invitation = await invitationService.forToken(input.token);
+    const email = normalizeEmail(input.email);
 
+    if (email !== invitation.email) {
+      throw new ValidationError("This invitation was sent to a different email address.", {
+        email: "This invitation was sent to a different email address.",
+      });
+    }
+
+    const existing = await employeeRepository.findByEmail(email);
+
+    // Reached by someone who registered but never verified, coming back through
+    // the same link. Checked before the invitation is called spent, since
+    // accepting it is exactly what they already did.
     if (existing) {
       if (existing.emailVerified) {
         throw new ConflictError("An account with this email already exists. Try signing in instead.");
@@ -110,33 +126,36 @@ export const authService = {
       return { email: existing.email, pendingApproval: existing.status === EmployeeStatus.PENDING_APPROVAL };
     }
 
-    // Registration is invite-only for every role. Checked before the account
-    // exists so an invalid key never leaves a half-registered row behind.
-    const invite = await inviteService.assertUsable(inviteKey);
+    // Spent or lapsed invitations are refused here, before the account exists,
+    // so a dead link never leaves a half-registered row behind.
+    invitationService.assertUsable(invitation);
 
-    // The role comes off the key, never off the request body — which is what
-    // stops an employee key posted to the admin form from minting an admin.
-    const pendingApproval = invite.role === Role.ADMIN;
+    // The role comes off the invitation, never off the request body — which is
+    // what stops an employee invitation answered on the admin screen from
+    // minting an administrator.
+    const pendingApproval = invitation.role === Role.ADMIN;
 
-    // The job title travels on the key the same way the role does, so it is
-    // assigned rather than claimed. Copied by value: renaming or deleting the
+    // The job title travels on the invitation the same way the role does, so it
+    // is assigned rather than claimed. Copied by value: renaming or deleting the
     // job role later does not retitle people who already hold it.
-    const position = invite.jobRoleId ? await jobRoleService.nameFor(invite.jobRoleId) : undefined;
+    const position = invitation.jobRoleId
+      ? await jobRoleService.nameFor(invitation.jobRoleId)
+      : undefined;
 
     const password = await hashPassword(input.password);
     const employee = await employeeRepository.create({
       name: input.name,
-      email: input.email,
+      email,
       password,
       position,
-      role: invite.role,
+      role: invitation.role,
       // An invited admin is inert until the super admin decides; an invited
       // employee is active the moment they verify their address, because
-      // issuing them a key was already the decision.
+      // inviting them was already the decision.
       status: pendingApproval ? EmployeeStatus.PENDING_APPROVAL : EmployeeStatus.ACTIVE,
     });
 
-    await inviteService.redeem(invite.id, employee.id);
+    await invitationService.accept(invitation.id, employee.id);
 
     await emailService.sendWelcome(employee.email, employee.name);
     await this.issueOtp(employee.id, employee.email, employee.name);

@@ -26,8 +26,8 @@ export const jobRoleService = {
    * Removes a title from the list.
    *
    * People already holding it keep it — `position` is a copy of the name taken
-   * at sign-up, not a reference — and keys that pointed at it simply stop
-   * carrying a title. Deleting is about what can be chosen next, not about
+   * at sign-up, not a reference — and invitations that pointed at it simply
+   * stop carrying a title. Deleting is about what can be chosen next, not about
    * rewriting history.
    */
   async remove(id: string) {

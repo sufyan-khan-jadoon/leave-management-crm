@@ -31,23 +31,34 @@ transitively, including `src/lib/auth/auth.config.ts` — keep Prisma and bcrypt
 API routes are excluded from the middleware matcher on purpose: they must return 401/403 JSON via
 `requireUser()` / `requireAdmin()`, not redirect a `fetch` to an HTML page.
 
-## Registration is invite-only
+## Registration is by invitation, addressed to one mailbox
 
-Nobody self-registers. Every account starts from an `InviteKey`, and **the key's `role` is the
-only thing that decides what the holder becomes** — `auth.service.register` reads it off the key,
-never from the request body, so posting an employee key to the admin form still yields an employee.
+Nobody self-registers. An administrator enters an **email address** and a role; the system stores an
+`Invitation` and mails a link. **The invitation's `role` is the only thing that decides what the
+holder becomes** — `auth.service.register` reads it off the invitation, never from the request body,
+so an employee link answered on the admin screen still yields an employee.
 
-| Key role   | Issued by                                        | Resulting account                                |
-| ---------- | ------------------------------------------------ | ------------------------------------------------ |
-| `EMPLOYEE` | super admin, or an admin with `canInviteEmployees` | `ACTIVE` once the email is verified               |
-| `ADMIN`    | super admin only                                  | `PENDING_APPROVAL` until the super admin decides  |
+| Invitation role | Sent by                                            | Resulting account                                |
+| --------------- | -------------------------------------------------- | ------------------------------------------------ |
+| `EMPLOYEE`      | super admin, or an admin with `canInviteEmployees`  | `ACTIVE` once the email is verified               |
+| `ADMIN`         | super admin only                                    | `PENDING_APPROVAL` until the super admin decides  |
 
-`SUPER_ADMIN` is deliberately not issuable — that role is seeded, so no key can mint another owner.
+`SUPER_ADMIN` is deliberately not issuable — that role is seeded, so no invitation can mint another
+owner.
 
-A key may also carry a **`JobRole`**, a curated job title. Redeeming stamps its *name* onto the new
-account's `position` — copied by value, so renaming or deleting the job role later never retitles
-people who already hold it, and `position` stays the single field describing what someone does.
-There is deliberately no third field competing with `position` and `department`.
+**The address is half the credential.** Registration compares the submitted email against
+`invitation.email` and refuses a mismatch, so a forwarded link cannot onboard somebody else. The
+form renders the address read-only, but that is a courtesy: the server compares rather than trusts.
+
+The link carries a 32-byte random token; only its SHA-256 is stored (`Invitation.tokenHash`), so a
+leaked backup hands over nothing usable. It is deliberately *not* a JWT like the reset ticket —
+withdrawing an invitation has to kill the link that is already sitting in a mailbox, and only a row
+in the database can say that. Never surface the token as a "key" or ask anyone to type it.
+
+An invitation may also carry a **`JobRole`**, a curated job title. Accepting stamps its *name* onto
+the new account's `position` — copied by value, so renaming or deleting the job role later never
+retitles people who already hold it, and `position` stays the single field describing what someone
+does. There is deliberately no third field competing with `position` and `department`.
 
 Any admin may add a title (naming the jobs you hire for is bookkeeping); only the super admin may
 remove one, since that changes what everyone else can pick. Because the title is assigned rather
@@ -56,17 +67,30 @@ through the separate edit dialog on the People screen.
 
 **`canInviteEmployees` is off by default.** Being an admin is not by itself permission to onboard
 people; the super admin grants it per administrator. `permissionsFor()` reads it from the database
-on every issue rather than from the session, so withdrawing it takes effect on the next request
-instead of when a token expires — don't "optimise" it into the JWT.
+on every invitation rather than from the session, so withdrawing it takes effect on the next request
+instead of when a token expires — don't "optimise" it into the JWT. `resend` re-checks it too: a
+resend is a fresh act of onboarding, not something inherited from whoever sent the first one.
 
-All the scoping lives in `invite.service.ts` and must stay in step: an admin sees and revokes only
-the `EMPLOYEE` keys they issued, and `revoke` reports anything outside that as *not found* rather
-than *forbidden*, so it cannot be used to probe for keys the caller may not see. Route handlers
-guard with the looser `requireAdmin` on purpose — what a caller may actually grant is settled in
-the service, against the role in the body. `/api/admin/invites` also returns `canIssue` purely so
-the UI can hide a form it may not submit; it mirrors the real check, never replaces it.
+`email` is unique on the table, so "already invited" is settled by the database rather than only by
+the service that checked a moment earlier. A live invitation is never silently replaced — that is
+what `resend` is for — but one that has lapsed is reissued in place, so a stale row cannot lock an
+address out for good. Accepted rows cascade away with the account, freeing the address again.
 
-`InviteKeySection` is shared by the super admin's access panel and the Employees screen.
+All the scoping lives in `invitation.service.ts` and must stay in step: an admin sees, resends and
+withdraws only the `EMPLOYEE` invitations they sent, and anything outside that is reported as *not
+found* rather than *forbidden*, so it cannot be used to probe for invitations the caller may not
+see. Route handlers guard with the looser `requireAdmin` on purpose — what a caller may actually
+grant is settled in the service, against the role in the body. `/api/admin/invitations` also returns
+`canIssue` purely so the UI can hide a form it may not submit; it mirrors the real check, never
+replaces it.
+
+`InvitationSection` is shared by the super admin's access panel and the Employees screen.
+`InvitationGate` resolves the link server-side and renders either the sign-up form or the one thing
+left to do about a link that has expired, been used, or never existed.
+
+Delivery is reported, not thrown: `emailService` swallows failures as everywhere else, but `invite`
+and `resend` return `emailSent` so the panel can say the link never left. An invitation nobody
+received is the whole of the thing, and the administrator is the only person able to notice.
 
 ## Each sign-in screen admits one kind of account
 

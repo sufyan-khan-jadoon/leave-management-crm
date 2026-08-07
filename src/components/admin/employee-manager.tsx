@@ -55,8 +55,8 @@ const COPY = {
     column: "Employee",
     searchLabel: "Search employees",
     emptyTitle: "No employees yet",
-    emptyBody: "Employees appear here once they register with a key and verify their email.",
-    deleteBody: "along with their leave history and the invite key they joined with",
+    emptyBody: "Employees appear here once they accept an invitation and verify their email.",
+    deleteBody: "along with their leave history and the invitation they joined with",
   },
   [ROLE.ADMIN]: {
     noun: "administrator",
@@ -67,7 +67,7 @@ const COPY = {
     emptyBody: "Administrators appear here once you approve their request.",
     // Worth stating plainly: the cascade takes the audit trail with it.
     deleteBody:
-      "along with their leave history, the invite key they joined with, and every key they issued",
+      "along with their leave history, the invitation they joined with, and every invitation they sent",
   },
 } as const;
 

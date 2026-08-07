@@ -5,7 +5,7 @@ import { Check, Loader2, ShieldX, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPermissions, type Administrator } from "@/components/admin/admin-permissions";
-import { InviteKeySection, type InviteKey } from "@/components/admin/invite-key-section";
+import { InvitationSection, type Invitation } from "@/components/admin/invitation-section";
 import type { JobRole } from "@/components/admin/job-role-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -23,13 +23,13 @@ type PendingAdmin = {
 
 /**
  * The super admin's onboarding screen: decide pending administrator requests,
- * and issue keys for either role.
+ * and invite people at either role.
  *
- * Employee keys come first because they are the everyday task — administrator
- * onboarding is rare by comparison.
+ * Employee invitations come first because they are the everyday task —
+ * administrator onboarding is rare by comparison.
  */
 export function AccessPanel() {
-  const [invites, setInvites] = useState<InviteKey[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [pending, setPending] = useState<PendingAdmin[]>([]);
   const [admins, setAdmins] = useState<Administrator[]>([]);
   const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
@@ -38,14 +38,14 @@ export function AccessPanel() {
 
   const load = useCallback(async () => {
     try {
-      const [keys, requests, administrators, titles] = await Promise.all([
-        apiClient.get<{ items: InviteKey[] }>("/api/admin/invites"),
+      const [invited, requests, administrators, titles] = await Promise.all([
+        apiClient.get<{ items: Invitation[] }>("/api/admin/invitations"),
         apiClient.get<{ items: PendingAdmin[] }>("/api/admin/requests"),
         apiClient.get<{ items: Administrator[] }>("/api/admin/administrators"),
         apiClient.get<{ items: JobRole[] }>("/api/admin/job-roles"),
       ]);
 
-      setInvites(keys.items);
+      setInvitations(invited.items);
       setPending(requests.items);
       setAdmins(administrators.items);
       setJobRoles(titles.items);
@@ -89,7 +89,7 @@ export function AccessPanel() {
         <CardHeader>
           <CardTitle className="text-base">Pending administrator requests</CardTitle>
           <CardDescription>
-            People who registered with an administrator key and verified their email. They cannot sign in
+            People who accepted an administrator invitation and verified their email. They cannot sign in
             until approved.
           </CardDescription>
         </CardHeader>
@@ -132,11 +132,11 @@ export function AccessPanel() {
         </CardContent>
       </Card>
 
-      {/* The super admin may issue either role, so both are offered in the
+      {/* The super admin may invite at either role, so both are offered in the
           picker rather than split across two panels. */}
-      <InviteKeySection
+      <InvitationSection
         roles={[ROLE.EMPLOYEE, ROLE.ADMIN]}
-        invites={invites}
+        invitations={invitations}
         jobRoles={jobRoles}
         canManageJobRoles
         onChanged={load}

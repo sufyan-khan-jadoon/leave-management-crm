@@ -1,7 +1,7 @@
 import { handleRoute, ok, parseBody } from "@/lib/api";
 import { requireSuperAdmin } from "@/lib/auth/guards";
-import { inviteService } from "@/services/invite.service";
-import { adminDecisionSchema } from "@/validations/invite.schema";
+import { invitationService } from "@/services/invitation.service";
+import { adminDecisionSchema } from "@/validations/invitation.schema";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
@@ -9,6 +9,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const { approve } = await parseBody(request, adminDecisionSchema);
 
-    return ok(await inviteService.decide(id, approve));
+    return ok(await invitationService.decide(id, approve));
   });
 }

@@ -33,7 +33,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 
 **Employees**
 
-- Register with name, email and password only — no profile questions up front
+- Join from an emailed invitation link — name and password only, no profile questions up front
 - Six-digit email verification with expiring codes and a resend cooldown
 - Guided profile setup after verification (photo, phone, department, position, joining date)
 - Dashboard with remaining allowance, monthly usage, status breakdown and a six-month trend chart
@@ -43,6 +43,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 **Administrators**
 
 - Separate sign-in route (`/admin/login`) and dashboard
+- Invite people by email address, with the role and job title fixed at the moment of invitation
 - Overview cards: total / active employees, approved / pending / rejected leaves
 - Monthly leave trend and department-wise breakdown charts, plus a recent activity feed
 - Employee management: search, filter, sort, edit, suspend, reactivate, delete
@@ -54,7 +55,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 - Light / dark / system themes with glassmorphic surfaces
 - Responsive from mobile through desktop
 - Loading skeletons, empty states, toast notifications and confirmation dialogs throughout
-- Transactional email on registration, verification, approval, rejection, profile update and account status change
+- Transactional email on invitation, registration, verification, approval, rejection, profile update and account status change
 
 ---
 
@@ -238,18 +239,18 @@ Prisma / PostgreSQL
 
 ```
 prisma/
-  schema.prisma              Employee, Leave, OtpCode + enums
+  schema.prisma              Employee, Leave, OtpCode, Invitation, JobRole + enums
   seed.ts                    Default admin and demo data
 src/
   app/
-    (auth)/                  login, register, verify-email, admin/login
+    (auth)/                  login, register, verify-email, admin/login, admin/register
     (onboarding)/            profile/setup — post-verification, no dashboard chrome
     (employee)/              dashboard, leaves, leaves/new, profile
-    (admin)/admin/           overview, employees, employees/[id], leaves
+    (admin)/admin/           overview, employees, employees/[id], leaves, access
     api/
       auth/                  [...nextauth], register, verify-email, resend-otp
       leaves/                list, ai, [id], export
-      admin/                 employees, employees/[id], employees/[id]/status, stats
+      admin/                 employees, invitations, job-roles, requests, administrators, stats
       dashboard/ search/ health/
   components/
     ui/                      shadcn/ui primitives
@@ -257,8 +258,8 @@ src/
     auth/ profile/ leaves/ admin/ dashboard/ charts/ shared/
   hooks/                     use-api-resource, use-leave-table, use-employee-table, …
   lib/                       prisma, auth, env, errors, api, rate-limit, date, enums
-  repositories/              employee, leave, otp
-  services/                  auth, leave, ai, employee, admin, search, email
+  repositories/              employee, leave, otp, invitation, job-role
+  services/                  auth, invitation, leave, ai, employee, admin, search, email
   types/                     shared view models + NextAuth augmentation
   validations/               Zod schemas shared by client and server
   middleware.ts              Route protection and role-based redirects
@@ -269,15 +270,23 @@ src/
 ## Authentication flow
 
 ```
-Register (name, email, password)
-   └─→ account created, unverified   ──→ welcome email + OTP email
+Administrator invites an address, choosing role and job title
+   └─→ Invitation stored, link emailed  ──→ invitation email
+Recipient opens the link
+   └─→ token resolved server-side       ──→ sign-up form, address fixed
+Register (name, password)
+   └─→ account created, unverified      ──→ welcome email + OTP email
+       role and job title come from the invitation, never the form
 Verify email (6-digit code)
-   └─→ emailVerified set             ──→ confirmation email
+   └─→ emailVerified set                ──→ confirmation email
+       administrators additionally wait for super-admin approval
 Sign in
-   └─→ credentials checked           ──→ JWT session issued
+   └─→ credentials checked              ──→ JWT session issued
 Profile incomplete?
    └─→ yes → /profile/setup  ·  no → /dashboard  (admins → /admin)
 ```
+
+Registration is by invitation only. The link carries a 32-byte random token whose SHA-256 is all the database stores, and it admits exactly the address it was sent to — a submitted email that differs from `invitation.email` is refused server-side. Invitations expire after 7 days, work once, and can be resent (which replaces the old link) or withdrawn (which kills it).
 
 Sign-in is refused — with a specific, actionable message — when the email is unverified or the account is suspended. Middleware then enforces, on every page request:
 
@@ -364,7 +373,7 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 
 | Method | Endpoint | Access | Purpose |
 | --- | --- | --- | --- |
-| `POST` | `/api/auth/register` | Public | Create an account, send OTP |
+| `POST` | `/api/auth/register` | Invitation | Create an account from an invitation token, send OTP |
 | `POST` | `/api/auth/verify-email` | Public | Verify a 6-digit code |
 | `POST` | `/api/auth/resend-otp` | Public | Reissue a code (60s cooldown) |
 | `GET/POST/PATCH` | `/api/profile` | Employee | Read, complete or update own profile |
@@ -378,6 +387,15 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET` | `/api/admin/employees` | Admin | Paginated employee list |
 | `GET/PATCH/DELETE` | `/api/admin/employees/[id]` | Admin | Read, edit or delete an employee |
 | `PATCH` | `/api/admin/employees/[id]/status` | Admin | Suspend or reactivate |
+| `GET/POST` | `/api/admin/invitations` | Admin | List invitations in scope; invite an address |
+| `DELETE` | `/api/admin/invitations/[id]` | Admin | Withdraw an unaccepted invitation |
+| `POST` | `/api/admin/invitations/[id]/resend` | Admin | Reissue the link and email it again |
+| `GET/POST` | `/api/admin/job-roles` | Admin | List or add an assignable job title |
+| `DELETE` | `/api/admin/job-roles/[id]` | Super admin | Remove a job title from the list |
+| `GET` | `/api/admin/requests` | Super admin | Administrator registrations awaiting a decision |
+| `PATCH` | `/api/admin/requests/[id]` | Super admin | Approve or decline an administrator |
+| `GET` | `/api/admin/administrators` | Super admin | Administrators and their invite permission |
+| `PATCH` | `/api/admin/administrators/[id]` | Super admin | Grant or withdraw `canInviteEmployees` |
 | `GET` | `/api/health` | Public | Liveness probe |
 
 ---
@@ -398,6 +416,9 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | Data exposure | `employeeSelect` omits the password hash from every read path |
 | CSV injection | Cells beginning `=`, `+`, `-` or `@` are prefixed so spreadsheets treat them as text |
 | Privilege guards | Admins cannot suspend or delete their own account, or any other admin |
+| Invitation tokens | 32 random bytes; only the SHA-256 is stored, so a leaked backup yields no working link |
+| Role escalation | Role and job title are read from the invitation server-side, never from the sign-up form |
+| Invitation misuse | Single-use, 7-day expiry, and bound to the invited address — a mismatched email is refused |
 
 The in-memory rate limiter is per-process, which suits a single node. For multi-instance deployments, swap the `store` in `src/lib/rate-limit.ts` for Redis or Upstash — the interface is a single `enforceRateLimit` call.
 

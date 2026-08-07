@@ -1,10 +1,13 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { Role } from "@prisma/client";
 
-import { serverEnv } from "@/lib/env";
+import { ROUTES } from "@/lib/constants";
+import { appConfig, serverEnv } from "@/lib/env";
 import {
   accountStatusTemplate,
   adminDecisionTemplate,
   emailVerifiedTemplate,
+  invitationTemplate,
   leaveApprovedTemplate,
   leaveRejectedTemplate,
   otpTemplate,
@@ -70,6 +73,23 @@ export const emailService = {
 
   sendWelcome(to: string, name: string) {
     return send(to, welcomeTemplate(name));
+  },
+
+  /**
+   * Mails an invitation link.
+   *
+   * The link is built here rather than by the service, so the token is turned
+   * into a URL in exactly one place — and administrators are sent to the screen
+   * that explains the approval step rather than the employee one.
+   */
+  sendInvitation(
+    to: string,
+    invitation: { role: Role; jobTitle: string | null; inviterName: string; token: string; expiresAt: Date },
+  ) {
+    const path = invitation.role === Role.ADMIN ? ROUTES.adminRegister : ROUTES.register;
+    const url = `${appConfig.url}${path}?token=${encodeURIComponent(invitation.token)}`;
+
+    return send(to, invitationTemplate({ ...invitation, url }));
   },
 
   sendOtp(to: string, name: string, code: string) {
