@@ -155,6 +155,22 @@ export const leaveRepository = {
     });
   },
 
+  /**
+   * Who holds approved leave on one date.
+   *
+   * The attendance roster asks this so somebody who booked the day off does not
+   * read as having failed to turn up. Ids only — the roster already knows who
+   * everybody is, and joining the employee here would fetch each of them twice.
+   */
+  async employeeIdsOnApprovedLeave(date: Date): Promise<string[]> {
+    const rows = await prisma.leave.findMany({
+      where: { leaveDate: date, status: LeaveStatus.APPROVED },
+      select: { employeeId: true },
+    });
+
+    return rows.map((row) => row.employeeId);
+  },
+
   findByEmployeeAndDate(employeeId: string, leaveDate: Date): Promise<LeaveDto | null> {
     return prisma.leave.findFirst({
       where: { employeeId, leaveDate, status: { not: LeaveStatus.REJECTED } },

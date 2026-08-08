@@ -22,6 +22,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 - [Email verification flow](#email-verification-flow)
 - [AI workflow](#ai-workflow)
 - [Leave approval logic](#leave-approval-logic)
+- [Attendance](#attendance)
 - [API reference](#api-reference)
 - [Security](#security)
 - [Production deployment](#production-deployment)
@@ -39,6 +40,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 - Dashboard with remaining allowance, monthly usage, status breakdown and a six-month trend chart
 - Natural-language leave requests — no date pickers
 - Searchable, filterable, sortable leave history with CSV export
+- Mark attendance from the office, verified against a 30-metre geofence by the server
 
 **Administrators**
 
@@ -48,6 +50,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 - Monthly leave trend and department-wise breakdown charts, plus a recent activity feed
 - Employee management: search, filter, sort, edit, suspend, reactivate, delete
 - Leave oversight: search, filter, sort and drill into any employee profile — requests are decided automatically, so there is nothing to approve
+- Attendance roster for any date: who was present, absent, on leave, or with the office closed
 - CSV export that always matches the filters currently on screen
 
 **Platform**
@@ -369,6 +372,55 @@ Details worth knowing:
 
 ---
 
+## Attendance
+
+Employees mark themselves present from `/attendance`. The browser supplies its position; **the
+server decides**.
+
+```
+Mark present
+      ↓
+browser asks for location permission
+      ↓
+latitude + longitude + accuracy  ──POST /api/attendance──▶  server
+                                                              ↓
+                                         office closed today? ──yes──▶ 409, nothing to mark
+                                                              ↓ no
+                                          already checked in? ──yes──▶ 200, the existing row
+                                                              ↓ no
+                                              accuracy > 30m? ──yes──▶ 422, ask for a better fix
+                                                              ↓ no
+                                       Haversine distance > 30m? ─yes─▶ 403, outside the office
+                                                              ↓ no
+                                                        201, PRESENT
+```
+
+### Configuration
+
+One place, `src/lib/constants.ts`:
+
+```ts
+export const OFFICE_LOCATION = { latitude: 34.1751648, longitude: 73.2264346 };
+export const ALLOWED_RADIUS_METERS = 30;
+export const MAX_ACCURACY_METERS = ALLOWED_RADIUS_METERS;
+```
+
+Nothing else in the codebase names a coordinate. Moving the office means changing these values and
+nothing else; check-ins already recorded keep the distance they were judged against.
+
+### Rules worth knowing
+
+- **The client is never trusted.** `markAttendanceSchema` is a `z.strictObject` accepting exactly three numbers, so a body carrying `distance`, `isInsideOffice` or `isPresent` is rejected with `422` rather than silently ignored.
+- **The geofence is exactly 30 m and is never widened.** A GPS fix vaguer than 30 m cannot distinguish "inside the circle" from "near it", so it is refused (`422`) rather than accommodated — accuracy is never added to the radius.
+- **One check-in per person per day**, enforced by a unique index rather than by a check-then-write. A repeat returns `200` with the row already there; eight concurrent taps produce one row.
+- **Absence is derived, never stored.** `AttendanceStatus` has only `PRESENT`. A day reads `PRESENT` → `CLOSED` → `ON_LEAVE` → `ABSENT` in that order, computed on read — so withdrawing an office closure restores the previous meaning of a past day without migrating anything.
+- **An office day off outranks attendance.** A closed date is not a working day, so nobody is absent on it and no check-in is taken.
+- **There are no working hours in this project**, so `LATE` and `HALF_DAY` deliberately do not exist. The `status` column is where they would go once working hours are defined.
+- **The admin roster is read-only.** Presence is proved by being in the building; a button that marked somebody present from a desk would be a way around the geofence.
+- Geolocation requires a secure context — HTTPS in production (automatic on Vercel), or `localhost` in development. Opening the dev server over a plain-http LAN address on a phone is reported as unsupported.
+
+---
+
 ## API reference
 
 All responses use the envelope `{ success: true, data }` or `{ success: false, error, code, details? }`.
@@ -384,6 +436,10 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `POST` | `/api/leaves/ai` | Employee | Natural-language leave request |
 | `GET/DELETE` | `/api/leaves/[id]` | Auth / Admin | Read; delete. No status endpoint — the allowance decides |
 | `GET` | `/api/leaves/export` | Auth | CSV export honouring current filters |
+| `GET/POST` | `/api/attendance` | Auth | Own history; mark present (always scoped to the session) |
+| `GET` | `/api/attendance/today` | Auth | Today's status, and whether there is anything to mark |
+| `GET` | `/api/admin/attendance` | Admin | Roster for a date — present, absent, on leave, closed |
+| `GET` | `/api/admin/attendance/export` | Admin | CSV of the roster honouring current filters |
 | `GET` | `/api/search` | Auth | Global search, scoped by role |
 | `GET` | `/api/admin/stats` | Admin | Overview, charts, recent activity |
 | `GET` | `/api/admin/employees` | Admin | Paginated employee list |

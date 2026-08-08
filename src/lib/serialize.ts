@@ -1,7 +1,14 @@
+import type { AttendanceDto } from "@/repositories/attendance.repository";
 import type { EmployeeDto } from "@/repositories/employee.repository";
 import type { HolidayDto } from "@/repositories/holiday.repository";
 import type { LeaveWithEmployeeDto } from "@/repositories/leave.repository";
-import type { EmployeeView, HolidayView, LeaveWithEmployeeView, MonthlyTrendPoint } from "@/types";
+import type {
+  AttendanceView,
+  EmployeeView,
+  HolidayView,
+  LeaveWithEmployeeView,
+  MonthlyTrendPoint,
+} from "@/types";
 
 /**
  * Converts server DTOs (with `Date` fields) into the client-facing views that
@@ -27,6 +34,15 @@ export function serializeHoliday(holiday: HolidayDto): HolidayView {
     noticeSentAt: holiday.noticeSentAt?.toISOString() ?? null,
     createdAt: holiday.createdAt.toISOString(),
     updatedAt: holiday.updatedAt.toISOString(),
+  };
+}
+
+export function serializeAttendance(attendance: AttendanceDto): AttendanceView {
+  return {
+    ...attendance,
+    date: attendance.date.toISOString(),
+    checkInAt: attendance.checkInAt.toISOString(),
+    createdAt: attendance.createdAt.toISOString(),
   };
 }
 

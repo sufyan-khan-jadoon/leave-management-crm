@@ -2,6 +2,7 @@ import {
   CalendarDays,
   CalendarOff,
   LayoutDashboard,
+  MapPin,
   ShieldCheck,
   Sparkles,
   User,
@@ -26,6 +27,7 @@ export type NavItem = {
 
 export const EMPLOYEE_NAV: NavItem[] = [
   { href: ROUTES.dashboard, label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: ROUTES.attendance, label: "Attendance", icon: MapPin, exact: true },
   { href: ROUTES.newLeave, label: "Request leave", icon: Sparkles, exact: true },
   { href: ROUTES.leaves, label: "Leave history", icon: CalendarDays, exact: true },
   { href: ROUTES.profile, label: "My profile", icon: User, exact: true },
@@ -42,6 +44,7 @@ export const EMPLOYEE_NAV: NavItem[] = [
 export const ADMIN_NAV: NavItem[] = [
   { href: ROUTES.adminDashboard, label: "Overview", icon: LayoutDashboard, exact: true, group: "Manage" },
   { href: ROUTES.adminEmployees, label: "Employees", icon: Users, group: "Manage" },
+  { href: ROUTES.adminAttendance, label: "Attendance", icon: MapPin, group: "Manage" },
   { href: ROUTES.adminLeaves, label: "Leave requests", icon: CalendarDays, group: "Manage" },
   // Shown to every administrator, not only those allowed to change it: knowing
   // the office is shut is everyone's business, and the screen is read-only
@@ -49,6 +52,9 @@ export const ADMIN_NAV: NavItem[] = [
   { href: ROUTES.adminHolidays, label: "Office days off", icon: CalendarOff, group: "Manage" },
 
   { href: ROUTES.dashboard, label: "My leave", icon: LayoutDashboard, exact: true, group: "Personal" },
+  // Administrators turn up to the office like everybody else, so they mark
+  // attendance on the same screen rather than a second one built for them.
+  { href: ROUTES.attendance, label: "My attendance", icon: MapPin, exact: true, group: "Personal" },
   { href: ROUTES.newLeave, label: "Request leave", icon: Sparkles, exact: true, group: "Personal" },
   { href: ROUTES.leaves, label: "My history", icon: CalendarDays, exact: true, group: "Personal" },
   { href: ROUTES.profile, label: "My profile", icon: User, exact: true, group: "Personal" },

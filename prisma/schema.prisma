@@ -46,6 +46,22 @@ enum OtpPurpose {
   PASSWORD_RESET
 }
 
+/// What a recorded attendance row says about the day.
+///
+/// There is deliberately no ABSENT: absence is the *lack* of a row, not a row
+/// of its own. Storing it would need something to write it — a nightly sweep —
+/// and would then have to be unwritten whenever the office turned out to be
+/// closed or the person turned out to be on leave, which is exactly the
+/// rewriting the holiday rules exist to avoid. `attendance.service.ts` derives
+/// absence by asking who has no row, the same way allowances ask `holidays`.
+///
+/// One value today, and that is honest: the project has no working hours, so
+/// LATE and HALF_DAY would be values nothing could ever write. The column
+/// exists so they have somewhere to land once working hours are defined.
+enum AttendanceStatus {
+  PRESENT
+}
+
 /// How far the "office is closed tomorrow" announcement has got.
 ///
 /// SCHEDULED and SENT are the ordinary path. SKIPPED is for a closure announced
@@ -119,6 +135,7 @@ model Employee {
   updatedAt DateTime @updatedAt
 
   leaves             Leave[]
+  attendance         Attendance[]
   otpCodes           OtpCode[]
   invitationsSent    Invitation[] @relation("InvitationIssuer")
   invitationAccepted Invitation?  @relation("InvitationAcceptor")
@@ -270,4 +287,47 @@ model Leave {
   @@index([status])
   @@index([leaveDate])
   @@map("leaves")
+}
+
+/// One person turning up at the office on one day.
+///
+/// A row exists only when the check-in was accepted, so its presence *is* the
+/// attendance: there is nothing here to correct afterwards and no rejected row
+/// to sweep up. A refusal is reported to the employee and left at that.
+///
+/// The coordinates are kept because the row is the record of a claim that was
+/// judged, and a distance with nothing behind it cannot be re-checked if the
+/// geofence ever moves. `distanceMeters` is stored alongside them even though it
+/// is derivable, so the admin screen can show what the server actually decided
+/// on rather than recomputing against today's office location.
+model Attendance {
+  id         String @id @default(cuid())
+  employeeId String
+
+  /// The working day, at UTC midnight like every other calendar date here —
+  /// derived from the company's clock, not the server's, so a check-in at 2am
+  /// in Karachi belongs to that day rather than the one UTC is still on.
+  date      DateTime @db.Date
+  /// The instant the check-in was accepted. Rendered in APP_TIME_ZONE.
+  checkInAt DateTime @default(now())
+
+  status AttendanceStatus @default(PRESENT)
+
+  /// What the device reported, and what the server made of it. Written only
+  /// after the server has decided; the client's own verdict is never read.
+  latitude       Float
+  longitude      Float
+  accuracyMeters Float
+  distanceMeters Float
+
+  createdAt DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  /// One check-in per person per day, settled by the database rather than only
+  /// by the service that looked a moment earlier — two taps racing on a flaky
+  /// connection is the ordinary case, not the exotic one.
+  @@unique([employeeId, date])
+  @@index([date])
+  @@map("attendance")
 }

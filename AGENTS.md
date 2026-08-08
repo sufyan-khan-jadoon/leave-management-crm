@@ -234,9 +234,9 @@ anything, which a migration of leave rows could never do. `planLeave` filters cl
 range *before* judging it, so a request spanning one books the days either side and is refused
 outright only when nothing is left.
 
-**There is no attendance system in this codebase.** The day-off rule has no attendance to outrank —
-if one is ever added, `holidayRepository.closedDatesAmong` is the single question to ask, and it
-must be asked before any present/late/absent calculation rather than alongside it.
+Attendance is where that outranking actually happens — see below. `holidayRepository.closedDatesAmong`
+is the single question, and `attendance.service.ts` asks it *before* judging a position rather than
+alongside it: on a closed day there is no attendance to take, so there is nothing to decide.
 
 `SKIPPED` is not a failure: it means the closure was declared too late for a day-before warning to
 mean anything. The date still closes the office. There is deliberately no `PENDING` — every closure
@@ -291,6 +291,67 @@ screen can hide a form it may not submit; it mirrors the real check and never re
 
 Every administrator can *see* the closures whether or not they may change them, because knowing the
 office is shut is everybody's business.
+
+## Attendance is proved by standing there
+
+Marking present is a claim about where somebody is, and the server is the only thing that judges it.
+The browser sends **three numbers and no opinion** — latitude, longitude, `accuracyMeters` — and
+`markAttendanceSchema` is a `z.strictObject`, so a body carrying `distance`, `isInsideOffice` or
+`isPresent` is refused outright rather than quietly stripped. There is no field for a client verdict
+to land in, and the loud refusal means an attempt to send one surfaces as an error somebody sees
+instead of as attendance that appeared to work.
+
+The office is `OFFICE_LOCATION` in `src/lib/constants.ts`, and `ALLOWED_RADIUS_METERS` is **30**.
+Nothing else in the codebase names a coordinate. `src/lib/geo.ts` holds the whole rule — Haversine
+and one `judgePosition` — free of Prisma so it can be read and tested alone, exactly like
+`holiday-notice.ts`; `geo.test.ts` pins the boundary with offsets converted at the office's own
+latitude, because a rule that only worked at the equator would pass a test built from round degrees.
+
+**`MAX_ACCURACY_METERS` equals the radius, and that equality is the argument.** A fix accurate to
+±30m cannot tell "inside a 30m circle" from "somewhere near it", so believing it would widen the
+fence by exactly the amount the reading is unsure by. Such a reading is refused as *inaccurate*
+rather than resolved generously — including when it lands inside the circle, which is the case that
+matters, since that is the one where believing it marks somebody present who is not there. Accuracy
+is **never added to the radius**. Don't "fix" a flaky check-in by widening either constant.
+
+The two refusals are told apart by status on purpose: `422` for a vague fix asks for better input,
+`403` for a real fix somewhere else is a refusal. A vague reading far outside still reports as
+inaccurate, because that is the truth about what the server knows.
+
+**Absence is the lack of a row, never a row.** `AttendanceStatus` has one value, `PRESENT`, and no
+`ABSENT` — storing absence would need a nightly sweep to write it and would then have to unwrite it
+whenever the office turned out to have been closed, which is the rewriting the holiday rules exist to
+avoid. `attendance.service.ts` derives the day instead, in this order: an existing check-in outranks
+everything (a closure declared afterwards must not erase the record of somebody who came in), then
+`CLOSED`, then `ON_LEAVE`, then `ABSENT`. Withdraw a closure and yesterday goes back to what it was
+with nothing migrated — verified.
+
+The project has **no working hours**, so `LATE` and `HALF_DAY` are deliberately absent rather than
+write-dead in the way `LeaveStatus.PENDING` became. The `status` column exists so they have somewhere
+to land once working hours are actually defined; don't invent them to fill it.
+
+`@@unique([employeeId, date])` is what prevents a second check-in, so a duplicate is settled by the
+database rather than by the service that looked a moment earlier — eight concurrent taps produce one
+row, verified. A repeat is answered **idempotently with `200` and the row already there**, not an
+error: "you are already marked present, at 9:12" is the answer to what was asked.
+
+The admin screen is day-centric because "present or absent" is only answerable one day at a time —
+there are no absent rows to page through, so moving the date is how history is read. It is
+**read-only**: presence is proved by being in the building, so a button that marked somebody present
+from a desk would be a way around the geofence rather than a convenience. Unlike office days off,
+attendance is not delegated per-administrator — seeing who is in is ordinary people-management, not
+an organisation-wide act. The roster is fetched whole and paged in memory on purpose: the status a
+row is filtered on does not exist in the database to filter by, so paging in SQL first would make
+"today's absentees" return a page of whoever sorted first.
+
+`/api/attendance` is scoped to the session id with **no way to widen it**, deliberately unlike
+`/api/leaves`, where an admin may pass `employeeId` and gets the whole roster when they leave it off.
+That is right for a Manage screen and wrong for a personal history, so the admin view lives at its
+own endpoint.
+
+Geolocation needs a secure context: HTTPS in production, localhost in development. Opening the app
+over plain http on a LAN address to test on a phone is the one case that bites, and
+`isGeolocationAvailable()` reports it as `unsupported` with a message that says so.
 
 ## Administrators take leave too
 

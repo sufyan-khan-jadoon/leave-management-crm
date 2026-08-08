@@ -24,6 +24,20 @@ export const employeeSelect = {
 
 export type EmployeeDto = Prisma.EmployeeGetPayload<{ select: typeof employeeSelect }>;
 
+/** Just enough to name somebody on the attendance roster and show their face. */
+export const attendanceRosterSelect = {
+  id: true,
+  name: true,
+  email: true,
+  department: true,
+  position: true,
+  profilePhoto: true,
+} satisfies Prisma.EmployeeSelect;
+
+export type AttendanceRosterMember = Prisma.EmployeeGetPayload<{
+  select: typeof attendanceRosterSelect;
+}>;
+
 /**
  * The clean sign-in slate. Written wherever the owner has just proved who they
  * are — by password, by code, or by completing a reset — so the streak and the
@@ -130,6 +144,41 @@ export const employeeRepository = {
       where: { status: EmployeeStatus.ACTIVE, emailVerified: { not: null } },
       orderBy: { name: "asc" },
       select: { id: true, name: true, email: true },
+    });
+  },
+
+  /**
+   * Everyone expected at the office, for the attendance roster.
+   *
+   * Role plays no part, the same way `listNotifiable` ignores it: an
+   * administrator turns up to work like anybody else, and the super admin is a
+   * person with a desk rather than an abstraction. Standing is what filters —
+   * a suspended or not-yet-approved account is not part of the office this week,
+   * so counting them absent every day would be noise nobody can act on.
+   */
+  listAttendanceRoster(filters: {
+    employeeId?: string;
+    department?: string;
+    search?: string;
+  }): Promise<AttendanceRosterMember[]> {
+    const where: Prisma.EmployeeWhereInput = { status: EmployeeStatus.ACTIVE };
+
+    if (filters.employeeId) where.id = filters.employeeId;
+    if (filters.department) where.department = filters.department;
+
+    if (filters.search) {
+      where.OR = [
+        { name: { contains: filters.search, mode: "insensitive" } },
+        { email: { contains: filters.search, mode: "insensitive" } },
+        { department: { contains: filters.search, mode: "insensitive" } },
+        { position: { contains: filters.search, mode: "insensitive" } },
+      ];
+    }
+
+    return prisma.employee.findMany({
+      where,
+      orderBy: { name: "asc" },
+      select: attendanceRosterSelect,
     });
   },
 

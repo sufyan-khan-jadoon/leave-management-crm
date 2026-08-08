@@ -1,4 +1,4 @@
-import type { EmployeeStatus, HolidayNotice, LeaveStatus, Role } from "@prisma/client";
+import type { AttendanceStatus, EmployeeStatus, HolidayNotice, LeaveStatus, Role } from "@prisma/client";
 
 /**
  * Client-facing mirrors of the repository DTOs.
@@ -51,6 +51,51 @@ export type LeaveView = {
 export type LeaveWithEmployeeView = LeaveView & {
   employee: Pick<EmployeeView, "id" | "name" | "email" | "department" | "position" | "profilePhoto">;
 };
+
+/** A recorded check-in, as the screens receive it. */
+export type AttendanceView = {
+  id: string;
+  employeeId: string;
+  date: string;
+  checkInAt: string;
+  status: AttendanceStatus;
+  latitude: number;
+  longitude: number;
+  accuracyMeters: number;
+  /** How far from the office the server judged them, in metres. */
+  distanceMeters: number;
+  createdAt: string;
+};
+
+/**
+ * What a day amounted to for one person. Derived on read rather than stored —
+ * see `attendance.service.ts` — so it is not a Prisma enum and never will be.
+ */
+export type AttendanceDayStatus = "PRESENT" | "ON_LEAVE" | "CLOSED" | "ABSENT" | "UPCOMING";
+
+export type AttendanceTodayView = {
+  date: string;
+  attendance: AttendanceView | null;
+  status: AttendanceDayStatus;
+  canMark: boolean;
+  blockedReason: string | null;
+};
+
+export type AttendanceRosterEntry = {
+  employee: Pick<EmployeeView, "id" | "name" | "email" | "department" | "position" | "profilePhoto">;
+  status: AttendanceDayStatus;
+  attendance: AttendanceView | null;
+};
+
+export type AttendanceRosterView = {
+  date: string;
+  officeClosed: boolean;
+  items: AttendanceRosterEntry[];
+  pagination: Pagination;
+  summary: { expected: number; present: number; absent: number; onLeave: number };
+};
+
+export type PaginatedAttendance = { items: AttendanceView[]; pagination: Pagination };
 
 export type Pagination = {
   page: number;

@@ -44,6 +44,39 @@ export const HOLIDAY_NOTICE_HOUR = 12;
 /** Enough for "Company retreat — Karachi office only", short of an essay. */
 export const MAX_HOLIDAY_REASON_LENGTH = 120;
 
+/**
+ * Where the office is. The single source of truth for attendance — nothing else
+ * in the codebase names a coordinate.
+ *
+ * Moving the company means changing these three values and nothing else; every
+ * check-in already recorded keeps the distance it was judged against, so history
+ * does not silently re-decide itself around the new address.
+ */
+export const OFFICE_LOCATION = {
+  latitude: 34.1751648,
+  longitude: 73.2264346,
+} as const;
+
+/** How close to `OFFICE_LOCATION` counts as being at the office. */
+export const ALLOWED_RADIUS_METERS = 30;
+
+/**
+ * The worst GPS uncertainty a reading may carry and still be believed.
+ *
+ * Pinned to the radius rather than chosen separately, and that equality is the
+ * whole argument: a fix accurate to ±30m cannot tell "inside a 30m circle" from
+ * "somewhere near it", so believing it would widen the geofence by exactly the
+ * amount the reading is unsure by. Refusing instead keeps the fence at 30m and
+ * puts the cost on the one reading that could not be trusted.
+ *
+ * This is deliberately *not* added to the radius anywhere. A poor fix is a
+ * reason to ask for a better one, never a reason to accept a wider circle.
+ */
+export const MAX_ACCURACY_METERS = ALLOWED_RADIUS_METERS;
+
+/** How long to wait for the device to produce a fix before giving up. */
+export const GEOLOCATION_TIMEOUT_MS = 15_000;
+
 /** Sent whenever a request cannot fit inside the monthly allowance. */
 export function quotaExceededMessage(hrPhone: string, hrName: string): string {
   return `I'm sorry — you can't have more than ${MONTHLY_LEAVE_ALLOWANCE} leaves per month. Please contact HR, ${hrName}, on ${hrPhone}.`;
@@ -85,5 +118,7 @@ export const ROUTES = {
   adminEmployees: "/admin/employees",
   adminLeaves: "/admin/leaves",
   adminHolidays: "/admin/holidays",
+  adminAttendance: "/admin/attendance",
   adminAccess: "/admin/access",
+  attendance: "/attendance",
 } as const;
