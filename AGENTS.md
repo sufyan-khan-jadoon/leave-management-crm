@@ -263,9 +263,21 @@ racing on one closure the database picks exactly one winner and the losers are t
 sending would leave a crash in between looking identical to a row nobody had touched. Verified by
 racing eight workers that all hold the same due row: one claim succeeds, seven are refused.
 
-The sweep runs hourly from `vercel.json` against `/api/cron/holiday-notices`, not once at noon — a
-single daily firing that fails is a whole company not told, and re-running the sweep is free. It
-demands `CRON_SECRET` as a bearer token and **fails closed**: with no secret configured it refuses
+The sweep runs from `vercel.json` against `/api/cron/holiday-notices`. **Cron expressions are UTC,
+and this one is hand-converted**: `5 7 * * *` is 12:05 in Asia/Karachi, five minutes after the
+announcements come due, so a slightly late firing still catches them and an early one cannot miss
+them. Change `APP_TIME_ZONE` and this line has to move with it — and if it is ever pointed at a zone
+that observes daylight saving, a fixed UTC cron will drift an hour twice a year while
+`appZoneInstant` keeps computing `noticeDueAt` correctly, so the two would disagree for months at a
+time.
+
+Once a day is a constraint, not a preference: Vercel's Hobby plan refuses anything more frequent, and
+the deploy fails outright rather than quietly running less often. It is the weak point of the
+design — one failed run is one announcement nobody receives, because by the next firing the closure
+is *today* and gets `SKIPPED`. On Pro, make it hourly (`5 * * * *`); the sweep claims each row before
+sending, so running it twelve times over is indistinguishable from running it once.
+
+It demands `CRON_SECRET` as a bearer token and **fails closed**: with no secret configured it refuses
 everybody, because the alternative is an open endpoint that emails the entire organisation.
 
 ### Who may close the office
