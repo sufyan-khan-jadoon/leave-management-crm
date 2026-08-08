@@ -349,6 +349,14 @@ row is filtered on does not exist in the database to filter by, so paging in SQL
 That is right for a Manage screen and wrong for a personal history, so the admin view lives at its
 own endpoint.
 
+**Marking present happens on the dashboard and nowhere else.** `/attendance` is history, read-only:
+two places to press the same button read as two different actions, and the one that matters is the
+one on the screen people already open. `MarkAttendanceCard` therefore takes `today` already resolved
+and does no fetching — the dashboard carries it in the payload it was loading anyway, which is also
+why there is no `/api/attendance/today`. If a second surface ever needs today's state, take it from
+`attendanceService.todayFor` through whatever payload that surface already loads rather than adding
+an endpoint back.
+
 Geolocation needs a secure context: HTTPS in production, localhost in development. Opening the app
 over plain http on a LAN address to test on a phone is the one case that bites, and
 `isGeolocationAvailable()` reports it as `unsupported` with a message that says so.

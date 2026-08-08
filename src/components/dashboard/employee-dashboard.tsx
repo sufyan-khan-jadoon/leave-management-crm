@@ -73,7 +73,7 @@ export function EmployeeDashboard({
         {/* First on the page because it is the only part of the day that is
             time-sensitive: leave can be booked whenever, but marking yourself
             present has to happen while you are actually at the office. */}
-        <MarkAttendanceCard today={attendance.today} loading={false} error={null} onMarked={refresh} />
+        <MarkAttendanceCard today={attendance.today} onMarked={refresh} />
 
         <Card glass className="overflow-hidden">
           <CardContent className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">

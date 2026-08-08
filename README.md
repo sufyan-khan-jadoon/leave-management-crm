@@ -437,7 +437,6 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET/DELETE` | `/api/leaves/[id]` | Auth / Admin | Read; delete. No status endpoint — the allowance decides |
 | `GET` | `/api/leaves/export` | Auth | CSV export honouring current filters |
 | `GET/POST` | `/api/attendance` | Auth | Own history; mark present (always scoped to the session) |
-| `GET` | `/api/attendance/today` | Auth | Today's status, and whether there is anything to mark |
 | `GET` | `/api/admin/attendance` | Admin | Roster for a date — present, absent, on leave, closed |
 | `GET` | `/api/admin/attendance/export` | Admin | CSV of the roster honouring current filters |
 | `GET` | `/api/search` | Auth | Global search, scoped by role |

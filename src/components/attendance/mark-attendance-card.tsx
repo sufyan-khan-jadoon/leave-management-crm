@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarOff, CheckCircle2, Clock, LocateFixed, MapPin, TriangleAlert } from "lucide-react";
+import { CalendarOff, CheckCircle2, Clock, LocateFixed, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import { AttendanceStatusBadge } from "@/components/shared/attendance-status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { ALLOWED_RADIUS_METERS } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
@@ -25,21 +24,23 @@ const PHASE_LABEL: Record<Phase, string> = {
 };
 
 type Props = {
-  today: AttendanceTodayView | null;
-  loading: boolean;
-  error: string | null;
+  today: AttendanceTodayView;
   onMarked: () => void | Promise<void>;
 };
 
 /**
- * The one action of the attendance screen.
+ * Marking yourself present. The only place it happens.
  *
  * The browser's only job is to produce three numbers and hand them over — it
  * never decides, or claims to know, whether the employee is at the office. Every
  * message below reports something the *server* concluded, which is why a
  * refusal arrives as an API error rather than as a branch taken here.
+ *
+ * Takes `today` already resolved rather than fetching it: the dashboard carries
+ * it in the payload it was loading anyway, and owns the loading and error states
+ * around it, so there is nothing for this card to do but render and act.
  */
-export function MarkAttendanceCard({ today, loading, error, onMarked }: Props) {
+export function MarkAttendanceCard({ today, onMarked }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [verified, setVerified] = useState<{ distanceMeters: number } | null>(null);
 
@@ -87,29 +88,6 @@ export function MarkAttendanceCard({ today, loading, error, onMarked }: Props) {
     } finally {
       setPhase("idle");
     }
-  }
-
-  if (loading) {
-    return (
-      <Card>
-        <CardContent className="space-y-3 p-6">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-9 w-56" />
-          <Skeleton className="h-10 w-40" />
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error || !today) {
-    return (
-      <Card>
-        <CardContent className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
-          <TriangleAlert className="text-warning-ink size-4" aria-hidden />
-          {error ?? "Couldn't load today's attendance."}
-        </CardContent>
-      </Card>
-    );
   }
 
   const { attendance } = today;

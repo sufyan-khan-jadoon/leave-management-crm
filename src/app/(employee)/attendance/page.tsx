@@ -1,17 +1,28 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { MapPin } from "lucide-react";
 
 import { EmployeeAttendance } from "@/components/attendance/employee-attendance";
 import { PageHeader } from "@/components/layout/page-header";
-import { ALLOWED_RADIUS_METERS } from "@/lib/constants";
+import { Button } from "@/components/ui/button";
+import { ROUTES } from "@/lib/constants";
 
-export const metadata: Metadata = { title: "Attendance" };
+export const metadata: Metadata = { title: "Attendance history" };
 
 export default function AttendancePage() {
   return (
     <>
       <PageHeader
-        title="Attendance"
-        description={`Mark yourself present from the office. Your device shares its location, and the server checks it is within ${ALLOWED_RADIUS_METERS} metres before recording the day.`}
+        title="Attendance history"
+        description="Every day you've been checked in from the office. Marking yourself present happens on your dashboard."
+        actions={
+          <Button asChild>
+            <Link href={ROUTES.dashboard}>
+              <MapPin className="size-4" />
+              Mark present
+            </Link>
+          </Button>
+        }
       />
       <EmployeeAttendance />
     </>
