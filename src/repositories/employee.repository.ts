@@ -185,6 +185,24 @@ export const employeeRepository = {
     });
   },
 
+  /**
+   * When these people joined.
+   *
+   * The warning sweep needs it to stop counting backwards at somebody's first
+   * day: without it a person who started yesterday reads as having missed every
+   * working day in the lookback window.
+   */
+  async joiningDatesFor(ids: string[]): Promise<Map<string, Date | null>> {
+    if (ids.length === 0) return new Map();
+
+    const rows = await prisma.employee.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, joiningDate: true },
+    });
+
+    return new Map(rows.map((row) => [row.id, row.joiningDate]));
+  },
+
   create(data: {
     name: string;
     email: string;

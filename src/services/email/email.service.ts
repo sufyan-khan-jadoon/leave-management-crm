@@ -1,12 +1,14 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { Role } from "@prisma/client";
 
+import { friendlyTimeLabel } from "@/lib/attendance-policy";
 import { ROUTES } from "@/lib/constants";
 import { appConfig, serverEnv } from "@/lib/env";
 import {
   accountLockedTemplate,
   accountStatusTemplate,
   adminDecisionTemplate,
+  attendanceWarningTemplate,
   emailVerifiedTemplate,
   invitationTemplate,
   leaveApprovedTemplate,
@@ -124,6 +126,28 @@ export const emailService = {
 
   sendOfficeClosed(to: string, options: { name: string; weekday: string; date: Date; reason: string }) {
     return send(to, officeClosedTemplate(options));
+  },
+
+  /**
+   * The warning letter for a missed working day.
+   *
+   * Takes the cutoff as minutes and phrases it here, so every place that shows a
+   * deadline reads it off the one stored number rather than restating "5 PM" in
+   * prose that would quietly go stale the moment the super admin changed it.
+   */
+  sendAttendanceWarning(
+    to: string,
+    options: { name: string; date: Date; cutoffMinutes: number; consecutiveMissed: number },
+  ) {
+    return send(
+      to,
+      attendanceWarningTemplate({
+        name: options.name,
+        date: options.date,
+        cutoffLabel: friendlyTimeLabel(options.cutoffMinutes),
+        consecutiveMissed: options.consecutiveMissed,
+      }),
+    );
   },
 
   sendProfileUpdated(to: string, name: string, changedBy: "you" | "an administrator") {

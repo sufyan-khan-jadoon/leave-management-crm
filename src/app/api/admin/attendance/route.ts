@@ -27,6 +27,7 @@ export async function GET(request: Request) {
     return ok({
       date: roster.date.toISOString(),
       officeClosed: roster.officeClosed,
+      isWorkingDay: roster.isWorkingDay,
       summary: roster.summary,
       items: roster.items.map((entry) => ({
         employee: entry.employee,

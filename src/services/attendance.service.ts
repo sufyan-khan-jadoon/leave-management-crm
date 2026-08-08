@@ -1,5 +1,6 @@
 import type { Role } from "@prisma/client";
 
+import { isWorkingWeekday } from "@/lib/attendance-policy";
 import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
 import { ConflictError, ForbiddenError, ValidationError } from "@/lib/errors";
 import { judgePosition } from "@/lib/geo";
@@ -13,6 +14,7 @@ import {
 } from "@/repositories/employee.repository";
 import { holidayRepository } from "@/repositories/holiday.repository";
 import { leaveRepository } from "@/repositories/leave.repository";
+import { attendancePolicyService } from "@/services/attendance-policy.service";
 import type { MarkAttendanceInput, AttendanceRosterQuery } from "@/validations/attendance.schema";
 
 /**
@@ -30,6 +32,8 @@ export type AttendanceDayStatus =
   | "ON_LEAVE"
   /** The office was shut. Not a working day for anybody. */
   | "CLOSED"
+  /** Outside the ordinary working week — a weekend, for most companies. */
+  | "NON_WORKING"
   /** A working day, not on leave, and no check-in. */
   | "ABSENT"
   /** The day has not happened yet, so there is nothing to be absent from. */
@@ -57,6 +61,10 @@ export type TodayState = {
   canMark: boolean;
   /** Why not, when it cannot — shown instead of the button. */
   blockedReason: string | null;
+  /** Today's deadline, so the screen can quote the rule it is enforcing. */
+  cutoffMinutes: number;
+  /** False on a weekend: still markable, simply not expected or chased. */
+  isWorkingDay: boolean;
 };
 
 export type MarkResult = {
@@ -94,18 +102,20 @@ async function officeClosedOn(date: Date): Promise<boolean> {
 async function buildRoster(
   date: Date,
   filters: { employeeId?: string; department?: string; search?: string; roles?: Role[] },
-): Promise<{ date: Date; officeClosed: boolean; entries: RosterEntry[] }> {
+): Promise<{ date: Date; officeClosed: boolean; isWorkingDay: boolean; entries: RosterEntry[] }> {
   const isFuture = date.getTime() > todayUtc().getTime();
 
-  const [members, records, officeClosed, onLeaveIds] = await Promise.all([
+  const [members, records, officeClosed, onLeaveIds, policy] = await Promise.all([
     employeeRepository.listAttendanceRoster(filters),
     attendanceRepository.listOnDate(date),
     officeClosedOn(date),
     leaveRepository.employeeIdsOnApprovedLeave(date),
+    attendancePolicyService.get(),
   ]);
 
   const byEmployee = new Map(records.map((record) => [record.employeeId, record]));
   const onLeave = new Set(onLeaveIds);
+  const workingDay = isWorkingWeekday(date, policy.workingDays);
 
   const entries = members.map((employee) => {
     const attendance = byEmployee.get(employee.id) ?? null;
@@ -113,11 +123,17 @@ async function buildRoster(
     return {
       employee,
       attendance,
-      status: describeDay({ attendance, officeClosed, onLeave: onLeave.has(employee.id), isFuture }),
+      status: describeDay({
+        attendance,
+        officeClosed,
+        isWorkingDay: workingDay,
+        onLeave: onLeave.has(employee.id),
+        isFuture,
+      }),
     };
   });
 
-  return { date, officeClosed, entries };
+  return { date, officeClosed, isWorkingDay: workingDay, entries };
 }
 
 function summarise(entries: RosterEntry[]): AttendanceSummary {
@@ -132,6 +148,7 @@ function summarise(entries: RosterEntry[]): AttendanceSummary {
 function describeDay(options: {
   attendance: AttendanceDto | null;
   officeClosed: boolean;
+  isWorkingDay: boolean;
   onLeave: boolean;
   isFuture: boolean;
 }): AttendanceDayStatus {
@@ -139,7 +156,15 @@ function describeDay(options: {
   // anything derived — including a closure declared afterwards, which would
   // otherwise erase the record of somebody who did come in.
   if (options.attendance) return "PRESENT";
+
+  // A declared closure before the ordinary week, because it is the more specific
+  // fact: "closed for Eid" tells you more than "it's a Sunday".
   if (options.officeClosed) return "CLOSED";
+
+  // Then the week itself. Ahead of leave, because a day off booked across a
+  // weekend costs nobody anything and reads oddly as "on leave".
+  if (!options.isWorkingDay) return "NON_WORKING";
+
   if (options.onLeave) return "ON_LEAVE";
   return options.isFuture ? "UPCOMING" : "ABSENT";
 }
@@ -206,14 +231,17 @@ export const attendanceService = {
   async todayFor(employeeId: string): Promise<TodayState> {
     const date = todayUtc();
 
-    const [attendance, officeClosed, onLeaveIds] = await Promise.all([
+    const [attendance, officeClosed, onLeaveIds, policy] = await Promise.all([
       attendanceRepository.findByEmployeeAndDate(employeeId, date),
       officeClosedOn(date),
       leaveRepository.employeeIdsOnApprovedLeave(date),
+      attendancePolicyService.get(),
     ]);
 
     const onLeave = onLeaveIds.includes(employeeId);
-    const status = describeDay({ attendance, officeClosed, onLeave, isFuture: false });
+    const isWorkingDay = isWorkingWeekday(date, policy.workingDays);
+
+    const status = describeDay({ attendance, officeClosed, isWorkingDay, onLeave, isFuture: false });
 
     const blockedReason = attendance
       ? null
@@ -227,8 +255,14 @@ export const attendanceService = {
       date,
       attendance,
       status,
+      // A day outside the working week is deliberately *not* blocked. The
+      // working week governs who is expected and who gets warned, not who is
+      // permitted to check in — somebody who comes in on a Saturday should be
+      // able to record it, and simply is not chased for missing it.
       canMark: !attendance && !officeClosed && !onLeave,
       blockedReason,
+      cutoffMinutes: policy.cutoffMinutes,
+      isWorkingDay,
     };
   },
 
@@ -261,11 +295,12 @@ export const attendanceService = {
   async roster(query: AttendanceRosterQuery): Promise<{
     date: Date;
     officeClosed: boolean;
+    isWorkingDay: boolean;
     items: RosterEntry[];
     total: number;
     summary: AttendanceSummary;
   }> {
-    const { date, officeClosed, entries } = await buildRoster(query.date ?? todayUtc(), {
+    const { date, officeClosed, isWorkingDay, entries } = await buildRoster(query.date ?? todayUtc(), {
       employeeId: query.employeeId,
       department: query.department,
       search: query.search,
@@ -277,12 +312,25 @@ export const attendanceService = {
     return {
       date,
       officeClosed,
+      isWorkingDay,
       items: filtered.slice(start, start + query.pageSize),
       total: filtered.length,
       // Counted over everyone matching the filters, not the page on screen, so
       // the tiles keep meaning the same thing on page two.
       summary: summarise(entries),
     };
+  },
+
+  /**
+   * One day's roster, underived and unpaged.
+   *
+   * The warning sweep reads this rather than working out absence for itself, so
+   * "absent" cannot come to mean one thing on the admin screen and another in
+   * somebody's inbox. Anyone present, on approved leave, or covered by a closure
+   * is already excluded by the time it returns.
+   */
+  rosterEntries(date: Date, filters: { roles?: Role[] } = {}) {
+    return buildRoster(date, filters);
   },
 
   /**

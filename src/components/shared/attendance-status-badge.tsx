@@ -1,4 +1,4 @@
-import { CalendarOff, CheckCircle2, Clock, Palmtree, XCircle } from "lucide-react";
+import { CalendarOff, CheckCircle2, Clock, Coffee, Palmtree, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { AttendanceDayStatus } from "@/types";
@@ -7,6 +7,7 @@ const CONFIG = {
   PRESENT: { label: "Present", variant: "success", Icon: CheckCircle2 },
   ON_LEAVE: { label: "On leave", variant: "secondary", Icon: Palmtree },
   CLOSED: { label: "Office closed", variant: "secondary", Icon: CalendarOff },
+  NON_WORKING: { label: "Non-working day", variant: "secondary", Icon: Coffee },
   ABSENT: { label: "Absent", variant: "destructive", Icon: XCircle },
   UPCOMING: { label: "Not yet", variant: "secondary", Icon: Clock },
 } as const satisfies Record<AttendanceDayStatus, unknown>;

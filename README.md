@@ -41,6 +41,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 - Natural-language leave requests — no date pickers
 - Searchable, filterable, sortable leave history with CSV export
 - Mark attendance from the office, verified against a 30-metre geofence by the server
+- An emailed warning letter for any working day that goes unmarked past the cutoff
 
 **Administrators**
 
@@ -417,6 +418,24 @@ nothing else; check-ins already recorded keep the distance they were judged agai
 - **An office day off outranks attendance.** A closed date is not a working day, so nobody is absent on it and no check-in is taken.
 - **There are no working hours in this project**, so `LATE` and `HALF_DAY` deliberately do not exist. The `status` column is where they would go once working hours are defined.
 - **The admin roster is read-only.** Presence is proved by being in the building; a button that marked somebody present from a desk would be a way around the geofence.
+
+### Warning letters
+
+Anyone still absent after the day's cutoff is emailed a warning letter. The super admin sets the
+rules from the Access panel:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Cutoff time | **17:00** (5 PM Pakistan time) | Miss it on a working day and a letter goes out |
+| Working days | **Mon–Fri** | Nobody is expected, or warned, on an unselected day |
+| Send warning letters | On | Off switch; the rules stay configured |
+
+- The sweep runs daily at **17:05 Asia/Karachi** (`5 12 * * *` UTC), five minutes after the default cutoff, and **checks for itself** that the deadline has passed — so moving the cutoff never needs a redeploy.
+- **It reuses the same "who is absent" calculation the admin roster shows**, so a letter can never contradict the screen. Office closures and approved leave are excluded before the sweep sees anyone.
+- **One letter per person per day**, enforced by a unique index rather than a check-then-write: eight concurrent sweeps produce one letter.
+- The letter names the run — *"this is the 3rd working day in a row"* — counted honestly, skipping closures, non-working days and approved leave.
+- **The super admin is never sent one.** They still read as absent on the roster.
+- Working days govern who is *expected*, not who is *permitted*: somebody who comes in on a Saturday can still mark attendance, they are simply never chased for missing it.
 - Geolocation requires a secure context — HTTPS in production (automatic on Vercel), or `localhost` in development. Opening the dev server over a plain-http LAN address on a phone is reported as unsupported.
 
 ---
@@ -439,6 +458,8 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET/POST` | `/api/attendance` | Auth | Own history; mark present (always scoped to the session) |
 | `GET` | `/api/admin/attendance` | Admin | Roster for a date — present, absent, on leave, closed |
 | `GET` | `/api/admin/attendance/export` | Admin | CSV of the roster honouring current filters |
+| `GET` | `/api/admin/attendance/policy` | Admin | Read the cutoff and working week |
+| `PATCH` | `/api/admin/attendance/policy` | Super admin | Change the cutoff, working days or off switch |
 | `GET` | `/api/search` | Auth | Global search, scoped by role |
 | `GET` | `/api/admin/stats` | Admin | Overview, charts, recent activity |
 | `GET` | `/api/admin/employees` | Admin | Paginated employee list |

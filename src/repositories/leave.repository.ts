@@ -171,6 +171,30 @@ export const leaveRepository = {
     return rows.map((row) => row.employeeId);
   },
 
+  /**
+   * Approved leave held by several people across a range.
+   *
+   * The lookback counterpart of `employeeIdsOnApprovedLeave`: counting a run of
+   * missed days has to know which of them somebody had legitimately booked off,
+   * and asking day by day would be a query per day per person.
+   */
+  async approvedForEmployeesBetween(
+    employeeIds: string[],
+    from: Date,
+    to: Date,
+  ): Promise<Array<{ employeeId: string; leaveDate: Date }>> {
+    if (employeeIds.length === 0) return [];
+
+    return prisma.leave.findMany({
+      where: {
+        employeeId: { in: employeeIds },
+        status: LeaveStatus.APPROVED,
+        leaveDate: { gte: from, lte: to },
+      },
+      select: { employeeId: true, leaveDate: true },
+    });
+  },
+
   findByEmployeeAndDate(employeeId: string, leaveDate: Date): Promise<LeaveDto | null> {
     return prisma.leave.findFirst({
       where: { employeeId, leaveDate, status: { not: LeaveStatus.REJECTED } },

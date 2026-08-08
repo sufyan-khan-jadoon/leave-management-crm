@@ -1,6 +1,7 @@
 import type { Role } from "@prisma/client";
 
 import { appConfig } from "@/lib/env";
+import { ordinal } from "@/lib/attendance-policy";
 import { MAX_LOGIN_ATTEMPTS, MONTHLY_LEAVE_ALLOWANCE, OTP_TTL_MINUTES } from "@/lib/constants";
 import { formatDate, formatDateRange } from "@/lib/date";
 
@@ -292,6 +293,59 @@ export function officeClosedTemplate(options: {
        <p style="color:#8b90a8;">Regards,<br />${esc(appConfig.name)}</p>`,
     ),
     text: `Hello ${options.name},\n\nPlease be informed that the office will be closed tomorrow, ${longDate}, for ${options.reason}.\n\nNo attendance is required on this day, and it will not be counted as leave or absence.\n\nEnjoy the holiday!\n\nRegards,\n${appConfig.name}`,
+  };
+}
+
+/**
+ * The warning letter for a working day that went unmarked.
+ *
+ * Written to be answerable rather than merely stern: it says which day, what the
+ * deadline was, and what to do about it, because the commonest cause of one of
+ * these is somebody who was at their desk and forgot to press the button.
+ *
+ * The run of missed days is stated only when there is one — a person on their
+ * fourth in a row is in a different conversation from a person on their first.
+ * Closures and approved leave never count towards it, and the letter says so, so
+ * the number can be defended when somebody writes back to argue with it.
+ */
+export function attendanceWarningTemplate(options: {
+  name: string;
+  date: Date;
+  cutoffLabel: string;
+  consecutiveMissed: number;
+}): Template {
+  const longDate = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(options.date);
+
+  const repeated = options.consecutiveMissed > 1;
+
+  const runHtml = repeated
+    ? `<p>Our records show this is the <strong>${esc(ordinal(options.consecutiveMissed))} working day in a row</strong> with no attendance recorded. Office closures and approved leave are not counted towards this.</p>`
+    : "";
+
+  const runText = repeated
+    ? `\n\nOur records show this is the ${ordinal(options.consecutiveMissed)} working day in a row with no attendance recorded. Office closures and approved leave are not counted towards this.`
+    : "";
+
+  return {
+    subject: repeated
+      ? `Attendance warning — ${options.consecutiveMissed} working days missed`
+      : "Attendance warning — no attendance recorded",
+    html: layout(
+      "Attendance warning",
+      `<p>Hello ${esc(options.name)},</p>
+       <p>No attendance was recorded for you on <strong>${esc(longDate)}</strong>. Attendance had to be marked from the office by <strong>${esc(options.cutoffLabel)}</strong>.</p>
+       ${runHtml}
+       <p>If you were at work, please remember to mark yourself present from your dashboard while you are at the office. If you were unable to attend, speak to your administrator so the record can be corrected.</p>
+       <p style="color:#8b90a8;font-size:13px;">This is an automated notice, sent after the day's deadline had passed.</p>
+       <p style="color:#8b90a8;">Regards,<br />${esc(appConfig.name)}</p>`,
+    ),
+    text: `Hello ${options.name},\n\nNo attendance was recorded for you on ${longDate}. Attendance had to be marked from the office by ${options.cutoffLabel}.${runText}\n\nIf you were at work, please remember to mark yourself present from your dashboard while you are at the office. If you were unable to attend, speak to your administrator so the record can be corrected.\n\nThis is an automated notice, sent after the day's deadline had passed.\n\nRegards,\n${appConfig.name}`,
   };
 }
 

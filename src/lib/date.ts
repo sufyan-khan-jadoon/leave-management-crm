@@ -64,8 +64,8 @@ function appZoneReading(instant: Date): number {
  * timezone is a setting, and this is the one calculation where being an hour out
  * means announcing a closure at the wrong time.
  */
-export function appZoneInstant(day: Date, hour: number): Date {
-  const wallClock = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour);
+export function appZoneInstant(day: Date, hour: number, minute = 0): Date {
+  const wallClock = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour, minute);
 
   const firstPass = new Date(wallClock - (appZoneReading(new Date(wallClock)) - wallClock));
   return new Date(wallClock - (appZoneReading(firstPass) - firstPass.getTime()));

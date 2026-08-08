@@ -349,6 +349,53 @@ row is filtered on does not exist in the database to filter by, so paging in SQL
 That is right for a Manage screen and wrong for a personal history, so the admin view lives at its
 own endpoint.
 
+### Missing the day earns a letter
+
+Anyone still absent after the day's cutoff is emailed a warning. The sweep lives in
+`attendance-warning.service.ts`, the rules it obeys are pure and tested in `attendance-policy.ts`,
+and the deadline itself is a row: `AttendancePolicy`, a singleton the super admin edits from the
+Access panel. **Read from the database on every sweep**, never cached — moving the cutoff has to bite
+on the next run.
+
+**It reuses `rosterEntries`, and that is the point.** "Absent" is computed in exactly one place, so
+the letter can never disagree with what the admin screen showed. Anyone present, on approved leave,
+or covered by a closure is already excluded before the sweep sees them.
+
+Four gates, in this order, and the order is the argument: **warnings enabled → an ordinary working
+day → not a declared closure → the cutoff has actually passed**. The closure check sits above the
+clock for the same reason marking present does — on a day the office was shut there is nothing to
+have missed.
+
+**`workingDays` exists because nothing else here knows a weekend.** Leave counts every day, and
+`Holiday` is per-date, so without it the sweep would write to the entire company every Saturday and
+Sunday and the streak would climb through them. It also feeds the roster, where a non-working day
+reads `NON_WORKING` rather than `ABSENT`. It deliberately does **not** block checking in: the working
+week governs who is *expected* and who is *chased*, not who is permitted to record a day — somebody
+who comes in on a Saturday can still mark it.
+
+**The row is the claim, not the receipt.** `attendanceWarningRepository.claim` inserts before a word
+is written, so the unique index on `(employeeId, date)` picks one winner out of any number of racing
+sweeps — verified by racing eight. Claiming afterwards would make a crash in between look identical
+to a day nobody had swept. A failed delivery leaves `sentAt` null and is **not retried**: mail is
+fire-and-forget everywhere here, and a retry that cannot tell "never sent" from "sent, logging
+failed" is how somebody gets the same letter twice.
+
+`consecutiveMissed` is stored rather than recomputed, because it is what the letter *said* — a
+closure declared next week must not rewrite words already sitting in somebody's inbox. Counting skips
+closures, non-working days and approved leave: none of them is a miss, and none of them ends a run
+either. It is capped at `LOOKBACK_DAYS`, so somebody who has never attended reads as a long run
+rather than an infinite one.
+
+**The super admin is never written to.** They are held to the rules like anyone and still read as
+absent on the roster, but an automated letter telling the owner of the system to explain themselves
+has nobody behind it.
+
+The cron is `5 12 * * *` — **17:05 in Asia/Karachi, hand-converted**, five minutes after the default
+cutoff. The sweep decides for itself whether the deadline has passed rather than trusting the
+schedule to mean it has, because the cutoff is a setting and a cron line cannot follow it. That makes
+frequency a knob rather than a correctness question: on Pro make it hourly (`5 * * * *`) and letters
+land within the hour of whatever cutoff is configured. Same `CRON_SECRET`, same fail-closed rule.
+
 **Marking present happens on the dashboard and nowhere else.** `/attendance` is history, read-only:
 two places to press the same button read as two different actions, and the one that matters is the
 one on the screen people already open. `MarkAttendanceCard` therefore takes `today` already resolved

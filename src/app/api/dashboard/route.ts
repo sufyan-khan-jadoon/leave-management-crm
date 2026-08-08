@@ -1,6 +1,6 @@
 import { handleRoute, ok } from "@/lib/api";
 import { requireUser } from "@/lib/auth/guards";
-import { serializeAttendance, serializeHoliday } from "@/lib/serialize";
+import { serializeAttendanceToday, serializeHoliday } from "@/lib/serialize";
 import { attendanceService } from "@/services/attendance.service";
 import { employeeService } from "@/services/employee.service";
 import { holidayService } from "@/services/holiday.service";
@@ -44,13 +44,7 @@ export async function GET() {
       totalLeaves: recent.total,
       upcomingClosures: closures.map(serializeHoliday),
       attendance: {
-        today: {
-          date: today.date.toISOString(),
-          attendance: today.attendance ? serializeAttendance(today.attendance) : null,
-          status: today.status,
-          canMark: today.canMark,
-          blockedReason: today.blockedReason,
-        },
+        today: serializeAttendanceToday(today),
         presentThisMonth,
       },
     });

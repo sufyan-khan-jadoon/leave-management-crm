@@ -93,6 +93,26 @@ export const attendanceRepository = {
   countForEmployeeBetween(employeeId: string, from: Date, to: Date): Promise<number> {
     return prisma.attendance.count({ where: { employeeId, date: { gte: from, lt: to } } });
   },
+
+  /**
+   * Who checked in on which day, across several people at once.
+   *
+   * One query for the whole lookback window rather than one per person per day:
+   * counting a run of missed days over a fortnight would otherwise be a few
+   * hundred round trips for an office of any size.
+   */
+  async listForEmployeesBetween(
+    employeeIds: string[],
+    from: Date,
+    to: Date,
+  ): Promise<Array<{ employeeId: string; date: Date }>> {
+    if (employeeIds.length === 0) return [];
+
+    return prisma.attendance.findMany({
+      where: { employeeId: { in: employeeIds }, date: { gte: from, lte: to } },
+      select: { employeeId: true, date: true },
+    });
+  },
 };
 
 function isUniqueViolation(error: unknown): boolean {

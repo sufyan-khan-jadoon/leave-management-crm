@@ -71,7 +71,13 @@ export type AttendanceView = {
  * What a day amounted to for one person. Derived on read rather than stored —
  * see `attendance.service.ts` — so it is not a Prisma enum and never will be.
  */
-export type AttendanceDayStatus = "PRESENT" | "ON_LEAVE" | "CLOSED" | "ABSENT" | "UPCOMING";
+export type AttendanceDayStatus =
+  | "PRESENT"
+  | "ON_LEAVE"
+  | "CLOSED"
+  | "NON_WORKING"
+  | "ABSENT"
+  | "UPCOMING";
 
 export type AttendanceTodayView = {
   date: string;
@@ -79,6 +85,19 @@ export type AttendanceTodayView = {
   status: AttendanceDayStatus;
   canMark: boolean;
   blockedReason: string | null;
+  /** Minutes after midnight, on the company's clock. */
+  cutoffMinutes: number;
+  isWorkingDay: boolean;
+};
+
+/** The company's attendance rules, as the super admin's panel receives them. */
+export type AttendancePolicyView = {
+  id: string;
+  cutoffMinutes: number;
+  workingDays: number[];
+  warningsEnabled: boolean;
+  updatedAt: string;
+  updatedBy: { id: string; name: string; email: string } | null;
 };
 
 export type AttendanceRosterEntry = {

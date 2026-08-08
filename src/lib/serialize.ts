@@ -2,7 +2,9 @@ import type { AttendanceDto } from "@/repositories/attendance.repository";
 import type { EmployeeDto } from "@/repositories/employee.repository";
 import type { HolidayDto } from "@/repositories/holiday.repository";
 import type { LeaveWithEmployeeDto } from "@/repositories/leave.repository";
+import type { TodayState } from "@/services/attendance.service";
 import type {
+  AttendanceTodayView,
   AttendanceView,
   EmployeeView,
   HolidayView,
@@ -43,6 +45,26 @@ export function serializeAttendance(attendance: AttendanceDto): AttendanceView {
     date: attendance.date.toISOString(),
     checkInAt: attendance.checkInAt.toISOString(),
     createdAt: attendance.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Today's attendance state for the client.
+ *
+ * The return type is annotated rather than inferred on purpose: this is built in
+ * more than one route, and an object literal that quietly forgets a field is a
+ * bug typecheck would otherwise wave through — the client type would promise
+ * something the payload never carried.
+ */
+export function serializeAttendanceToday(today: TodayState): AttendanceTodayView {
+  return {
+    date: today.date.toISOString(),
+    attendance: today.attendance ? serializeAttendance(today.attendance) : null,
+    status: today.status,
+    canMark: today.canMark,
+    blockedReason: today.blockedReason,
+    cutoffMinutes: today.cutoffMinutes,
+    isWorkingDay: today.isWorkingDay,
   };
 }
 

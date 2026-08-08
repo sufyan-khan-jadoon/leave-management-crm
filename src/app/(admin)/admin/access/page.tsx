@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { AccessPanel } from "@/components/admin/access-panel";
+import { AttendancePolicyPanel } from "@/components/admin/attendance-policy-panel";
 import { PageHeader } from "@/components/layout/page-header";
 import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
@@ -22,9 +23,12 @@ export default async function AdminAccessPage() {
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Access"
-        description="Invite employees and administrators, and approve administrator requests."
+        description="Invite employees and administrators, approve administrator requests, and set the working day."
       />
-      <AccessPanel />
+      <div className="grid gap-4">
+        <AccessPanel />
+        <AttendancePolicyPanel />
+      </div>
     </div>
   );
 }

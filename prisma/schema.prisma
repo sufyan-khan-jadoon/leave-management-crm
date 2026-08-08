@@ -136,6 +136,8 @@ model Employee {
 
   leaves             Leave[]
   attendance         Attendance[]
+  attendanceWarnings AttendanceWarning[]
+  policiesUpdated    AttendancePolicy[]  @relation("AttendancePolicyAuthor")
   otpCodes           OtpCode[]
   invitationsSent    Invitation[] @relation("InvitationIssuer")
   invitationAccepted Invitation?  @relation("InvitationAcceptor")
@@ -263,6 +265,74 @@ model Holiday {
   /// reads on exactly this pair.
   @@index([notice, noticeDueAt])
   @@map("holidays")
+}
+
+/// Company-wide attendance rules, as one row.
+///
+/// A singleton: `id` is fixed, so `upsert` on it is the only way to write and
+/// there can never be two policies disagreeing about when the day ends. Read on
+/// every sweep rather than carried anywhere, the same rule `canManageHolidays`
+/// follows — changing the cutoff has to bite on the next sweep, not whenever
+/// something cached happens to expire.
+model AttendancePolicy {
+  id String @id @default("policy")
+
+  /// Minutes after midnight on the company's clock, so 17:00 is 1020. Stored as
+  /// one number rather than hour and minute columns because every use of it is
+  /// a comparison, and two columns would let them disagree.
+  cutoffMinutes Int @default(1020)
+
+  /// ISO weekday numbers attendance is expected on — 1 = Monday, 7 = Sunday.
+  ///
+  /// Without this the warning sweep would write to the whole company every
+  /// Saturday and Sunday, since nothing else in this codebase knows a weekend
+  /// from a working day. A date listed in `holidays` is still not a working day
+  /// whatever this says: a declared closure outranks the ordinary week.
+  workingDays Int[] @default([1, 2, 3, 4, 5])
+
+  /// Off switch. The rules stay configured; nothing is sent while this is false.
+  warningsEnabled Boolean @default(true)
+
+  updatedAt   DateTime @updatedAt
+  updatedById String?
+  updatedBy   Employee? @relation("AttendancePolicyAuthor", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("attendance_policy")
+}
+
+/// A warning letter sent to one person about one missed working day.
+///
+/// The row is the claim, not the receipt: it is inserted *before* the email is
+/// sent, so of any number of sweeps racing on the same person and day the unique
+/// index picks exactly one winner. Claiming afterwards would leave a crash in
+/// between looking identical to a day nobody had swept, and the letter would go
+/// twice — the same reasoning `Holiday.claimNotice` follows.
+model AttendanceWarning {
+  id         String @id @default(cuid())
+  employeeId String
+
+  /// The working day that was missed, at UTC midnight like every calendar date.
+  date DateTime @db.Date
+
+  /// Working days missed in a row, this one included, as counted when the letter
+  /// was written. Stored rather than recomputed because it is what the letter
+  /// actually said, and a later closure or backdated leave would change the
+  /// answer without changing the words already in somebody's inbox.
+  consecutiveMissed Int @default(1)
+
+  /// Null means the letter was claimed but delivery was never confirmed.
+  /// Deliberately not retried: mail here is fire-and-forget everywhere else, and
+  /// a retry that cannot tell "never sent" from "sent, logging failed" is how
+  /// somebody gets the same warning twice.
+  sentAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([date])
+  @@map("attendance_warnings")
 }
 
 /// A single day of leave. Date and reason are extracted by the AI service;

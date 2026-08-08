@@ -52,3 +52,36 @@ export const attendanceRosterQuerySchema = z.object({
 });
 
 export type AttendanceRosterQuery = z.infer<typeof attendanceRosterQuerySchema>;
+
+/**
+ * The super admin's attendance policy.
+ *
+ * The cutoff arrives as "HH:MM" because that is what a time input produces, and
+ * is stored as minutes because every use of it is a comparison. Both fields are
+ * optional so the panel can save one without restating the other, but an empty
+ * body is refused — a request that changes nothing is a mistake worth reporting.
+ */
+export const updateAttendancePolicySchema = z
+  .object({
+    cutoff: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a time between 00:00 and 23:59")
+      .transform((value) => {
+        const [hour, minute] = value.split(":").map(Number);
+        return hour * 60 + minute;
+      })
+      .optional(),
+    workingDays: z
+      .array(z.number().int().min(1, "Days run 1–7").max(7, "Days run 1–7"))
+      .min(1, "Choose at least one working day")
+      .max(7)
+      .optional(),
+    warningsEnabled: z.boolean().optional(),
+  })
+  .refine(
+    (value) => value.cutoff !== undefined || value.workingDays !== undefined || value.warningsEnabled !== undefined,
+    "Change something first.",
+  )
+  .transform(({ cutoff, ...rest }) => ({ ...rest, cutoffMinutes: cutoff }));
+
+export type UpdateAttendancePolicyInput = z.infer<typeof updateAttendancePolicySchema>;
