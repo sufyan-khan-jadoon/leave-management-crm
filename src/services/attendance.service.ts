@@ -1,4 +1,6 @@
-import { todayUtc } from "@/lib/date";
+import type { Role } from "@prisma/client";
+
+import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
 import { ConflictError, ForbiddenError, ValidationError } from "@/lib/errors";
 import { judgePosition } from "@/lib/geo";
 import {
@@ -39,6 +41,14 @@ export type RosterEntry = {
   attendance: AttendanceDto | null;
 };
 
+/** How a day went for a group of people. */
+export type AttendanceSummary = {
+  expected: number;
+  present: number;
+  absent: number;
+  onLeave: number;
+};
+
 export type TodayState = {
   date: Date;
   attendance: AttendanceDto | null;
@@ -72,6 +82,51 @@ const INACCURATE_MESSAGE =
 async function officeClosedOn(date: Date): Promise<boolean> {
   const closed = await holidayRepository.closedDatesAmong([date]);
   return closed.length > 0;
+}
+
+/**
+ * Builds one day's roster: who was expected, and what became of each of them.
+ *
+ * Shared by the admin screen and the overview tile so the two can never
+ * disagree about what "present" counted — the screen pages and filters the
+ * result, the tile only counts it.
+ */
+async function buildRoster(
+  date: Date,
+  filters: { employeeId?: string; department?: string; search?: string; roles?: Role[] },
+): Promise<{ date: Date; officeClosed: boolean; entries: RosterEntry[] }> {
+  const isFuture = date.getTime() > todayUtc().getTime();
+
+  const [members, records, officeClosed, onLeaveIds] = await Promise.all([
+    employeeRepository.listAttendanceRoster(filters),
+    attendanceRepository.listOnDate(date),
+    officeClosedOn(date),
+    leaveRepository.employeeIdsOnApprovedLeave(date),
+  ]);
+
+  const byEmployee = new Map(records.map((record) => [record.employeeId, record]));
+  const onLeave = new Set(onLeaveIds);
+
+  const entries = members.map((employee) => {
+    const attendance = byEmployee.get(employee.id) ?? null;
+
+    return {
+      employee,
+      attendance,
+      status: describeDay({ attendance, officeClosed, onLeave: onLeave.has(employee.id), isFuture }),
+    };
+  });
+
+  return { date, officeClosed, entries };
+}
+
+function summarise(entries: RosterEntry[]): AttendanceSummary {
+  return {
+    expected: entries.length,
+    present: entries.filter((entry) => entry.status === "PRESENT").length,
+    absent: entries.filter((entry) => entry.status === "ABSENT").length,
+    onLeave: entries.filter((entry) => entry.status === "ON_LEAVE").length,
+  };
 }
 
 function describeDay(options: {
@@ -181,6 +236,15 @@ export const attendanceService = {
     return attendanceRepository.listForEmployee(employeeId, page, pageSize);
   },
 
+  /** Days this person has been in so far this calendar month, for the dashboard. */
+  presentThisMonth(employeeId: string, reference: Date = new Date()): Promise<number> {
+    return attendanceRepository.countForEmployeeBetween(
+      employeeId,
+      startOfUtcMonth(reference),
+      endOfUtcMonth(reference),
+    );
+  },
+
   /**
    * Everyone expected in on one date, and whether they came.
    *
@@ -199,48 +263,13 @@ export const attendanceService = {
     officeClosed: boolean;
     items: RosterEntry[];
     total: number;
-    summary: { expected: number; present: number; absent: number; onLeave: number };
+    summary: AttendanceSummary;
   }> {
-    const date = query.date ?? todayUtc();
-    const isFuture = date.getTime() > todayUtc().getTime();
-
-    const [members, records, officeClosed, onLeaveIds] = await Promise.all([
-      employeeRepository.listAttendanceRoster({
-        employeeId: query.employeeId,
-        department: query.department,
-        search: query.search,
-      }),
-      attendanceRepository.listOnDate(date),
-      officeClosedOn(date),
-      leaveRepository.employeeIdsOnApprovedLeave(date),
-    ]);
-
-    const byEmployee = new Map(records.map((record) => [record.employeeId, record]));
-    const onLeave = new Set(onLeaveIds);
-
-    const entries: RosterEntry[] = members.map((employee) => {
-      const attendance = byEmployee.get(employee.id) ?? null;
-
-      return {
-        employee,
-        attendance,
-        status: describeDay({
-          attendance,
-          officeClosed,
-          onLeave: onLeave.has(employee.id),
-          isFuture,
-        }),
-      };
+    const { date, officeClosed, entries } = await buildRoster(query.date ?? todayUtc(), {
+      employeeId: query.employeeId,
+      department: query.department,
+      search: query.search,
     });
-
-    // Counted over everyone matching the filters, not the page on screen, so
-    // the tiles keep meaning the same thing on page two.
-    const summary = {
-      expected: entries.length,
-      present: entries.filter((entry) => entry.status === "PRESENT").length,
-      absent: entries.filter((entry) => entry.status === "ABSENT").length,
-      onLeave: entries.filter((entry) => entry.status === "ON_LEAVE").length,
-    };
 
     const filtered = query.status === "ALL" ? entries : entries.filter((e) => e.status === query.status);
     const start = (query.page - 1) * query.pageSize;
@@ -250,7 +279,21 @@ export const attendanceService = {
       officeClosed,
       items: filtered.slice(start, start + query.pageSize),
       total: filtered.length,
-      summary,
+      // Counted over everyone matching the filters, not the page on screen, so
+      // the tiles keep meaning the same thing on page two.
+      summary: summarise(entries),
     };
+  },
+
+  /**
+   * Today at a glance for one population, for the admin overview.
+   *
+   * Scoped by role because the overview reports on employees and administrators
+   * separately — an attendance tile that silently counted both would disagree
+   * with every other figure beside it.
+   */
+  async summaryOn(date: Date, roles?: Role[]): Promise<AttendanceSummary & { officeClosed: boolean }> {
+    const { officeClosed, entries } = await buildRoster(date, { roles });
+    return { ...summarise(entries), officeClosed };
   },
 };

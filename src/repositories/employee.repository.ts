@@ -160,9 +160,12 @@ export const employeeRepository = {
     employeeId?: string;
     department?: string;
     search?: string;
+    /** Narrows to one population, the way the admin overview reports on one. */
+    roles?: Role[];
   }): Promise<AttendanceRosterMember[]> {
     const where: Prisma.EmployeeWhereInput = { status: EmployeeStatus.ACTIVE };
 
+    if (filters.roles) where.role = { in: filters.roles };
     if (filters.employeeId) where.id = filters.employeeId;
     if (filters.department) where.department = filters.department;
 

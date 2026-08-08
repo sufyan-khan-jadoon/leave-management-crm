@@ -4,6 +4,7 @@ import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
 import { employeeRepository } from "@/repositories/employee.repository";
 import { holidayRepository, type HolidayDto } from "@/repositories/holiday.repository";
 import { leaveRepository, type LeaveWithEmployeeDto } from "@/repositories/leave.repository";
+import { attendanceService, type AttendanceSummary } from "@/services/attendance.service";
 import { leaveService } from "@/services/leave.service";
 
 /**
@@ -42,6 +43,7 @@ export type AdminDashboardData = {
   departmentBreakdown: Array<{ department: string; count: number }>;
   recentActivity: LeaveWithEmployeeDto[];
   upcomingClosures: HolidayDto[];
+  attendanceToday: AttendanceSummary & { officeClosed: boolean };
 };
 
 export const adminService = {
@@ -99,15 +101,26 @@ export const adminService = {
 
     const closedDates = await holidayRepository.allDates();
 
-    const [overview, monthlyTrend, departmentBreakdown, recentActivity, upcomingClosures] =
+    const [overview, monthlyTrend, departmentBreakdown, recentActivity, upcomingClosures, attendanceToday] =
       await Promise.all([
         this.overview(population),
         leaveService.monthlyTrend(6, { roles }),
         leaveRepository.departmentTotals({ roles }, closedDates),
         leaveRepository.recent(8, roles),
         holidayRepository.upcoming(todayUtc(), 3),
+        // Scoped to the same population as everything else on the screen, so
+        // toggling to administrators does not leave one tile counting the
+        // whole company.
+        attendanceService.summaryOn(todayUtc(), roles),
       ]);
 
-    return { overview, monthlyTrend, departmentBreakdown, recentActivity, upcomingClosures };
+    return {
+      overview,
+      monthlyTrend,
+      departmentBreakdown,
+      recentActivity,
+      upcomingClosures,
+      attendanceToday,
+    };
   },
 };

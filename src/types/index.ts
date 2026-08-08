@@ -129,6 +129,11 @@ export type EmployeeDashboardData = {
   totalLeaves: number;
   /** Days the office is closed, soonest first. Nobody is charged leave for these. */
   upcomingClosures: HolidayView[];
+  attendance: {
+    today: AttendanceTodayView;
+    /** Days checked in so far this calendar month. */
+    presentThisMonth: number;
+  };
 };
 
 export type AdminOverviewView = {
@@ -149,6 +154,14 @@ export type AdminDashboardView = {
   departmentBreakdown: Array<{ department: string; count: number }>;
   recentActivity: LeaveWithEmployeeView[];
   upcomingClosures: HolidayView[];
+  /** Today at a glance, over the same population as `overview`. */
+  attendanceToday: {
+    expected: number;
+    present: number;
+    absent: number;
+    onLeave: number;
+    officeClosed: boolean;
+  };
 };
 
 export type LeaveDecisionResult = {

@@ -5,11 +5,13 @@ import {
   CalendarClock,
   CalendarDays,
   CheckCircle2,
+  MapPin,
   Sparkles,
   TrendingUp,
   XCircle,
 } from "lucide-react";
 
+import { MarkAttendanceCard } from "@/components/attendance/mark-attendance-card";
 import { LeaveTrendChart } from "@/components/charts/leave-trend-chart";
 import { UpcomingClosures } from "@/components/dashboard/upcoming-closures";
 import { LeaveChat } from "@/components/leaves/leave-chat";
@@ -35,7 +37,7 @@ export function EmployeeDashboard({
   firstName: string;
   profileComplete: boolean;
 }) {
-  const { data, loading, error } = useApiResource<EmployeeDashboardData>("/api/dashboard");
+  const { data, loading, error, refresh } = useApiResource<EmployeeDashboardData>("/api/dashboard");
 
   if (loading) return <DashboardSkeleton />;
 
@@ -49,14 +51,14 @@ export function EmployeeDashboard({
     );
   }
 
-  const { balance, counts, trend, recentLeaves } = data;
+  const { balance, counts, trend, recentLeaves, attendance } = data;
   const usedPercent = (balance.approvedThisMonth / balance.allowance) * 100;
 
   return (
     <>
       <PageHeader
         title={`Welcome back, ${firstName}`}
-        description="Here's where your leave stands this month."
+        description="Your attendance today, and where your leave stands this month."
         actions={
           <Button asChild>
             <Link href={ROUTES.newLeave}>
@@ -68,6 +70,11 @@ export function EmployeeDashboard({
       />
 
       <div className="grid gap-4">
+        {/* First on the page because it is the only part of the day that is
+            time-sensitive: leave can be booked whenever, but marking yourself
+            present has to happen while you are actually at the office. */}
+        <MarkAttendanceCard today={attendance.today} loading={false} error={null} onMarked={refresh} />
+
         <Card glass className="overflow-hidden">
           <CardContent className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1.5">
@@ -95,7 +102,14 @@ export function EmployeeDashboard({
           </CardContent>
         </Card>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Days present"
+            value={attendance.presentThisMonth}
+            icon={MapPin}
+            tone="success"
+            hint="Checked in this month"
+          />
           <StatCard
             label="Used this month"
             value={balance.approvedThisMonth}
@@ -221,6 +235,7 @@ function DashboardSkeleton() {
         <Skeleton className="h-4 w-80" />
       </div>
       <div className="grid gap-4">
+        <Skeleton className="h-48 w-full rounded-xl" />
         <Skeleton className="h-36 w-full rounded-xl" />
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }, (_, index) => (

@@ -3,9 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
+  ArrowRight,
   Building2,
   CalendarDays,
+  CalendarOff,
   CheckCircle2,
+  MapPin,
   Shield,
   TrendingUp,
   UserCheck,
@@ -132,7 +135,7 @@ export function AdminDashboard({
     );
   }
 
-  const { overview, monthlyTrend, departmentBreakdown, recentActivity } = data;
+  const { overview, monthlyTrend, departmentBreakdown, recentActivity, attendanceToday } = data;
 
   const headcountHint =
     overview.awaitingApproval > 0
@@ -174,6 +177,53 @@ export function AdminDashboard({
             hint="All time"
           />
         </div>
+
+        <Card>
+          <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
+            <div className="space-y-1.5">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MapPin className="text-primary-ink size-4" aria-hidden />
+                In the office today
+              </CardTitle>
+              <CardDescription>
+                {attendanceToday.officeClosed
+                  ? "The office is closed today, so nobody is expected in."
+                  : `${attendanceToday.present} of ${attendanceToday.expected} checked in from the office.`}
+              </CardDescription>
+            </div>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={ROUTES.adminAttendance}>
+                View roster
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <StatCard
+                label="Present"
+                value={attendanceToday.present}
+                icon={CheckCircle2}
+                tone="success"
+                hint="Checked in today"
+              />
+              <StatCard
+                label={attendanceToday.officeClosed ? "Office closed" : "Absent"}
+                value={attendanceToday.officeClosed ? "—" : attendanceToday.absent}
+                icon={attendanceToday.officeClosed ? CalendarOff : XCircle}
+                tone={attendanceToday.officeClosed ? "neutral" : "destructive"}
+                hint={attendanceToday.officeClosed ? "Not a working day" : "No check-in yet"}
+              />
+              <StatCard
+                label="On leave"
+                value={attendanceToday.onLeave}
+                icon={CalendarDays}
+                tone="warning"
+                hint="Approved leave today"
+              />
+            </div>
+          </CardContent>
+        </Card>
 
         <UpcomingClosures closures={data.upcomingClosures} />
 

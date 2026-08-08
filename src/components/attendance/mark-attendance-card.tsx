@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { ALLOWED_RADIUS_METERS } from "@/lib/constants";
-import { formatDateTime } from "@/lib/date";
+import { formatDate, formatDateTime } from "@/lib/date";
 import { formatDistance } from "@/lib/geo";
 import { GEOLOCATION_MESSAGES, requestPosition } from "@/lib/geolocation";
 import type { AttendanceTodayView, AttendanceView } from "@/types";
@@ -122,8 +122,8 @@ export function MarkAttendanceCard({ today, loading, error, onMarked }: Props) {
           Today
         </CardTitle>
         <CardDescription>
-          {formatDateTime(today.date).split(",").slice(0, 2).join(",")} — attendance can only be marked from
-          inside the office, within {ALLOWED_RADIUS_METERS} metres.
+          {formatDate(today.date)} — attendance can only be marked from inside the office, within{" "}
+          {ALLOWED_RADIUS_METERS} metres.
         </CardDescription>
       </CardHeader>
 
