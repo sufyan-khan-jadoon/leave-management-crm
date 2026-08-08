@@ -116,12 +116,22 @@ The lock is `Employee.lockedAt`, deliberately **not** `emailVerified = null`. Cl
 forget the address was ever proven, and would drop a locked-out administrator out of
 `listPendingAdmins`, which filters on it.
 
-**The sign-in form never says an account is locked until the password is right.** The refusal is
-thrown after `verifyPassword` succeeds, so five wrong guesses cannot be used to ask whether an
-address is registered here — the same reason the `portal` check waits. The owner is told by email
-instead: reaching the cap issues an unlock code and sends `accountLockedTemplate`, which doubles as
-the warning that somebody was guessing at their password. Failures against an already-locked account
-still count, but `lockedAt` stops each one mailing another code.
+**The form counts down out loud**: a wrong password on an account that exists reports how many
+tries are left, in the same wording `assertOtp` uses on a wrong code, and the last one says the
+account is now locked. This is a deliberate exception to the rule the `portal` check follows,
+and it is the one place the sign-in screen will confirm that an address is registered here — an
+unknown address keeps the flat "incorrect email or password". The trade was made on purpose: a
+colleague mistyping their password should see the lock coming rather than walk into it, and in an
+invitation-only system for one company the roster is not the secret. Don't extend the countdown to
+unknown addresses by inventing a shadow counter for them, and don't quietly remove it either.
+
+A locked account is turned away **before** `verifyPassword` is called, so every later attempt gets
+the unlock message however right or wrong the password is. That also means `registerFailedLogin`
+can never see a locked account, which is why reaching the cap is what sends the code — and why
+nothing has to guard against mailing a second one.
+
+Reaching the cap sends `accountLockedTemplate`, which carries the unlock code and doubles as the
+warning that somebody was guessing at the password.
 
 Anything that proves the mailbox clears the lock, and does it in the same write: `markEmailVerified`
 and `updatePassword` both reset the streak, so answering the code and completing a password reset

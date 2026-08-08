@@ -9,7 +9,15 @@ import {
   OTP_RESEND_COOLDOWN_SECONDS,
   OTP_TTL_MINUTES,
 } from "@/lib/constants";
-import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError } from "@/lib/errors";
+import type { AppError } from "@/lib/errors";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  RateLimitError,
+  UnauthorizedError,
+  ValidationError,
+} from "@/lib/errors";
 import { OTP_PURPOSE, canSignIn, isAdminRole } from "@/lib/enums";
 import type { ResetTicket } from "@/lib/auth/reset-ticket";
 import { hashPassword, verifyPassword } from "@/lib/password";
@@ -88,32 +96,43 @@ async function sendUnlockCode(employee: { id: string; email: string; name: strin
 }
 
 /**
- * Counts one failed sign-in and, at the cap, locks the account and mails the
- * code that will release it.
+ * Counts one failed sign-in and says what it cost — how many tries are left, or
+ * that the account has just shut itself. Returns the refusal rather than
+ * throwing it, so the one caller decides where it is raised.
  *
- * That email is the only notice sent: the sign-in form says nothing, so five
- * wrong guesses cannot be used to ask whether an address exists, and the person
- * who actually owns the account hears about it in the inbox they will have to
- * open anyway.
+ * Counting down out loud is a deliberate trade. It tells anyone who can reach
+ * the form which addresses have accounts here, since an unknown one keeps the
+ * flat "incorrect email or password". That is accepted: a colleague mistyping
+ * their password should be able to see the lock coming rather than meet it, and
+ * this is an invitation-only system where the roster is hardly a secret. It
+ * mirrors the countdown `assertOtp` already gives on a wrong code.
+ *
+ * A locked account never arrives here — `authenticate` turns it away before the
+ * password is checked — so reaching the cap is what locks, and mails the code
+ * that releases it.
  */
 async function registerFailedLogin(employee: {
   id: string;
   email: string;
   name: string;
-  lockedAt: Date | null;
-}): Promise<void> {
+}): Promise<AppError> {
   const attempts = await employeeRepository.registerFailedLogin(employee.id);
+  const remaining = MAX_LOGIN_ATTEMPTS - attempts;
 
-  // `lockedAt` guards the email as much as the write — a locked account still
-  // collects failures, and each one must not send another code.
-  if (attempts < MAX_LOGIN_ATTEMPTS || employee.lockedAt) return;
+  if (remaining > 0) {
+    return new UnauthorizedError(
+      `Incorrect email or password. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before your account is locked.`,
+    );
+  }
 
   await employeeRepository.lockAccount(employee.id);
   await sendUnlockCode(employee);
+
+  return new ForbiddenError(LOCKED_MESSAGE);
 }
 
 /**
- * Refusal shown once a locked account finally offers the right password.
+ * Shown the moment an account locks, and on every attempt at it afterwards.
  *
  * It says "verify your email" on purpose: the sign-in form routes on that
  * phrase, and this ends at the same screen as an address that was never proven.
@@ -412,18 +431,17 @@ export const authService = {
     const employee = await employeeRepository.findByEmailWithSecret(input.email);
     if (!employee) return null;
 
+    // Answered before the password is even looked at. Once an account is
+    // locked, nothing else about it is true enough to act on — and someone
+    // typing the password they know to be right would otherwise be refused
+    // with no idea why, or told they had attempts left when they had none.
+    if (employee.lockedAt) throw new ForbiddenError(LOCKED_MESSAGE);
+
     const valid = await verifyPassword(input.password, employee.password);
 
-    if (!valid) {
-      await registerFailedLogin(employee);
-      return null;
-    }
-
-    // Checked before anything else this account could be told, and only once
-    // the password is right. A lock is the whole story until the mailbox
-    // answers — and reporting it to whoever caused it would turn five wrong
-    // guesses into a way of asking whether an address is registered here.
-    if (employee.lockedAt) throw new ForbiddenError(LOCKED_MESSAGE);
+    // Thrown rather than answered with `null`, so the form can show the count
+    // that is left instead of a flat "incorrect email or password".
+    if (!valid) throw await registerFailedLogin(employee);
 
     // The count is of *consecutive* failures, so the right password ends the
     // run: an account is never locked by five typos spread over a year.
