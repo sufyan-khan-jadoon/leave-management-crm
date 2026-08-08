@@ -11,6 +11,7 @@ export function serializeEmployee(employee: EmployeeDto): EmployeeView {
   return {
     ...employee,
     emailVerified: employee.emailVerified?.toISOString() ?? null,
+    lockedAt: employee.lockedAt?.toISOString() ?? null,
     joiningDate: employee.joiningDate?.toISOString() ?? null,
     createdAt: employee.createdAt.toISOString(),
     updatedAt: employee.updatedAt.toISOString(),

@@ -11,6 +11,7 @@ export const employeeSelect = {
   role: true,
   status: true,
   canInviteEmployees: true,
+  lockedAt: true,
   phone: true,
   department: true,
   position: true,
@@ -21,6 +22,13 @@ export const employeeSelect = {
 } satisfies Prisma.EmployeeSelect;
 
 export type EmployeeDto = Prisma.EmployeeGetPayload<{ select: typeof employeeSelect }>;
+
+/**
+ * The clean sign-in slate. Written wherever the owner has just proved who they
+ * are — by password, by code, or by completing a reset — so the streak and the
+ * lock it caused can never drift apart.
+ */
+const UNLOCKED = { failedLoginAttempts: 0, lockedAt: null } satisfies Prisma.EmployeeUpdateInput;
 
 export type EmployeeListFilters = {
   search?: string;
@@ -118,10 +126,15 @@ export const employeeRepository = {
     return prisma.employee.update({ where: { id }, data, select: employeeSelect });
   },
 
+  /**
+   * Marks the address proven, and clears the sign-in lock with it: answering a
+   * code sent to the mailbox is exactly what the lock asks for, so the two are
+   * settled by one write rather than left to a caller to remember.
+   */
   markEmailVerified(id: string): Promise<EmployeeDto> {
     return prisma.employee.update({
       where: { id },
-      data: { emailVerified: new Date() },
+      data: { emailVerified: new Date(), ...UNLOCKED },
       select: employeeSelect,
     });
   },
@@ -130,14 +143,39 @@ export const employeeRepository = {
    * Stores a new password hash. `emailVerified` is set alongside it because
    * completing a reset proves control of the mailbox — the same proof the
    * verification flow asks for — so an unverified account is not left locked
-   * out after correctly answering a code sent to its own address.
+   * out after correctly answering a code sent to its own address. A locked
+   * account is released for that same reason: the mailbox has answered.
    */
   updatePassword(id: string, password: string): Promise<EmployeeDto> {
     return prisma.employee.update({
       where: { id },
-      data: { password, emailVerified: new Date() },
+      data: { password, emailVerified: new Date(), ...UNLOCKED },
       select: employeeSelect,
     });
+  },
+
+  /** Counts one failed sign-in, returning the streak it now stands at. */
+  async registerFailedLogin(id: string): Promise<number> {
+    const { failedLoginAttempts } = await prisma.employee.update({
+      where: { id },
+      data: { failedLoginAttempts: { increment: 1 } },
+      select: { failedLoginAttempts: true },
+    });
+
+    return failedLoginAttempts;
+  },
+
+  lockAccount(id: string): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { lockedAt: new Date() },
+      select: employeeSelect,
+    });
+  },
+
+  /** Forgets the failed streak — for a password that turned out to be right. */
+  clearFailedLogins(id: string): Promise<EmployeeDto> {
+    return prisma.employee.update({ where: { id }, data: UNLOCKED, select: employeeSelect });
   },
 
   delete(id: string): Promise<EmployeeDto> {

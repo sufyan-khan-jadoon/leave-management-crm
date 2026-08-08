@@ -20,6 +20,13 @@ export const OTP_RESEND_COOLDOWN_SECONDS = 60;
 /** Wrong-code submissions tolerated per OTP before it is invalidated. */
 export const OTP_MAX_ATTEMPTS = 5;
 
+/**
+ * Consecutive failed sign-ins tolerated before an account is locked and has to
+ * verify its email address again. Applies to every role, the super admin
+ * included — a guessed password is no less dangerous for being a senior one.
+ */
+export const MAX_LOGIN_ATTEMPTS = 5;
+
 export const OTP_LENGTH = 6;
 
 /** How long an unaccepted invitation stays valid, whichever role it grants. */

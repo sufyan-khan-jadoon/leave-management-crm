@@ -105,6 +105,38 @@ administrator?" without knowing the password.
 Being sent to the wrong screen is a mistake, not an attack, so the message names the right one and
 the address is carried across in the query string rather than retyped.
 
+## Five wrong passwords locks the account
+
+Every account is locked after `MAX_LOGIN_ATTEMPTS` consecutive failed sign-ins and is released only
+by answering an emailed code — employee, admin and super admin alike, since a guessed password is no
+less dangerous for being a senior one. `failedLoginAttempts` counts *consecutive* failures, so a
+right password ends the run and five typos spread over a year never add up to a lock.
+
+The lock is `Employee.lockedAt`, deliberately **not** `emailVerified = null`. Clearing that would
+forget the address was ever proven, and would drop a locked-out administrator out of
+`listPendingAdmins`, which filters on it.
+
+**The sign-in form never says an account is locked until the password is right.** The refusal is
+thrown after `verifyPassword` succeeds, so five wrong guesses cannot be used to ask whether an
+address is registered here — the same reason the `portal` check waits. The owner is told by email
+instead: reaching the cap issues an unlock code and sends `accountLockedTemplate`, which doubles as
+the warning that somebody was guessing at their password. Failures against an already-locked account
+still count, but `lockedAt` stops each one mailing another code.
+
+Anything that proves the mailbox clears the lock, and does it in the same write: `markEmailVerified`
+and `updatePassword` both reset the streak, so answering the code and completing a password reset
+each release the account. `needsEmailProof()` is what `verifyEmail` and `resendOtp` ask — never
+`emailVerified` on its own — otherwise a locked account that was verified years ago would be turned
+away from the verification screen as already verified.
+
+The refusal says "verify your email" on purpose: `LoginForm` routes on that phrase, and carries the
+`portal` across so an unlocked administrator lands back on `/admin/login` rather than the employee
+door.
+
+Live sessions are not revoked. The JWT is a snapshot, and ending the owner's session over failures a
+stranger caused would make the lock a denial of service — which it partly is anyway, since anyone
+who knows an address can lock it with five wrong guesses. The mailbox is the way back, by design.
+
 ## The session is a snapshot; the chrome is not
 
 The JWT is written once at sign-in and never revisited, so anything copied into it is frozen at

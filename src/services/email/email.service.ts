@@ -4,6 +4,7 @@ import { Role } from "@prisma/client";
 import { ROUTES } from "@/lib/constants";
 import { appConfig, serverEnv } from "@/lib/env";
 import {
+  accountLockedTemplate,
   accountStatusTemplate,
   adminDecisionTemplate,
   emailVerifiedTemplate,
@@ -93,6 +94,11 @@ export const emailService = {
 
   sendOtp(to: string, name: string, code: string) {
     return send(to, otpTemplate(name, code));
+  },
+
+  /** The code that releases an account locked by too many failed sign-ins. */
+  sendAccountLockedOtp(to: string, name: string, code: string) {
+    return send(to, accountLockedTemplate(name, code));
   },
 
   sendPasswordResetOtp(to: string, name: string, code: string) {

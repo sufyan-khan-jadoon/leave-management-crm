@@ -11,6 +11,8 @@ export type EmployeeView = {
   name: string;
   email: string;
   emailVerified: string | null;
+  /** Set while the account is shut out after too many failed sign-ins. */
+  lockedAt: string | null;
   role: Role;
   status: EmployeeStatus;
   phone: string | null;

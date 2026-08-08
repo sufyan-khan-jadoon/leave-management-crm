@@ -61,9 +61,15 @@ export function LoginForm({ variant = "employee" }: LoginFormProps) {
           ? result.code
           : "Incorrect email or password. Please try again.";
 
+      // Either the address was never proven, or the account has locked itself
+      // after too many failed attempts. Both are answered at the same screen,
+      // and the portal travels along so an administrator is handed back to
+      // their own sign-in rather than the employee one.
       if (message.toLowerCase().includes("verify your email")) {
         toast.error(message);
-        router.push(`${ROUTES.verifyEmail}?email=${encodeURIComponent(values.email)}`);
+        router.push(
+          `${ROUTES.verifyEmail}?email=${encodeURIComponent(values.email)}&portal=${variant}`,
+        );
         return;
       }
 

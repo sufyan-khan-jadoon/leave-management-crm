@@ -26,6 +26,11 @@ export function VerifyEmailForm() {
 
   const { seconds, active, restart } = useCountdown(email ? OTP_RESEND_COOLDOWN_SECONDS : 0);
 
+  // Which door sent them here. An administrator arriving from a locked account
+  // has to be returned to the administrator sign-in, since the employee one
+  // would only refuse them again.
+  const signInRoute = searchParams.get("portal") === "admin" ? ROUTES.adminLogin : ROUTES.login;
+
   // Clear the error as soon as the user starts correcting the code.
   useEffect(() => {
     if (code.length < OTP_LENGTH) setError(null);
@@ -56,7 +61,7 @@ export function VerifyEmailForm() {
         }
 
         toast.success("Email verified! You can sign in now.");
-        router.push(`${ROUTES.login}?verified=1`);
+        router.push(`${signInRoute}?verified=1`);
       } catch (caught) {
         const message =
           caught instanceof ApiClientError ? caught.message : "Verification failed. Please try again.";
@@ -68,7 +73,7 @@ export function VerifyEmailForm() {
         setVerifying(false);
       }
     },
-    [email, router],
+    [email, router, signInRoute],
   );
 
   async function resend() {
@@ -149,7 +154,7 @@ export function VerifyEmailForm() {
           {active ? `Resend code in ${seconds}s` : "Resend code"}
         </Button>
 
-        <Link href={ROUTES.login} className="text-muted-foreground hover:text-foreground transition-colors">
+        <Link href={signInRoute} className="text-muted-foreground hover:text-foreground transition-colors">
           Back to sign in
         </Link>
       </div>

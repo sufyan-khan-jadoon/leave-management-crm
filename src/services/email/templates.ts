@@ -1,7 +1,7 @@
 import type { Role } from "@prisma/client";
 
 import { appConfig } from "@/lib/env";
-import { MONTHLY_LEAVE_ALLOWANCE, OTP_TTL_MINUTES } from "@/lib/constants";
+import { MAX_LOGIN_ATTEMPTS, MONTHLY_LEAVE_ALLOWANCE, OTP_TTL_MINUTES } from "@/lib/constants";
 import { formatDate, formatDateRange } from "@/lib/date";
 
 type Template = { subject: string; html: string; text: string };
@@ -151,6 +151,31 @@ export function passwordResetOtpTemplate(name: string, code: string): Template {
       { label: "Reset your password", url: `${appConfig.url}/reset-password` },
     ),
     text: `Hi ${name},\n\nYour ${appConfig.name} password reset code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.\n\nIf you didn't request this, ignore this email — your current password still works.`,
+  };
+}
+
+/**
+ * Sent when an account locks itself after too many failed sign-ins.
+ *
+ * Carries the code rather than only the news, because the two are the same
+ * errand: the lock is asking the mailbox to prove itself, and this is the
+ * mailbox. It also doubles as the warning that somebody was guessing — which
+ * is why it never suggests ignoring the message.
+ */
+export function accountLockedTemplate(name: string, code: string): Template {
+  return {
+    subject: `${code} is your ${appConfig.name} unlock code`,
+    html: layout(
+      "Your account is locked",
+      `<p>Hi ${esc(name)}, there have been ${MAX_LOGIN_ATTEMPTS} failed sign-in attempts on your ${esc(appConfig.name)} account, so we've locked it. Use the code below to verify your email address and unlock it.</p>
+       <div style="margin:24px 0;padding:20px;background:#f4f5fb;border-radius:12px;text-align:center;">
+         <div style="font-size:34px;letter-spacing:10px;font-weight:700;color:#16192b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(code)}</div>
+       </div>
+       <p>This code expires in <strong>${OTP_TTL_MINUTES} minutes</strong>. Your password still works — it is the lock, not the password, that is stopping you signing in.</p>
+       <p style="color:#8b90a8;">If those attempts weren't you, somebody is guessing at your password. Unlock your account, then change it.</p>`,
+      { label: "Unlock your account", url: `${appConfig.url}/verify-email` },
+    ),
+    text: `Hi ${name},\n\nThere have been ${MAX_LOGIN_ATTEMPTS} failed sign-in attempts on your ${appConfig.name} account, so it has been locked.\n\nYour unlock code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes. Enter it at ${appConfig.url}/verify-email.\n\nIf those attempts weren't you, change your password once you're back in.`,
   };
 }
 

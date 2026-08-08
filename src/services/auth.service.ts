@@ -3,6 +3,7 @@ import { randomInt } from "node:crypto";
 import { EmployeeStatus, Role, type OtpPurpose } from "@prisma/client";
 
 import {
+  MAX_LOGIN_ATTEMPTS,
   OTP_LENGTH,
   OTP_MAX_ATTEMPTS,
   OTP_RESEND_COOLDOWN_SECONDS,
@@ -52,6 +53,73 @@ function generateOtp(): string {
   const max = 10 ** OTP_LENGTH;
   return String(randomInt(0, max)).padStart(OTP_LENGTH, "0");
 }
+
+/** Replaces any outstanding code of one purpose with a fresh one, unsent. */
+async function mintOtp(employeeId: string, purpose: OtpPurpose): Promise<string> {
+  const code = generateOtp();
+  const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60_000);
+
+  await otpRepository.invalidateOutstanding(employeeId, purpose);
+  await otpRepository.create({ employeeId, code, purpose, expiresAt });
+
+  return code;
+}
+
+/**
+ * Whether the mailbox still owes an answer — because the address was never
+ * proven, or because the sign-in lock is asking for that proof a second time.
+ *
+ * Both end at the same screen and are cleared by the same write, so every code
+ * path asks this rather than testing one field and forgetting the other.
+ */
+function needsEmailProof(employee: { emailVerified: Date | null; lockedAt: Date | null }): boolean {
+  return !employee.emailVerified || employee.lockedAt !== null;
+}
+
+/**
+ * Mails the code that releases a locked account. The wording is its own, not
+ * the sign-up one: somebody who verified months ago should be told a password
+ * was being guessed at, not invited to ignore the message if they never
+ * registered.
+ */
+async function sendUnlockCode(employee: { id: string; email: string; name: string }): Promise<void> {
+  const code = await mintOtp(employee.id, OTP_PURPOSE.EMAIL_VERIFICATION);
+  await emailService.sendAccountLockedOtp(employee.email, employee.name, code);
+}
+
+/**
+ * Counts one failed sign-in and, at the cap, locks the account and mails the
+ * code that will release it.
+ *
+ * That email is the only notice sent: the sign-in form says nothing, so five
+ * wrong guesses cannot be used to ask whether an address exists, and the person
+ * who actually owns the account hears about it in the inbox they will have to
+ * open anyway.
+ */
+async function registerFailedLogin(employee: {
+  id: string;
+  email: string;
+  name: string;
+  lockedAt: Date | null;
+}): Promise<void> {
+  const attempts = await employeeRepository.registerFailedLogin(employee.id);
+
+  // `lockedAt` guards the email as much as the write — a locked account still
+  // collects failures, and each one must not send another code.
+  if (attempts < MAX_LOGIN_ATTEMPTS || employee.lockedAt) return;
+
+  await employeeRepository.lockAccount(employee.id);
+  await sendUnlockCode(employee);
+}
+
+/**
+ * Refusal shown once a locked account finally offers the right password.
+ *
+ * It says "verify your email" on purpose: the sign-in form routes on that
+ * phrase, and this ends at the same screen as an address that was never proven.
+ */
+const LOCKED_MESSAGE =
+  "Too many failed sign-in attempts. We've emailed you a code — verify your email to unlock your account.";
 
 /**
  * Checks a submitted code against the active OTP of one purpose, returning its
@@ -170,11 +238,7 @@ export const authService = {
     name: string,
     purpose: OtpPurpose = OTP_PURPOSE.EMAIL_VERIFICATION,
   ): Promise<void> {
-    const code = generateOtp();
-    const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60_000);
-
-    await otpRepository.invalidateOutstanding(employeeId, purpose);
-    await otpRepository.create({ employeeId, code, purpose, expiresAt });
+    const code = await mintOtp(employeeId, purpose);
 
     if (purpose === OTP_PURPOSE.PASSWORD_RESET) {
       await emailService.sendPasswordResetOtp(email, name, code);
@@ -188,7 +252,7 @@ export const authService = {
     const employee = await employeeRepository.findByEmail(email);
 
     // Always report success so this endpoint cannot enumerate accounts.
-    if (!employee || employee.emailVerified) {
+    if (!employee || !needsEmailProof(employee)) {
       return { cooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS };
     }
 
@@ -204,23 +268,37 @@ export const authService = {
       }
     }
 
-    await this.issueOtp(employee.id, employee.email, employee.name);
+    if (employee.lockedAt) {
+      await sendUnlockCode(employee);
+    } else {
+      await this.issueOtp(employee.id, employee.email, employee.name);
+    }
+
     return { cooldownSeconds: OTP_RESEND_COOLDOWN_SECONDS };
   },
 
-  /** Validates a submitted code and marks the address verified. */
+  /**
+   * Validates a submitted code and marks the address verified — which is also
+   * how a locked account is released, since answering a code sent to the
+   * mailbox is the proof the lock was holding out for.
+   */
   async verifyEmail(input: VerifyOtpInput): Promise<EmployeeDto> {
     const employee = await employeeRepository.findByEmail(input.email);
     if (!employee) throw new NotFoundError("We couldn't find an account for that email address.");
 
-    if (employee.emailVerified) {
+    if (!needsEmailProof(employee)) {
       throw new ConflictError("This email address is already verified. You can sign in now.");
     }
 
     await consumeOtp(employee.id, input.code, OTP_PURPOSE.EMAIL_VERIFICATION);
     const verified = await employeeRepository.markEmailVerified(employee.id);
 
-    await emailService.sendEmailVerified(verified.email, verified.name);
+    // Only for a first verification. Telling someone who has been here for
+    // months that their email is confirmed would bury the thing that actually
+    // happened, which the lock notice they just answered already explained.
+    if (!employee.emailVerified) {
+      await emailService.sendEmailVerified(verified.email, verified.name);
+    }
 
     return verified;
   },
@@ -335,7 +413,23 @@ export const authService = {
     if (!employee) return null;
 
     const valid = await verifyPassword(input.password, employee.password);
-    if (!valid) return null;
+
+    if (!valid) {
+      await registerFailedLogin(employee);
+      return null;
+    }
+
+    // Checked before anything else this account could be told, and only once
+    // the password is right. A lock is the whole story until the mailbox
+    // answers — and reporting it to whoever caused it would turn five wrong
+    // guesses into a way of asking whether an address is registered here.
+    if (employee.lockedAt) throw new ForbiddenError(LOCKED_MESSAGE);
+
+    // The count is of *consecutive* failures, so the right password ends the
+    // run: an account is never locked by five typos spread over a year.
+    if (employee.failedLoginAttempts > 0) {
+      await employeeRepository.clearFailedLogins(employee.id);
+    }
 
     // Each screen admits one kind of account. Checked only once the password has
     // been proven: doing it earlier would turn the sign-in form into a way of

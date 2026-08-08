@@ -74,6 +74,17 @@ model Employee {
   /// always invite.
   canInviteEmployees Boolean @default(false)
 
+  /// Consecutive failed sign-ins since the last time the password was proven.
+  /// Reset by a correct password, by verifying the address, or by a reset.
+  failedLoginAttempts Int @default(0)
+
+  /// When the attempt cap was reached. While set, the account cannot sign in
+  /// however correct the password is: control of the mailbox has to be shown
+  /// again first. Separate from `emailVerified` on purpose — clearing that
+  /// would forget the address was ever proven, and would drop a locked-out
+  /// administrator out of the super admin's approval queue.
+  lockedAt DateTime?
+
   // Profile fields — collected after email verification, not at registration.
   phone        String?
   department   String?
