@@ -11,6 +11,7 @@ export const employeeSelect = {
   role: true,
   status: true,
   canInviteEmployees: true,
+  canManageHolidays: true,
   lockedAt: true,
   phone: true,
   department: true,
@@ -104,6 +105,31 @@ export const employeeRepository = {
       where: { id },
       data: { canInviteEmployees },
       select: employeeSelect,
+    });
+  },
+
+  setHolidayPermission(id: string, canManageHolidays: boolean): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { canManageHolidays },
+      select: employeeSelect,
+    });
+  },
+
+  /**
+   * Everyone an organisation-wide announcement should reach.
+   *
+   * Role plays no part — the office closing applies to the super admin as much
+   * as to anyone — so this filters on standing alone: active, and at an address
+   * that has been proven. Suspended, rejected and not-yet-approved accounts are
+   * not part of the office this week, and an unverified address may not belong
+   * to the person who typed it.
+   */
+  listNotifiable(): Promise<Array<{ id: string; name: string; email: string }>> {
+    return prisma.employee.findMany({
+      where: { status: EmployeeStatus.ACTIVE, emailVerified: { not: null } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, email: true },
     });
   },
 

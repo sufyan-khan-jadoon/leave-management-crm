@@ -1,4 +1,12 @@
-import { CalendarDays, LayoutDashboard, ShieldCheck, Sparkles, User, Users } from "lucide-react";
+import {
+  CalendarDays,
+  CalendarOff,
+  LayoutDashboard,
+  ShieldCheck,
+  Sparkles,
+  User,
+  Users,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { ROUTES } from "@/lib/constants";
@@ -35,6 +43,10 @@ export const ADMIN_NAV: NavItem[] = [
   { href: ROUTES.adminDashboard, label: "Overview", icon: LayoutDashboard, exact: true, group: "Manage" },
   { href: ROUTES.adminEmployees, label: "Employees", icon: Users, group: "Manage" },
   { href: ROUTES.adminLeaves, label: "Leave requests", icon: CalendarDays, group: "Manage" },
+  // Shown to every administrator, not only those allowed to change it: knowing
+  // the office is shut is everyone's business, and the screen is read-only
+  // without the grant.
+  { href: ROUTES.adminHolidays, label: "Office days off", icon: CalendarOff, group: "Manage" },
 
   { href: ROUTES.dashboard, label: "My leave", icon: LayoutDashboard, exact: true, group: "Personal" },
   { href: ROUTES.newLeave, label: "Request leave", icon: Sparkles, exact: true, group: "Personal" },

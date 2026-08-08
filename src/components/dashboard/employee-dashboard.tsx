@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { LeaveTrendChart } from "@/components/charts/leave-trend-chart";
+import { UpcomingClosures } from "@/components/dashboard/upcoming-closures";
 import { LeaveChat } from "@/components/leaves/leave-chat";
 import { ProfileRequiredNotice } from "@/components/leaves/profile-required-notice";
 import { PageHeader } from "@/components/layout/page-header";
@@ -117,6 +118,8 @@ export function EmployeeDashboard({
             hint="All time"
           />
         </div>
+
+        <UpcomingClosures closures={data.upcomingClosures} />
 
         <Card className="overflow-hidden">
           <CardHeader>

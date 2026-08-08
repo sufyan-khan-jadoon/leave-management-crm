@@ -29,9 +29,24 @@ export type JobRoleInput = z.infer<typeof jobRoleSchema>;
 /** Narrows a list to one role; omitted means every role the viewer may see. */
 export const listInvitationsSchema = z.object({ role: inviteRoleSchema.optional() });
 
-export const invitePermissionSchema = z.object({ canInviteEmployees: z.boolean() });
+/**
+ * What the super admin may delegate to one administrator.
+ *
+ * Both optional so a screen can toggle one right without restating the other,
+ * and at least one required so an empty body is reported rather than accepted
+ * as a successful change of nothing.
+ */
+export const adminPermissionsSchema = z
+  .object({
+    canInviteEmployees: z.boolean().optional(),
+    canManageHolidays: z.boolean().optional(),
+  })
+  .refine(
+    (value) => value.canInviteEmployees !== undefined || value.canManageHolidays !== undefined,
+    "Name a permission to change.",
+  );
 
-export type InvitePermissionInput = z.infer<typeof invitePermissionSchema>;
+export type AdminPermissionsInput = z.infer<typeof adminPermissionsSchema>;
 
 export const adminDecisionSchema = z.object({ approve: z.boolean() });
 

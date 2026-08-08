@@ -26,6 +26,15 @@ const serverSchema = z.object({
     .optional()
     .transform((value) => value === "true"),
 
+  /**
+   * Shared secret the scheduled announcement sweep must present.
+   *
+   * Optional here and demanded by the route itself, so a missing value fails
+   * that one endpoint closed rather than stopping the whole application from
+   * booting. Vercel sets it on the cron request automatically.
+   */
+  CRON_SECRET: z.string().min(16, "CRON_SECRET must be at least 16 characters").optional(),
+
   HR_CONTACT_PHONE: z.string().default("+923145868205"),
   HR_CONTACT_NAME: z.string().default("Sufyan Khan"),
   APP_NAME: z.string().default("Leave CRM"),

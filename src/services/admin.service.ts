@@ -1,7 +1,8 @@
 import { EmployeeStatus, LeaveStatus, Role } from "@prisma/client";
 
-import { endOfUtcMonth, startOfUtcMonth } from "@/lib/date";
+import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
 import { employeeRepository } from "@/repositories/employee.repository";
+import { holidayRepository, type HolidayDto } from "@/repositories/holiday.repository";
 import { leaveRepository, type LeaveWithEmployeeDto } from "@/repositories/leave.repository";
 import { leaveService } from "@/services/leave.service";
 
@@ -40,6 +41,7 @@ export type AdminDashboardData = {
   monthlyTrend: Awaited<ReturnType<typeof leaveService.monthlyTrend>>;
   departmentBreakdown: Array<{ department: string; count: number }>;
   recentActivity: LeaveWithEmployeeDto[];
+  upcomingClosures: HolidayDto[];
 };
 
 export const adminService = {
@@ -57,13 +59,18 @@ export const adminService = {
     const roles = rolesIn(population);
     const ofPopulation = { employee: { role: { in: roles } } };
 
+    // Days the office was closed are discounted from every leave figure here,
+    // so a company holiday cannot inflate the organisation's leave totals with
+    // days nobody actually took off.
+    const closedDates = await holidayRepository.allDates();
+
     const [headcount, leaveRows, thisMonth] = await Promise.all([
       employeeRepository.countByRoleAndStatus(roles),
-      leaveRepository.countByStatus(ofPopulation),
-      leaveRepository.countByStatus({
-        ...ofPopulation,
-        leaveDate: { gte: startOfUtcMonth(now), lt: endOfUtcMonth(now) },
-      }),
+      leaveRepository.countByStatus(ofPopulation, closedDates),
+      leaveRepository.countByStatus(
+        { ...ofPopulation, leaveDate: { gte: startOfUtcMonth(now), lt: endOfUtcMonth(now) } },
+        closedDates,
+      ),
     ]);
 
     const leaveCounts = new Map(leaveRows.map((row) => [row.status, row.count]));
@@ -90,13 +97,17 @@ export const adminService = {
   async dashboard(population: OverviewPopulation): Promise<AdminDashboardData> {
     const roles = rolesIn(population);
 
-    const [overview, monthlyTrend, departmentBreakdown, recentActivity] = await Promise.all([
-      this.overview(population),
-      leaveService.monthlyTrend(6, { roles }),
-      leaveRepository.departmentTotals({ roles }),
-      leaveRepository.recent(8, roles),
-    ]);
+    const closedDates = await holidayRepository.allDates();
 
-    return { overview, monthlyTrend, departmentBreakdown, recentActivity };
+    const [overview, monthlyTrend, departmentBreakdown, recentActivity, upcomingClosures] =
+      await Promise.all([
+        this.overview(population),
+        leaveService.monthlyTrend(6, { roles }),
+        leaveRepository.departmentTotals({ roles }, closedDates),
+        leaveRepository.recent(8, roles),
+        holidayRepository.upcoming(todayUtc(), 3),
+      ]);
+
+    return { overview, monthlyTrend, departmentBreakdown, recentActivity, upcomingClosures };
   },
 };

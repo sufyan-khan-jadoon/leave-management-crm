@@ -1,4 +1,4 @@
-import type { EmployeeStatus, LeaveStatus, Role } from "@prisma/client";
+import type { EmployeeStatus, HolidayNotice, LeaveStatus, Role } from "@prisma/client";
 
 /**
  * Client-facing mirrors of the repository DTOs.
@@ -22,6 +22,19 @@ export type EmployeeView = {
   joiningDate: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+/** A day the office is closed, as the screens receive it. */
+export type HolidayView = {
+  id: string;
+  date: string;
+  reason: string;
+  notice: HolidayNotice;
+  noticeDueAt: string | null;
+  noticeSentAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  declaredBy: { id: string; name: string; email: string };
 };
 
 export type LeaveView = {
@@ -69,6 +82,8 @@ export type EmployeeDashboardData = {
   trend: MonthlyTrendPoint[];
   recentLeaves: LeaveWithEmployeeView[];
   totalLeaves: number;
+  /** Days the office is closed, soonest first. Nobody is charged leave for these. */
+  upcomingClosures: HolidayView[];
 };
 
 export type AdminOverviewView = {
@@ -88,6 +103,7 @@ export type AdminDashboardView = {
   monthlyTrend: MonthlyTrendPoint[];
   departmentBreakdown: Array<{ department: string; count: number }>;
   recentActivity: LeaveWithEmployeeView[];
+  upcomingClosures: HolidayView[];
 };
 
 export type LeaveDecisionResult = {

@@ -31,6 +31,46 @@ export function todayUtc(): Date {
   return new Date(`${parts}T00:00:00.000Z`);
 }
 
+/**
+ * What the company's wall clock reads at `instant`, expressed as if that
+ * reading were UTC. Subtracting the instant gives the zone's offset.
+ */
+function appZoneReading(instant: Date): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIME_ZONE,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant);
+
+  const field = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value);
+
+  // Midnight comes back as hour 24 in some ICU versions; both mean the same day.
+  return Date.UTC(field("year"), field("month") - 1, field("day"), field("hour") % 24, field("minute"), field("second"));
+}
+
+/**
+ * The instant at which the company's clock reads `hour:00` on calendar day
+ * `day` — the bridge between "noon on the 16th" and a moment the server can
+ * compare against `Date.now()`.
+ *
+ * Resolved by measuring the zone's offset rather than assuming one, then
+ * measuring again at the answer: an offset that changes across a daylight-saving
+ * boundary is only correct once applied. Asia/Karachi has no DST today, but the
+ * timezone is a setting, and this is the one calculation where being an hour out
+ * means announcing a closure at the wrong time.
+ */
+export function appZoneInstant(day: Date, hour: number): Date {
+  const wallClock = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour);
+
+  const firstPass = new Date(wallClock - (appZoneReading(new Date(wallClock)) - wallClock));
+  return new Date(wallClock - (appZoneReading(firstPass) - firstPass.getTime()));
+}
+
 /** Current wall-clock time in the company's timezone, e.g. "3:16 AM". */
 export function currentTimeInAppZone(locale = "en-US"): string {
   return new Intl.DateTimeFormat(locale, {

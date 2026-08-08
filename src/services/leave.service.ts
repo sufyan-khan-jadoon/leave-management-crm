@@ -12,6 +12,7 @@ import {
 } from "@/lib/date";
 import { ConflictError, NotFoundError } from "@/lib/errors";
 import { employeeRepository } from "@/repositories/employee.repository";
+import { holidayRepository } from "@/repositories/holiday.repository";
 import {
   leaveRepository,
   type LeaveDto,
@@ -30,9 +31,12 @@ export type LeaveMonthUsage = {
 
 export type LeavePlan = {
   ok: boolean;
+  /** The days that will actually be booked — office closures already removed. */
   dates: Date[];
   reason: string;
   months?: LeaveMonthUsage[];
+  /** Days dropped from the request because the office is closed anyway. */
+  closedDates?: Date[];
   /** Why the range cannot be booked, phrased for the employee. */
   problem?: string;
   remainingAfter?: number;
@@ -53,6 +57,23 @@ export type LeaveBalance = {
   rejectedThisMonth: number;
 };
 
+/**
+ * How much of a month's allowance an employee has actually spent.
+ *
+ * Days the office turned out to be closed are discounted rather than deleted:
+ * when a closure is declared over leave somebody had already booked, the row
+ * stays where it is and simply stops counting. That way withdrawing the closure
+ * puts the day back without having to reconstruct anything.
+ */
+async function usedInMonth(employeeId: string, reference: Date): Promise<number> {
+  const closedDates = await holidayRepository.closedDatesBetween(
+    startOfUtcMonth(reference),
+    endOfUtcMonth(reference),
+  );
+
+  return leaveRepository.countApprovedInMonth(employeeId, reference, closedDates);
+}
+
 export const leaveService = {
   /**
    * Works out whether a range can be booked, without writing anything.
@@ -67,16 +88,38 @@ export const leaveService = {
     days: number,
     reason: string,
   ): Promise<LeavePlan> {
-    const dates = utcDayRange(startDate, days);
+    const requested = utcDayRange(startDate, days);
     const today = todayUtc();
-    const base = { dates, reason };
 
     if (days < 1 || days > MAX_LEAVE_DAYS_PER_REQUEST) {
-      return { ...base, ok: false, problem: `A request has to cover between 1 and ${MAX_LEAVE_DAYS_PER_REQUEST} days.` };
+      return {
+        dates: requested,
+        reason,
+        ok: false,
+        problem: `A request has to cover between 1 and ${MAX_LEAVE_DAYS_PER_REQUEST} days.`,
+      };
     }
 
     if (startDate.getTime() < today.getTime()) {
-      return { ...base, ok: false, problem: "Leave cannot start in the past." };
+      return { dates: requested, reason, ok: false, problem: "Leave cannot start in the past." };
+    }
+
+    // Days the office is shut are removed before anything else is judged: they
+    // are not working days, so they cannot clash, cannot be refused for want of
+    // allowance, and must not be written as leave. A request made entirely of
+    // them is nothing to book rather than something to deduct.
+    const closedDates = await holidayRepository.closedDatesAmong(requested);
+    const closed = new Set(closedDates.map((date) => date.getTime()));
+    const dates = requested.filter((date) => !closed.has(date.getTime()));
+
+    const base = { dates, reason, ...(closedDates.length > 0 ? { closedDates } : {}) };
+
+    if (dates.length === 0) {
+      return {
+        ...base,
+        ok: false,
+        problem: `The office is already closed ${formatDateRange(closedDates)}, so there is no leave to book.`,
+      };
     }
 
     const clashes = await leaveRepository.findByEmployeeAndDates(employeeId, dates);
@@ -100,7 +143,7 @@ export const leaveService = {
 
     for (const [key, monthDates] of byMonth) {
       const reference = new Date(key);
-      const used = await leaveRepository.countApprovedInMonth(employeeId, reference);
+      const used = await usedInMonth(employeeId, reference);
 
       months.push({
         label: monthLabel(reference),
@@ -173,10 +216,11 @@ export const leaveService = {
   async balanceFor(employeeId: string, reference: Date = new Date()): Promise<LeaveBalance> {
     const monthStart = startOfUtcMonth(reference);
     const monthEnd = endOfUtcMonth(reference);
+    const closedDates = await holidayRepository.closedDatesBetween(monthStart, monthEnd);
 
     const [approvedThisMonth, statusCounts] = await Promise.all([
-      leaveRepository.countApprovedInMonth(employeeId, reference),
-      leaveRepository.countByStatus({ employeeId, leaveDate: { gte: monthStart, lt: monthEnd } }),
+      leaveRepository.countApprovedInMonth(employeeId, reference, closedDates),
+      leaveRepository.countByStatus({ employeeId, leaveDate: { gte: monthStart, lt: monthEnd } }, closedDates),
     ]);
 
     const byStatus = new Map(statusCounts.map((row) => [row.status, row.count]));
@@ -206,7 +250,7 @@ export const leaveService = {
 
   /** Lifetime status totals for an employee, used by the dashboard cards. */
   async lifetimeCounts(employeeId: string): Promise<Record<LeaveStatus, number>> {
-    const rows = await leaveRepository.countByStatus({ employeeId });
+    const rows = await leaveRepository.countByStatus({ employeeId }, await holidayRepository.allDates());
     const counts = { PENDING: 0, APPROVED: 0, REJECTED: 0 } as Record<LeaveStatus, number>;
 
     for (const row of rows) counts[row.status] = row.count;
@@ -222,7 +266,7 @@ export const leaveService = {
   async monthlyTrend(months: number, filter: { employeeId?: string; roles?: Role[] } = {}) {
     const to = endOfUtcMonth(new Date());
     const from = addUtcMonths(startOfUtcMonth(new Date()), -(months - 1));
-    const rows = await leaveRepository.monthlyTotals(from, to, filter);
+    const rows = await leaveRepository.monthlyTotals(from, to, filter, await holidayRepository.closedDatesBetween(from, to));
 
     const series: Array<{ month: Date; approved: number; pending: number; rejected: number; total: number }> = [];
 

@@ -218,6 +218,68 @@ stay in the enum so rows predating this still render, and `Leave.decidedById` / 
 the model for the same reason. Don't read a `PENDING` row as "waiting for someone" — nobody is
 coming.
 
+## An office day off outranks leave
+
+A `Holiday` is a date the whole company is closed. It is deliberately **not** modelled as a kind of
+leave: leave belongs to a person and is drawn from their allowance, while this belongs to the
+calendar and outranks anything an individual booked. A date in `holidays` is simply not a working
+day, so it costs nobody a day of their allowance — including people who had already booked leave
+across it.
+
+Nothing is rewritten when the office closes. The leave rows stay exactly where they were, and every
+count that decides an allowance asks `holidays` instead — `countApprovedInMonth`, `countByStatus`,
+`monthlyTotals` and `departmentTotals` all take a `closedDates` list. That is what makes the rule
+reversible: withdrawing a closure puts the day back on everyone's balance without reconstructing
+anything, which a migration of leave rows could never do. `planLeave` filters closed days out of the
+range *before* judging it, so a request spanning one books the days either side and is refused
+outright only when nothing is left.
+
+**There is no attendance system in this codebase.** The day-off rule has no attendance to outrank —
+if one is ever added, `holidayRepository.closedDatesAmong` is the single question to ask, and it
+must be asked before any present/late/absent calculation rather than alongside it.
+
+`SKIPPED` is not a failure: it means the closure was declared too late for a day-before warning to
+mean anything. The date still closes the office. There is deliberately no `PENDING` — every closure
+gets a real answer the moment it is created, so a "not looked at yet" value would be write-dead in
+exactly the way `LeaveStatus.PENDING` became.
+
+Closures that have already started cannot be edited or deleted. Deleting one would quietly bill
+people a day of leave for a day the office was shut, and the row is the record of why nobody came
+in.
+
+### Announcing it — noon on the company's clock
+
+`planHolidayNotice` is the whole rule and lives in `src/lib/holiday-notice.ts`, free of Prisma so it
+can be read and tested on its own: announce at noon the day before, or immediately if that moment has
+already passed. Both halves are judged in `APP_TIME_ZONE` through `appZoneInstant`, never in server
+UTC — a server in UTC reaches "noon" five hours after Karachi does, which is the difference between
+telling people the afternoon before and telling them nothing at all. `holiday-notice.test.ts` pins
+this with UTC instants and passes under `TZ=America/New_York`; if it ever starts failing there,
+something has begun trusting the server's clock.
+
+**A second email is impossible because the row is claimed before anything is sent.** `claimNotice`
+moves the status out of `SCHEDULED` with a conditional `updateMany`, so of any number of workers
+racing on one closure the database picks exactly one winner and the losers are told. Claiming *after*
+sending would leave a crash in between looking identical to a row nobody had touched. Verified by
+racing eight workers that all hold the same due row: one claim succeeds, seven are refused.
+
+The sweep runs hourly from `vercel.json` against `/api/cron/holiday-notices`, not once at noon — a
+single daily firing that fails is a whole company not told, and re-running the sweep is free. It
+demands `CRON_SECRET` as a bearer token and **fails closed**: with no secret configured it refuses
+everybody, because the alternative is an open endpoint that emails the entire organisation.
+
+### Who may close the office
+
+`canManageHolidays` mirrors `canInviteEmployees` exactly, down to being read from the database on
+every request rather than carried in the session — closing the office is an organisation-wide act,
+so it is the super admin's to delegate rather than something every admin inherits. The route guards
+with the looser `requireAdmin` on purpose and lets `holiday.service.ts` settle the real question,
+the same split the invitation routes use. `/api/admin/holidays` returns `canManage` purely so the
+screen can hide a form it may not submit; it mirrors the real check and never replaces it.
+
+Every administrator can *see* the closures whether or not they may change them, because knowing the
+office is shut is everybody's business.
+
 ## Administrators take leave too
 
 An admin is an `Employee` with `role = ADMIN`, and draws the same `MONTHLY_LEAVE_ALLOWANCE`. The
@@ -281,5 +343,11 @@ ground through inheritance — restyle the tokens there, not the nav components.
 ## Before considering a change done
 
 ```bash
-npm run typecheck && npm run lint && npm run build
+npm run typecheck && npm run lint && npm run test && npm run build
 ```
+
+`npm run test` is Vitest over `src/**/*.test.ts`, and covers pure policy only — date arithmetic and
+the rules built on it, with no database, network or environment to stand up. Anything that needs
+those is verified by driving the real endpoints instead. Don't add a test that reaches for Prisma;
+it will need secrets and a live database, and the suite stops being something you can run on a
+plane.

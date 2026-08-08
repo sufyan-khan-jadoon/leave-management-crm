@@ -35,6 +35,15 @@ export const INVITE_TTL_DAYS = 7;
 /** Upper bound on a single request, so a slip of the tongue cannot book a year. */
 export const MAX_LEAVE_DAYS_PER_REQUEST = 31;
 
+/**
+ * When the "office is closed tomorrow" announcement goes out: noon on the day
+ * before, on the company's wall clock rather than the server's.
+ */
+export const HOLIDAY_NOTICE_HOUR = 12;
+
+/** Enough for "Company retreat — Karachi office only", short of an essay. */
+export const MAX_HOLIDAY_REASON_LENGTH = 120;
+
 /** Sent whenever a request cannot fit inside the monthly allowance. */
 export function quotaExceededMessage(hrPhone: string, hrName: string): string {
   return `I'm sorry — you can't have more than ${MONTHLY_LEAVE_ALLOWANCE} leaves per month. Please contact HR, ${hrName}, on ${hrPhone}.`;
@@ -75,5 +84,6 @@ export const ROUTES = {
   adminDashboard: "/admin",
   adminEmployees: "/admin/employees",
   adminLeaves: "/admin/leaves",
+  adminHolidays: "/admin/holidays",
   adminAccess: "/admin/access",
 } as const;

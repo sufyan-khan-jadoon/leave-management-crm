@@ -253,6 +253,48 @@ export function leaveApprovedTemplate(name: string, dates: Date[], reason: strin
 // before a row is written, so the employee is told there and then rather than
 // by email afterwards, and no administrator can decline one that did fit.
 
+/**
+ * The office-closed announcement, sent the day before to everyone on the books.
+ *
+ * It says "tomorrow" without hedging because it is only ever sent the day
+ * before — an announcement whose moment has passed is skipped rather than sent
+ * late, so this wording cannot go out on the day itself. It states the two
+ * things people would otherwise write in to ask: that no attendance is expected,
+ * and that the day does not come out of their leave.
+ */
+export function officeClosedTemplate(options: {
+  name: string;
+  weekday: string;
+  date: Date;
+  reason: string;
+}): Template {
+  const longDate = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(options.date);
+
+  return {
+    subject: `Office closed tomorrow — ${options.reason}`,
+    html: layout(
+      "The office is closed tomorrow",
+      `<p>Hello ${esc(options.name)},</p>
+       <p>Please be informed that the office will be closed tomorrow, <strong>${esc(longDate)}</strong>, for ${esc(options.reason)}.</p>
+       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;border:1px solid #eceef6;border-radius:12px;">
+         <tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">Day</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(options.weekday)}</td></tr>
+         <tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">Date</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(longDate)}</td></tr>
+         <tr><td style="padding:14px 18px;color:#8b90a8;font-size:13px;">Reason</td><td style="padding:14px 18px;font-weight:600;color:#16192b;">${esc(options.reason)}</td></tr>
+       </table>
+       <p>No attendance is required on this day, and it will not be counted as leave or absence.</p>
+       <p>Enjoy the holiday!</p>
+       <p style="color:#8b90a8;">Regards,<br />${esc(appConfig.name)}</p>`,
+    ),
+    text: `Hello ${options.name},\n\nPlease be informed that the office will be closed tomorrow, ${longDate}, for ${options.reason}.\n\nNo attendance is required on this day, and it will not be counted as leave or absence.\n\nEnjoy the holiday!\n\nRegards,\n${appConfig.name}`,
+  };
+}
+
 export function profileUpdatedTemplate(name: string, changedBy: "you" | "an administrator"): Template {
   return {
     subject: "Your profile was updated",

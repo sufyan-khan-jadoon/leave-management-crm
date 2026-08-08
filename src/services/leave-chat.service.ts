@@ -109,8 +109,15 @@ export const leaveChatService = {
       return { reply: intent.reply };
     }
 
+    // Said out loud rather than quietly shortening the range: somebody asking
+    // for five days and being booked four would otherwise reasonably think the
+    // assistant had miscounted.
+    const closedNote = plan.closedDates?.length
+      ? ` The office is already closed ${formatDateRange(plan.closedDates)}, so ${plan.closedDates.length === 1 ? "that day is" : "those days are"} not counted.`
+      : "";
+
     return {
-      reply: `Just to confirm — ${dayWord(plan.dates.length)} off, ${formatDateRange(plan.dates)}, for ${plan.reason}. That would leave you ${dayWord(plan.remainingAfter ?? 0)} this month. Shall I book it?`,
+      reply: `Just to confirm — ${dayWord(plan.dates.length)} off, ${formatDateRange(plan.dates)}, for ${plan.reason}.${closedNote} That would leave you ${dayWord(plan.remainingAfter ?? 0)} this month. Shall I book it?`,
       proposal: {
         startDate: toIsoDate(startDate),
         days: intent.days,

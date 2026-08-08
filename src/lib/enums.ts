@@ -7,7 +7,14 @@
  * literals instead. The `satisfies` clauses keep them locked to the schema:
  * renaming a value in schema.prisma fails the typecheck here.
  */
-import type { EmployeeStatus, InvitationStatus, LeaveStatus, OtpPurpose, Role } from "@prisma/client";
+import type {
+  EmployeeStatus,
+  HolidayNotice,
+  InvitationStatus,
+  LeaveStatus,
+  OtpPurpose,
+  Role,
+} from "@prisma/client";
 
 export const ROLE = {
   EMPLOYEE: "EMPLOYEE",
@@ -61,6 +68,23 @@ export const LEAVE_STATUS = {
   APPROVED: "APPROVED",
   REJECTED: "REJECTED",
 } as const satisfies Record<LeaveStatus, LeaveStatus>;
+
+export const HOLIDAY_NOTICE = {
+  SCHEDULED: "SCHEDULED",
+  SENT: "SENT",
+  SKIPPED: "SKIPPED",
+  FAILED: "FAILED",
+  CANCELLED: "CANCELLED",
+} as const satisfies Record<HolidayNotice, HolidayNotice>;
+
+/**
+ * There is deliberately no PENDING state. Every closure gets a real answer the
+ * moment it is created — scheduled, sent, or skipped — so a value meaning "not
+ * looked at yet" would be one nothing ever writes, exactly as
+ * `LeaveStatus.PENDING` became. An announcement waiting its turn is SCHEDULED,
+ * which is a fact about it rather than the absence of one.
+ */
+export type HolidayNoticeState = (typeof HOLIDAY_NOTICE)[keyof typeof HOLIDAY_NOTICE];
 
 export const OTP_PURPOSE = {
   EMAIL_VERIFICATION: "EMAIL_VERIFICATION",

@@ -55,13 +55,29 @@ export const leaveRepository = {
     return prisma.leave.delete({ where: { id }, select: leaveSelect });
   },
 
-  /** Approved leaves an employee has consumed in the calendar month of `reference`. */
-  countApprovedInMonth(employeeId: string, reference: Date = new Date()): Promise<number> {
+  /**
+   * Approved leaves an employee has consumed in the calendar month of
+   * `reference`, discounting any day the office turned out to be closed.
+   *
+   * The exclusion is what makes a closure declared *after* someone booked leave
+   * give them the day back. Nothing is rewritten when the office closes — the
+   * leave row stays exactly where it was — so this count, and every other one
+   * that decides an allowance, has to ask the question instead.
+   */
+  countApprovedInMonth(
+    employeeId: string,
+    reference: Date = new Date(),
+    closedDates: Date[] = [],
+  ): Promise<number> {
     return prisma.leave.count({
       where: {
         employeeId,
         status: LeaveStatus.APPROVED,
-        leaveDate: { gte: startOfUtcMonth(reference), lt: endOfUtcMonth(reference) },
+        leaveDate: {
+          gte: startOfUtcMonth(reference),
+          lt: endOfUtcMonth(reference),
+          ...(closedDates.length > 0 ? { notIn: closedDates } : {}),
+        },
       },
     });
   },
@@ -172,9 +188,12 @@ export const leaveRepository = {
     });
   },
 
-  countByStatus(where?: Prisma.LeaveWhereInput): Promise<Array<{ status: LeaveStatus; count: number }>> {
+  countByStatus(
+    where?: Prisma.LeaveWhereInput,
+    closedDates: Date[] = [],
+  ): Promise<Array<{ status: LeaveStatus; count: number }>> {
     return prisma.leave
-      .groupBy({ by: ["status"], where, _count: { _all: true } })
+      .groupBy({ by: ["status"], where: excludingClosedDays(where, closedDates), _count: { _all: true } })
       .then((rows) => rows.map((row) => ({ status: row.status, count: row._count._all })));
   },
 
@@ -189,10 +208,11 @@ export const leaveRepository = {
     from: Date,
     to: Date,
     filter: { employeeId?: string; roles?: Role[] } = {},
+    closedDates: Date[] = [],
   ): Promise<Array<{ month: Date; status: LeaveStatus; count: number }>> {
     const rows = await prisma.leave.findMany({
       where: {
-        leaveDate: { gte: from, lt: to },
+        leaveDate: { gte: from, lt: to, ...(closedDates.length > 0 ? { notIn: closedDates } : {}) },
         ...(filter.employeeId ? { employeeId: filter.employeeId } : {}),
         ...(filter.roles ? { employee: { role: { in: filter.roles } } } : {}),
       },
@@ -216,12 +236,16 @@ export const leaveRepository = {
   /** Leave counts per department, for the admin breakdown chart. */
   async departmentTotals(
     filter: { from?: Date; to?: Date; roles?: Role[] } = {},
+    closedDates: Date[] = [],
   ): Promise<Array<{ department: string; count: number }>> {
     const rows = await prisma.leave.findMany({
-      where: {
-        ...(filter.from && filter.to ? { leaveDate: { gte: filter.from, lt: filter.to } } : {}),
-        employee: { department: { not: null }, ...(filter.roles ? { role: { in: filter.roles } } : {}) },
-      },
+      where: excludingClosedDays(
+        {
+          ...(filter.from && filter.to ? { leaveDate: { gte: filter.from, lt: filter.to } } : {}),
+          employee: { department: { not: null }, ...(filter.roles ? { role: { in: filter.roles } } : {}) },
+        },
+        closedDates,
+      ),
       select: { employee: { select: { department: true } } },
     });
 
@@ -254,6 +278,25 @@ export const leaveRepository = {
     });
   },
 };
+
+/**
+ * Narrows a filter to leave that actually cost somebody a day.
+ *
+ * Merged into any existing `leaveDate` range rather than replacing it, so a
+ * month-bounded count stays month-bounded. An empty list is left alone: a
+ * `notIn: []` is harmless but reads as though something were being excluded.
+ */
+function excludingClosedDays(
+  where: Prisma.LeaveWhereInput | undefined,
+  closedDates: Date[],
+): Prisma.LeaveWhereInput | undefined {
+  if (closedDates.length === 0) return where;
+
+  return {
+    ...where,
+    leaveDate: { ...(where?.leaveDate as Prisma.DateTimeFilter | undefined), notIn: closedDates },
+  };
+}
 
 function buildLeaveWhere(
   filters: Partial<LeaveListFilters>,

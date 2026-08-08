@@ -15,6 +15,7 @@ import {
 
 import { DepartmentChart } from "@/components/charts/department-chart";
 import { LeaveTrendChart } from "@/components/charts/leave-trend-chart";
+import { UpcomingClosures } from "@/components/dashboard/upcoming-closures";
 import { PageHeader } from "@/components/layout/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LeaveStatusBadge } from "@/components/shared/leave-status-badge";
@@ -173,6 +174,8 @@ export function AdminDashboard({
             hint="All time"
           />
         </div>
+
+        <UpcomingClosures closures={data.upcomingClosures} />
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>

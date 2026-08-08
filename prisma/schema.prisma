@@ -46,6 +46,21 @@ enum OtpPurpose {
   PASSWORD_RESET
 }
 
+/// How far the "office is closed tomorrow" announcement has got.
+///
+/// SCHEDULED and SENT are the ordinary path. SKIPPED is for a closure announced
+/// too late to warn anyone the day before — the date still closes the office,
+/// there is simply nobody left to tell in advance. CANCELLED marks an
+/// announcement called off because the closure moved or was withdrawn, so a
+/// withdrawn row can never be picked up by a later sweep.
+enum HolidayNotice {
+  SCHEDULED
+  SENT
+  SKIPPED
+  FAILED
+  CANCELLED
+}
+
 /// Where an invitation has got to. "Expired" is deliberately absent: it is read
 /// off `expiresAt` rather than stored, so no scheduled job is needed to keep the
 /// column honest, and an invitation cannot sit open because nothing ran.
@@ -74,6 +89,14 @@ model Employee {
   /// always invite.
   canInviteEmployees Boolean @default(false)
 
+  /// Whether this administrator may open and withdraw office days off.
+  ///
+  /// Granted per administrator exactly like `canInviteEmployees`, and for the
+  /// same reason: closing the office is an organisation-wide act, so it is the
+  /// super admin's to delegate rather than something every admin inherits. Read
+  /// from here on every request, never from the session.
+  canManageHolidays Boolean @default(false)
+
   /// Consecutive failed sign-ins since the last time the password was proven.
   /// Reset by a correct password, by verifying the address, or by a reset.
   failedLoginAttempts Int @default(0)
@@ -99,6 +122,7 @@ model Employee {
   otpCodes           OtpCode[]
   invitationsSent    Invitation[] @relation("InvitationIssuer")
   invitationAccepted Invitation?  @relation("InvitationAcceptor")
+  holidaysDeclared   Holiday[]    @relation("HolidayAuthor")
 
   @@index([department])
   @@index([status])
@@ -184,6 +208,44 @@ model Invitation {
   @@index([invitedById, createdAt])
   @@index([role, createdAt])
   @@map("invitations")
+}
+
+/// A day the whole office is closed.
+///
+/// Not a kind of leave, and deliberately not modelled as one: leave belongs to a
+/// person and is drawn from their allowance, while this belongs to the calendar
+/// and outranks anything an individual booked. A date listed here is simply not
+/// a working day for anybody, so it costs nobody a day of their allowance —
+/// including people who had already booked leave across it.
+model Holiday {
+  id String @id @default(cuid())
+
+  /// The closed day, at UTC midnight like every other calendar date here.
+  /// Unique: the office cannot be closed twice on the same day, and letting two
+  /// rows claim one date would mean two announcements about it.
+  date   DateTime @unique @db.Date
+  reason String
+
+  /// Where the "office closed tomorrow" announcement has got to, and when it is
+  /// due. `noticeDueAt` is an instant, not a date: it is noon in the company's
+  /// timezone on the day before, which is a different moment in UTC.
+  notice     HolidayNotice @default(SCHEDULED)
+  noticeDueAt DateTime?
+  noticeSentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Kept as a record of who closed the office. Restricted rather than
+  /// cascading: deleting an administrator must not silently reopen a day the
+  /// whole company has already been told about.
+  declaredById String
+  declaredBy   Employee @relation("HolidayAuthor", fields: [declaredById], references: [id], onDelete: Restrict)
+
+  /// The sweep looks for announcements that are due and not yet made, so it
+  /// reads on exactly this pair.
+  @@index([notice, noticeDueAt])
+  @@map("holidays")
 }
 
 /// A single day of leave. Date and reason are extracted by the AI service;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { CalendarOff, ShieldCheck, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shared/empty-state";
@@ -14,15 +14,46 @@ export type Administrator = {
   name: string;
   email: string;
   canInviteEmployees: boolean;
+  canManageHolidays: boolean;
 };
 
+/** One delegable right, described once and rendered for every administrator. */
+type Grant = {
+  key: "canInviteEmployees" | "canManageHolidays";
+  label: string;
+  on: string;
+  off: string;
+  granted: string;
+  revoked: string;
+};
+
+const GRANTS: Grant[] = [
+  {
+    key: "canInviteEmployees",
+    label: "Invite employees",
+    on: "Can invite",
+    off: "Cannot invite",
+    granted: "can now invite employees",
+    revoked: "can no longer invite employees",
+  },
+  {
+    key: "canManageHolidays",
+    label: "Manage office days off",
+    on: "Can close the office",
+    off: "Cannot close the office",
+    granted: "can now schedule office days off",
+    revoked: "can no longer schedule office days off",
+  },
+];
+
 /**
- * Grants administrators the right to invite employees.
+ * Grants administrators the rights the super admin chooses to delegate.
  *
- * Off by default — being made an administrator does not by itself confer the
- * right to onboard people. Toggling here is the whole grant: the permission is
- * read from the database on every invitation, so withdrawing it stops the next
- * attempt rather than waiting for a session to expire.
+ * Everything here is off by default — being made an administrator does not by
+ * itself confer the right to onboard people or to shut the office. Toggling is
+ * the whole grant: each permission is read from the database on every request
+ * that depends on it, so withdrawing one stops the next attempt rather than
+ * waiting for a session to expire.
  */
 export function AdminPermissions({
   admins,
@@ -33,14 +64,14 @@ export function AdminPermissions({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
 
-  async function toggle(admin: Administrator, allowed: boolean) {
-    setBusy(admin.id);
+  async function toggle(admin: Administrator, grant: Grant, allowed: boolean) {
+    setBusy(`${admin.id}:${grant.key}`);
 
     try {
-      await apiClient.patch(`/api/admin/administrators/${admin.id}`, { canInviteEmployees: allowed });
-      toast.success(
-        allowed ? `${admin.name} can now invite employees.` : `${admin.name} can no longer invite employees.`,
-      );
+      // Only the switch that moved is sent, so the request cannot carry a stale
+      // value for the other one back to the server.
+      await apiClient.patch(`/api/admin/administrators/${admin.id}`, { [grant.key]: allowed });
+      toast.success(`${admin.name} ${allowed ? grant.granted : grant.revoked}.`);
       await onChanged();
     } catch (error) {
       toast.error(error instanceof ApiClientError ? error.message : "Couldn't update that permission.");
@@ -54,11 +85,11 @@ export function AdminPermissions({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <ShieldCheck className="text-primary-ink size-4" aria-hidden />
-          Who can invite employees
+          What administrators may do
         </CardTitle>
         <CardDescription>
-          Administrators cannot onboard anyone until you allow it. Inviting other administrators stays with
-          you either way.
+          Administrators cannot onboard anyone or close the office until you allow it. Inviting other
+          administrators stays with you either way.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -72,21 +103,40 @@ export function AdminPermissions({
         ) : (
           <ul className="divide-border/60 divide-y">
             {admins.map((admin) => (
-              <li key={admin.id} className="flex flex-wrap items-center gap-3 py-3">
-                <div className="mr-auto min-w-0">
+              <li key={admin.id} className="space-y-3 py-4">
+                <div className="min-w-0">
                   <p className="truncate font-medium">{admin.name}</p>
                   <p className="text-muted-foreground truncate text-xs">{admin.email}</p>
                 </div>
 
-                <span className="text-muted-foreground text-xs">
-                  {admin.canInviteEmployees ? "Can invite" : "Cannot invite"}
-                </span>
-                <Switch
-                  checked={admin.canInviteEmployees}
-                  onCheckedChange={(checked) => toggle(admin, checked)}
-                  disabled={busy === admin.id}
-                  aria-label={`Allow ${admin.name} to invite employees`}
-                />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {GRANTS.map((grant) => (
+                    <label
+                      key={grant.key}
+                      className="border-border/60 bg-muted/30 flex items-center gap-3 rounded-lg border px-3 py-2"
+                    >
+                      {grant.key === "canInviteEmployees" ? (
+                        <UserPlus className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                      ) : (
+                        <CalendarOff className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                      )}
+
+                      <div className="mr-auto min-w-0">
+                        <p className="truncate text-sm font-medium">{grant.label}</p>
+                        <p className="text-muted-foreground truncate text-xs">
+                          {admin[grant.key] ? grant.on : grant.off}
+                        </p>
+                      </div>
+
+                      <Switch
+                        checked={admin[grant.key]}
+                        onCheckedChange={(checked) => toggle(admin, grant, checked)}
+                        disabled={busy === `${admin.id}:${grant.key}`}
+                        aria-label={`Allow ${admin.name} to ${grant.label.toLowerCase()}`}
+                      />
+                    </label>
+                  ))}
+                </div>
               </li>
             ))}
           </ul>

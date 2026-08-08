@@ -10,6 +10,7 @@ import {
   emailVerifiedTemplate,
   invitationTemplate,
   leaveApprovedTemplate,
+  officeClosedTemplate,
   otpTemplate,
   passwordChangedTemplate,
   passwordResetOtpTemplate,
@@ -119,6 +120,10 @@ export const emailService = {
 
   sendLeaveApproved(to: string, name: string, dates: Date[], reason: string, remaining: number) {
     return send(to, leaveApprovedTemplate(name, dates, reason, remaining));
+  },
+
+  sendOfficeClosed(to: string, options: { name: string; weekday: string; date: Date; reason: string }) {
+    return send(to, officeClosedTemplate(options));
   },
 
   sendProfileUpdated(to: string, name: string, changedBy: "you" | "an administrator") {
