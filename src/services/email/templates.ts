@@ -7,7 +7,45 @@ import { formatDate, formatDateRange } from "@/lib/date";
 
 type Template = { subject: string; html: string; text: string };
 
-const BRAND = "#5b5bd6";
+/**
+ * The name every email is signed with.
+ *
+ * Deliberately a literal rather than `appConfig.name`. The app name is an
+ * environment variable, so reading it here would let a stale `APP_NAME` in one
+ * deployment's dashboard put the wrong company on outgoing mail — the one place
+ * the mistake is unrecoverable, because the message has already left. The
+ * screens may be configurable; the letterhead is not.
+ *
+ * It is the brand alone: no product name, no tagline, no descriptor.
+ */
+const BRAND = "Zovencia";
+
+/**
+ * The Zovencia palette, and nothing outside it.
+ *
+ * `green` is exact and never approximated — it is the brand. It is also
+ * extremely luminous (roughly 1.6:1 against white), so it is used for *fills*
+ * and never for text on a light background; `darkGreen` is what green words are
+ * written in. Putting the bright green on white would be unreadable, which is
+ * the whole reason the pair exists.
+ *
+ * The greys are pure neutrals (R=G=B) on purpose. The palette this replaced
+ * drifted blue in its "neutrals" — #f4f5fb, #8b90a8 — which is what made the
+ * old mail read as a purple template even where no purple was declared.
+ */
+const C = {
+  green: "#0AEA0A",
+  darkGreen: "#023506",
+  black: "#000000",
+  white: "#FFFFFF",
+  page: "#F5F5F5",
+  panel: "#F5F5F5",
+  border: "#E5E5E5",
+  muted: "#5A5A5A",
+  faint: "#767676",
+} as const;
+
+const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /** Escapes user-supplied values before they are interpolated into HTML. */
 function esc(value: string): string {
@@ -19,40 +57,101 @@ function esc(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * A label/value table, as the invitation, leave and closure notices all use.
+ *
+ * Extracted so the three of them cannot drift apart: the borders and the label
+ * colour are stated once, and a fourth caller inherits them rather than
+ * copying a hex code that was right on the day it was pasted.
+ */
+function detailTable(rows: Array<[label: string, value: string]>): string {
+  const cells = rows
+    .map(([label, value], index) => {
+      const edge = index === rows.length - 1 ? "" : `border-bottom:1px solid ${C.border};`;
+
+      return `<tr>
+        <td style="padding:14px 18px;${edge}color:${C.muted};font-size:13px;font-family:${FONT};">${esc(label)}</td>
+        <td style="padding:14px 18px;${edge}font-weight:700;color:${C.black};font-size:14px;font-family:${FONT};">${esc(value)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:20px 0;width:100%;border:1px solid ${C.border};border-radius:12px;border-collapse:separate;">${cells}</table>`;
+}
+
+/** The one-time codes, set large enough to read off a phone at arm's length. */
+function codeBlock(code: string): string {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:24px 0;">
+    <tr>
+      <td align="center" style="background:${C.panel};border:1px solid ${C.border};border-left:4px solid ${C.green};border-radius:12px;padding:20px;">
+        <div style="font-size:32px;letter-spacing:8px;font-weight:700;color:${C.darkGreen};font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${esc(code)}</div>
+      </td>
+    </tr>
+  </table>`;
+}
+
+/**
+ * The shared shell every message is poured into.
+ *
+ * Table-based and fully inline because this is mail, not a page: Outlook renders
+ * through Word, Gmail strips most of what a stylesheet would say, and anything
+ * that depends on a class is a coin toss. The `<style>` block carries only a
+ * mobile padding tweak, so a client that discards it loses nothing that matters —
+ * the layout is fluid to begin with, `width:100%` under a `max-width`.
+ *
+ * `color-scheme: light` asks the dark-mode clients not to invert us. Gmail and
+ * Apple Mail otherwise re-tint the header, and a brand green they have decided
+ * to darken is no longer the brand green.
+ */
 function layout(heading: string, body: string, cta?: { label: string; url: string }): string {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
     <title>${esc(heading)}</title>
+    <style>
+      @media only screen and (max-width: 600px) {
+        .zv-pad { padding: 24px 20px !important; }
+        .zv-head { padding: 20px !important; }
+      }
+    </style>
   </head>
-  <body style="margin:0;padding:0;background:#f4f5fb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5fb;padding:32px 16px;">
+  <body style="margin:0;padding:0;background:${C.page};font-family:${FONT};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.page};padding:32px 16px;border-collapse:collapse;">
       <tr>
         <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(24,24,60,0.08);">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;background:${C.white};border-radius:16px;overflow:hidden;border:1px solid ${C.border};border-collapse:separate;">
             <tr>
-              <td style="background:${BRAND};padding:24px 32px;">
-                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:-0.2px;">${esc(appConfig.name)}</span>
+              <td class="zv-head" style="background:${C.green};padding:24px 32px;border-radius:16px 16px 0 0;">
+                <span style="color:${C.black};font-size:22px;font-weight:700;letter-spacing:-0.3px;font-family:${FONT};">${BRAND}</span>
               </td>
             </tr>
             <tr>
-              <td style="padding:32px;">
-                <h1 style="margin:0 0 16px;font-size:20px;line-height:1.35;color:#16192b;">${esc(heading)}</h1>
-                <div style="font-size:15px;line-height:1.65;color:#4a4f68;">${body}</div>
+              <td class="zv-pad" style="padding:32px;">
+                <h1 style="margin:0 0 16px;font-size:20px;line-height:1.35;color:${C.darkGreen};font-weight:700;font-family:${FONT};">${esc(heading)}</h1>
+                <div style="font-size:15px;line-height:1.65;color:${C.black};font-family:${FONT};">${body}</div>
                 ${
                   cta
-                    ? `<div style="margin-top:28px;">
-                         <a href="${esc(cta.url)}" style="display:inline-block;background:${BRAND};color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:15px;font-weight:600;">${esc(cta.label)}</a>
-                       </div>`
+                    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;">
+                         <tr>
+                           <td style="background:${C.green};border-radius:8px;">
+                             <a href="${esc(cta.url)}" style="display:inline-block;background:${C.green};color:${C.black};text-decoration:none;padding:13px 26px;border-radius:8px;font-size:15px;font-weight:700;font-family:${FONT};">${esc(cta.label)}</a>
+                           </td>
+                         </tr>
+                       </table>`
                     : ""
                 }
               </td>
             </tr>
             <tr>
-              <td style="padding:20px 32px;border-top:1px solid #eceef6;font-size:12px;color:#8b90a8;">
-                This is an automated message from ${esc(appConfig.name)}. Please do not reply.
+              <td class="zv-pad" style="padding:20px 32px;border-top:1px solid ${C.border};background:${C.white};">
+                <div style="font-size:14px;font-weight:700;color:${C.darkGreen};font-family:${FONT};">${BRAND}</div>
+                <div style="margin-top:6px;font-size:12px;line-height:1.5;color:${C.faint};font-family:${FONT};">
+                  This is an automated message. Please do not reply.
+                </div>
               </td>
             </tr>
           </table>
@@ -65,15 +164,18 @@ function layout(heading: string, body: string, cta?: { label: string; url: strin
 
 export function welcomeTemplate(name: string): Template {
   return {
-    subject: `Welcome to ${appConfig.name}`,
+    subject: `Welcome to ${BRAND}`,
     html: layout(
-      `Welcome aboard, ${esc(name)}!`,
+      // Raw on purpose: `layout` escapes the heading itself, and escaping here
+      // too rendered an apostrophe as a literal "&#39;" in the subject line of
+      // the message body. The only template that puts a name in the heading.
+      `Welcome aboard, ${name}!`,
       `<p>Your account has been created successfully.</p>
-       <p>We've sent a separate email with your 6-digit verification code. Enter it to activate your account, then complete your profile to start requesting leave.</p>
-       <p>You can request leave in plain English — just describe it, and our assistant will handle the rest.</p>`,
+       <p>We've sent a separate email with your 6-digit verification code. Enter it to activate your account, then complete your profile.</p>
+       <p>Once you're in, you can mark your attendance from the dashboard and request leave in plain English — just describe it, and our assistant will handle the rest.</p>`,
       { label: "Go to sign in", url: `${appConfig.url}/login` },
     ),
-    text: `Welcome aboard, ${name}!\n\nYour ${appConfig.name} account has been created. Check your inbox for a 6-digit verification code, then sign in at ${appConfig.url}/login.`,
+    text: `Welcome aboard, ${name}!\n\nYour ${BRAND} account has been created. Check your inbox for a 6-digit verification code, then sign in at ${appConfig.url}/login.`,
   };
 }
 
@@ -96,62 +198,55 @@ export function invitationTemplate(options: {
   const roleLabel = isAdmin ? "Administrator" : "Employee";
   const expiry = formatDate(options.expiresAt);
 
-  const detail = (label: string, value: string) =>
-    `<tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">${esc(label)}</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(value)}</td></tr>`;
-
   return {
-    subject: `You're invited to ${appConfig.name}`,
+    subject: `You're invited to ${BRAND}`,
     html: layout(
-      `You've been invited to ${esc(appConfig.name)}`,
-      `<p>${esc(options.inviterName)} has invited you to join ${esc(appConfig.name)}, where you'll request and track your leave.</p>
-       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;border:1px solid #eceef6;border-radius:12px;">
-         ${detail("Your role", roleLabel)}
-         ${options.jobTitle ? detail("Your job title", options.jobTitle) : ""}
-         ${detail("Invitation valid until", expiry)}
-       </table>
+      `You've been invited to ${BRAND}`,
+      `<p>${esc(options.inviterName)} has invited you to join ${BRAND}, where you'll mark your attendance and request your leave.</p>
+       ${detailTable([
+         ["Your role", roleLabel],
+         ...(options.jobTitle ? ([["Your job title", options.jobTitle]] as Array<[string, string]>) : []),
+         ["Invitation valid until", expiry],
+       ])}
        <p>Use the button below to create your account. It's tied to this email address, so register with the address this message was sent to.</p>
        ${
          isAdmin
            ? `<p>Once you've verified your email, a super administrator reviews your request before you can sign in.</p>`
            : `<p>Once you've verified your email, you can sign in straight away.</p>`
        }
-       <p style="color:#8b90a8;">This invitation expires on ${esc(expiry)}. If it lapses, ask ${esc(options.inviterName)} to send another. If you weren't expecting it, you can ignore this email.</p>`,
+       <p style="color:${C.muted};">This invitation expires on ${esc(expiry)}. If it lapses, ask ${esc(options.inviterName)} to send another. If you weren't expecting it, you can ignore this email.</p>`,
       { label: "Accept invitation", url: options.url },
     ),
-    text: `${options.inviterName} has invited you to join ${appConfig.name} as ${isAdmin ? "an administrator" : "an employee"}${options.jobTitle ? ` (${options.jobTitle})` : ""}.\n\nCreate your account here:\n${options.url}\n\nRegister with the address this message was sent to. The invitation expires on ${expiry}.`,
+    text: `${options.inviterName} has invited you to join ${BRAND} as ${isAdmin ? "an administrator" : "an employee"}${options.jobTitle ? ` (${options.jobTitle})` : ""}.\n\nCreate your account here:\n${options.url}\n\nRegister with the address this message was sent to. The invitation expires on ${expiry}.`,
   };
 }
 
 export function otpTemplate(name: string, code: string): Template {
   return {
-    subject: `${code} is your ${appConfig.name} verification code`,
+    subject: `${code} is your ${BRAND} verification code`,
     html: layout(
       "Verify your email address",
       `<p>Hi ${esc(name)}, use the code below to verify your email address.</p>
-       <div style="margin:24px 0;padding:20px;background:#f4f5fb;border-radius:12px;text-align:center;">
-         <div style="font-size:34px;letter-spacing:10px;font-weight:700;color:#16192b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(code)}</div>
-       </div>
+       ${codeBlock(code)}
        <p>This code expires in <strong>${OTP_TTL_MINUTES} minutes</strong>.</p>
-       <p style="color:#8b90a8;">If you didn't create an account, you can safely ignore this email.</p>`,
+       <p style="color:${C.muted};">If you didn't create an account, you can safely ignore this email.</p>`,
     ),
-    text: `Hi ${name},\n\nYour ${appConfig.name} verification code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.\n\nIf you didn't create an account, ignore this email.`,
+    text: `Hi ${name},\n\nYour ${BRAND} verification code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.\n\nIf you didn't create an account, ignore this email.`,
   };
 }
 
 export function passwordResetOtpTemplate(name: string, code: string): Template {
   return {
-    subject: `${code} is your ${appConfig.name} password reset code`,
+    subject: `${code} is your ${BRAND} password reset code`,
     html: layout(
       "Reset your password",
       `<p>Hi ${esc(name)}, use the code below to choose a new password.</p>
-       <div style="margin:24px 0;padding:20px;background:#f4f5fb;border-radius:12px;text-align:center;">
-         <div style="font-size:34px;letter-spacing:10px;font-weight:700;color:#16192b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(code)}</div>
-       </div>
+       ${codeBlock(code)}
        <p>This code expires in <strong>${OTP_TTL_MINUTES} minutes</strong>.</p>
-       <p style="color:#8b90a8;">If you didn't ask to reset your password, ignore this email — your current password still works.</p>`,
+       <p style="color:${C.muted};">If you didn't ask to reset your password, ignore this email — your current password still works.</p>`,
       { label: "Reset your password", url: `${appConfig.url}/reset-password` },
     ),
-    text: `Hi ${name},\n\nYour ${appConfig.name} password reset code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.\n\nIf you didn't request this, ignore this email — your current password still works.`,
+    text: `Hi ${name},\n\nYour ${BRAND} password reset code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes.\n\nIf you didn't request this, ignore this email — your current password still works.`,
   };
 }
 
@@ -165,18 +260,16 @@ export function passwordResetOtpTemplate(name: string, code: string): Template {
  */
 export function accountLockedTemplate(name: string, code: string): Template {
   return {
-    subject: `${code} is your ${appConfig.name} unlock code`,
+    subject: `${code} is your ${BRAND} unlock code`,
     html: layout(
       "Your account is locked",
-      `<p>Hi ${esc(name)}, there have been ${MAX_LOGIN_ATTEMPTS} failed sign-in attempts on your ${esc(appConfig.name)} account, so we've locked it. Use the code below to verify your email address and unlock it.</p>
-       <div style="margin:24px 0;padding:20px;background:#f4f5fb;border-radius:12px;text-align:center;">
-         <div style="font-size:34px;letter-spacing:10px;font-weight:700;color:#16192b;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(code)}</div>
-       </div>
+      `<p>Hi ${esc(name)}, there have been ${MAX_LOGIN_ATTEMPTS} failed sign-in attempts on your ${BRAND} account, so we've locked it. Use the code below to verify your email address and unlock it.</p>
+       ${codeBlock(code)}
        <p>This code expires in <strong>${OTP_TTL_MINUTES} minutes</strong>. Your password still works — it is the lock, not the password, that is stopping you signing in.</p>
-       <p style="color:#8b90a8;">If those attempts weren't you, somebody is guessing at your password. Unlock your account, then change it.</p>`,
+       <p style="color:${C.muted};">If those attempts weren't you, somebody is guessing at your password. Unlock your account, then change it.</p>`,
       { label: "Unlock your account", url: `${appConfig.url}/verify-email` },
     ),
-    text: `Hi ${name},\n\nThere have been ${MAX_LOGIN_ATTEMPTS} failed sign-in attempts on your ${appConfig.name} account, so it has been locked.\n\nYour unlock code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes. Enter it at ${appConfig.url}/verify-email.\n\nIf those attempts weren't you, change your password once you're back in.`,
+    text: `Hi ${name},\n\nThere have been ${MAX_LOGIN_ATTEMPTS} failed sign-in attempts on your ${BRAND} account, so it has been locked.\n\nYour unlock code is ${code}. It expires in ${OTP_TTL_MINUTES} minutes. Enter it at ${appConfig.url}/verify-email.\n\nIf those attempts weren't you, change your password once you're back in.`,
   };
 }
 
@@ -185,11 +278,11 @@ export function passwordChangedTemplate(name: string): Template {
     subject: "Your password was changed",
     html: layout(
       "Password changed",
-      `<p>Hi ${esc(name)}, your ${esc(appConfig.name)} password was just changed.</p>
-       <p style="color:#8b90a8;">If this wasn't you, reset your password immediately and contact your HR administrator.</p>`,
+      `<p>Hi ${esc(name)}, your ${BRAND} password was just changed.</p>
+       <p style="color:${C.muted};">If this wasn't you, reset your password immediately and contact your HR administrator.</p>`,
       { label: "Go to sign in", url: `${appConfig.url}/login` },
     ),
-    text: `Hi ${name},\n\nYour ${appConfig.name} password was just changed. If this wasn't you, reset it immediately and contact your HR administrator.`,
+    text: `Hi ${name},\n\nYour ${BRAND} password was just changed. If this wasn't you, reset it immediately and contact your HR administrator.`,
   };
 }
 
@@ -209,7 +302,7 @@ export function adminDecisionTemplate(name: string, approved: boolean): Template
         html: layout(
           "Administrator request declined",
           `<p>Hi ${esc(name)}, your administrator request was declined.</p>
-           <p style="color:#8b90a8;">If you believe this is a mistake, contact your super administrator.</p>`,
+           <p style="color:${C.muted};">If you believe this is a mistake, contact your super administrator.</p>`,
         ),
         text: `Hi ${name}, your administrator request was declined. Contact your super administrator if you believe this is a mistake.`,
       };
@@ -221,7 +314,7 @@ export function emailVerifiedTemplate(name: string): Template {
     html: layout(
       "Email verified",
       `<p>Thanks ${esc(name)} — your email address is confirmed and your account is active.</p>
-       <p>Next, complete your profile so your leave requests route to the right department.</p>`,
+       <p>Next, complete your profile so your attendance and leave records sit with the right department.</p>`,
       { label: "Complete your profile", url: `${appConfig.url}/profile/setup` },
     ),
     text: `Thanks ${name} — your email is verified. Complete your profile at ${appConfig.url}/profile/setup.`,
@@ -238,10 +331,10 @@ export function leaveApprovedTemplate(name: string, dates: Date[], reason: strin
     html: layout(
       "Your leave has been approved",
       `<p>Hi ${esc(name)}, your leave request has been approved.</p>
-       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;border:1px solid #eceef6;border-radius:12px;">
-         <tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">Dates</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(range)} (${esc(dayCount)})</td></tr>
-         <tr><td style="padding:14px 18px;color:#8b90a8;font-size:13px;">Reason</td><td style="padding:14px 18px;font-weight:600;color:#16192b;">${esc(reason)}</td></tr>
-       </table>
+       ${detailTable([
+         ["Dates", `${range} (${dayCount})`],
+         ["Reason", reason],
+       ])}
        <p>You have <strong>${remaining} of ${MONTHLY_LEAVE_ALLOWANCE}</strong> leaves remaining this month.</p>`,
       { label: "View leave history", url: `${appConfig.url}/leaves` },
     ),
@@ -283,16 +376,16 @@ export function officeClosedTemplate(options: {
       "The office is closed tomorrow",
       `<p>Hello ${esc(options.name)},</p>
        <p>Please be informed that the office will be closed tomorrow, <strong>${esc(longDate)}</strong>, for ${esc(options.reason)}.</p>
-       <table role="presentation" cellpadding="0" cellspacing="0" style="margin:20px 0;width:100%;border:1px solid #eceef6;border-radius:12px;">
-         <tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">Day</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(options.weekday)}</td></tr>
-         <tr><td style="padding:14px 18px;border-bottom:1px solid #eceef6;color:#8b90a8;font-size:13px;">Date</td><td style="padding:14px 18px;border-bottom:1px solid #eceef6;font-weight:600;color:#16192b;">${esc(longDate)}</td></tr>
-         <tr><td style="padding:14px 18px;color:#8b90a8;font-size:13px;">Reason</td><td style="padding:14px 18px;font-weight:600;color:#16192b;">${esc(options.reason)}</td></tr>
-       </table>
+       ${detailTable([
+         ["Day", options.weekday],
+         ["Date", longDate],
+         ["Reason", options.reason],
+       ])}
        <p>No attendance is required on this day, and it will not be counted as leave or absence.</p>
        <p>Enjoy the holiday!</p>
-       <p style="color:#8b90a8;">Regards,<br />${esc(appConfig.name)}</p>`,
+       <p style="color:${C.muted};">Regards,<br />${BRAND}</p>`,
     ),
-    text: `Hello ${options.name},\n\nPlease be informed that the office will be closed tomorrow, ${longDate}, for ${options.reason}.\n\nNo attendance is required on this day, and it will not be counted as leave or absence.\n\nEnjoy the holiday!\n\nRegards,\n${appConfig.name}`,
+    text: `Hello ${options.name},\n\nPlease be informed that the office will be closed tomorrow, ${longDate}, for ${options.reason}.\n\nNo attendance is required on this day, and it will not be counted as leave or absence.\n\nEnjoy the holiday!\n\nRegards,\n${BRAND}`,
   };
 }
 
@@ -342,10 +435,10 @@ export function attendanceWarningTemplate(options: {
        <p>No attendance was recorded for you on <strong>${esc(longDate)}</strong>. Attendance had to be marked from the office by <strong>${esc(options.cutoffLabel)}</strong>.</p>
        ${runHtml}
        <p>If you were at work, please remember to mark yourself present from your dashboard while you are at the office. If you were unable to attend, speak to your administrator so the record can be corrected.</p>
-       <p style="color:#8b90a8;font-size:13px;">This is an automated notice, sent after the day's deadline had passed.</p>
-       <p style="color:#8b90a8;">Regards,<br />${esc(appConfig.name)}</p>`,
+       <p style="color:${C.muted};font-size:13px;">This is an automated notice, sent after the day's deadline had passed.</p>
+       <p style="color:${C.muted};">Regards,<br />${BRAND}</p>`,
     ),
-    text: `Hello ${options.name},\n\nNo attendance was recorded for you on ${longDate}. Attendance had to be marked from the office by ${options.cutoffLabel}.${runText}\n\nIf you were at work, please remember to mark yourself present from your dashboard while you are at the office. If you were unable to attend, speak to your administrator so the record can be corrected.\n\nThis is an automated notice, sent after the day's deadline had passed.\n\nRegards,\n${appConfig.name}`,
+    text: `Hello ${options.name},\n\nNo attendance was recorded for you on ${longDate}. Attendance had to be marked from the office by ${options.cutoffLabel}.${runText}\n\nIf you were at work, please remember to mark yourself present from your dashboard while you are at the office. If you were unable to attend, speak to your administrator so the record can be corrected.\n\nThis is an automated notice, sent after the day's deadline had passed.\n\nRegards,\n${BRAND}`,
   };
 }
 
@@ -358,7 +451,7 @@ export function profileUpdatedTemplate(name: string, changedBy: "you" | "an admi
        <p>If you didn't expect this change, please contact your HR administrator right away.</p>`,
       { label: "Review your profile", url: `${appConfig.url}/profile` },
     ),
-    text: `Hi ${name}, your ${appConfig.name} profile was updated by ${changedBy}. If this wasn't expected, contact HR.`,
+    text: `Hi ${name}, your ${BRAND} profile was updated by ${changedBy}. If this wasn't expected, contact HR.`,
   };
 }
 
@@ -368,13 +461,13 @@ export function accountStatusTemplate(name: string, suspended: boolean): Templat
     html: layout(
       suspended ? "Account suspended" : "Account reactivated",
       suspended
-        ? `<p>Hi ${esc(name)}, your account has been suspended by an administrator. You will not be able to sign in or submit leave requests until it is reactivated.</p>
+        ? `<p>Hi ${esc(name)}, your account has been suspended by an administrator. You will not be able to sign in, mark attendance, or submit leave requests until it is reactivated.</p>
            <p>Please contact your HR administrator for details.</p>`
-        : `<p>Hi ${esc(name)}, your account is active again. You can sign in and submit leave requests as usual.</p>`,
+        : `<p>Hi ${esc(name)}, your account is active again. You can sign in, mark your attendance, and submit leave requests as usual.</p>`,
       suspended ? undefined : { label: "Sign in", url: `${appConfig.url}/login` },
     ),
     text: suspended
-      ? `Hi ${name}, your ${appConfig.name} account has been suspended. Contact HR for details.`
-      : `Hi ${name}, your ${appConfig.name} account has been reactivated. Sign in at ${appConfig.url}/login.`,
+      ? `Hi ${name}, your ${BRAND} account has been suspended. Contact HR for details.`
+      : `Hi ${name}, your ${BRAND} account has been reactivated. Sign in at ${appConfig.url}/login.`,
   };
 }

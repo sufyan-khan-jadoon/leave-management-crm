@@ -111,13 +111,13 @@ Every variable is validated at runtime by `src/lib/env.ts`; a missing or malform
 | `NEXTAUTH_URL` | ✅ | App base URL (`http://localhost:3000` locally) |
 | `GROQ_API_KEY` | ✅ | Free key from [Groq Console](https://console.groq.com/keys) — no credit card |
 | `GROQ_MODEL` | — | Defaults to `llama-3.1-8b-instant` |
-| `EMAIL_HOST` | ✅ | SMTP host (e.g. `smtp.gmail.com`) |
-| `EMAIL_PORT` | — | Defaults to `587` |
+| `EMAIL_HOST` | ✅ | SMTP host — `smtp.hostinger.com` for the Zovencia mailbox |
+| `EMAIL_PORT` | — | Defaults to `587`; use `465` for implicit TLS |
 | `EMAIL_SECURE` | — | `"true"` for port 465 |
-| `EMAIL_USER` | ✅ | SMTP username |
-| `EMAIL_PASSWORD` | ✅ | SMTP password / app password |
-| `EMAIL_FROM` | — | From header, e.g. `Leave CRM <no-reply@yourdomain.com>` |
-| `APP_NAME` | — | Branding, defaults to `Leave CRM` |
+| `EMAIL_USER` | ✅ | SMTP username — the full address, e.g. `info@zovencia.com` |
+| `EMAIL_PASSWORD` | ✅ | Mailbox password (or app password on providers that issue them) |
+| `EMAIL_FROM` | — | From header. **Must match `EMAIL_USER`'s domain** or SPF fails and mail is filtered as spam |
+| `APP_NAME` | — | Branding for the app screens, defaults to `Zovencia`. Emails always carry the Zovencia name |
 | `HR_CONTACT_PHONE` | — | Phone shown in the quota-exceeded message |
 
 Generate a secret:
