@@ -117,7 +117,7 @@ Every variable is validated at runtime by `src/lib/env.ts`; a missing or malform
 | `EMAIL_USER` | ✅ | SMTP username — the full address, e.g. `info@zovencia.com` |
 | `EMAIL_PASSWORD` | ✅ | Mailbox password (or app password on providers that issue them) |
 | `EMAIL_FROM` | — | From header. **Must match `EMAIL_USER`'s domain** or SPF fails and mail is filtered as spam |
-| `APP_NAME` | — | Branding for the app screens, defaults to `Zovencia`. Emails always carry the Zovencia name |
+| `APP_NAME` | — | Name shown on the app screens, defaults to `ZOVENCIA PRESENCE`. Email is unaffected — outgoing mail is always signed `Zovencia` |
 | `HR_CONTACT_PHONE` | — | Phone shown in the quota-exceeded message |
 
 Generate a secret:

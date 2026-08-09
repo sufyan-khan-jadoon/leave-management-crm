@@ -14,11 +14,11 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: {
-    default: `${appConfig.name} — AI-Powered Leave Management`,
+    default: `${appConfig.name} — Employee Attendance & Workforce Management`,
     template: `%s · ${appConfig.name}`,
   },
   description:
-    "Submit leave requests in plain English. AI extracts the date and reason, applies your monthly allowance, and keeps HR in the loop.",
+    "Mark attendance from the office, track presence and absence, and request leave in plain English — with working days, office closures and monthly allowances applied automatically.",
 };
 
 export const viewport: Viewport = {

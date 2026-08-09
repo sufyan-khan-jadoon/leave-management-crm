@@ -38,11 +38,14 @@ const serverSchema = z.object({
   HR_CONTACT_PHONE: z.string().default("+923145868205"),
   HR_CONTACT_NAME: z.string().default("Sufyan Khan"),
   /**
-   * The name the *screens* carry. Email deliberately does not read this — see
-   * `BRAND` in `services/email/templates.ts` — so a wrong value here can never
-   * put the wrong company on a message that has already been sent.
+   * The name the *screens* carry — sidebar, landing page, browser tab.
+   *
+   * Email deliberately does not read this. Outgoing mail is signed "Zovencia"
+   * alone, as a literal in `services/email/templates.ts`, so the product name
+   * shown in the app and the company name on a letter can differ on purpose —
+   * and a wrong value here can never reach a message that has already been sent.
    */
-  APP_NAME: z.string().default("Zovencia"),
+  APP_NAME: z.string().default("ZOVENCIA PRESENCE"),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;
@@ -67,7 +70,7 @@ export function serverEnv(): ServerEnv {
 
 /** Narrow accessor for the subset of config that is safe to read during build. */
 export const appConfig = {
-  name: process.env.APP_NAME ?? "Zovencia",
+  name: process.env.APP_NAME ?? "ZOVENCIA PRESENCE",
   url: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
   hrPhone: process.env.HR_CONTACT_PHONE ?? "+923145868205",
   hrName: process.env.HR_CONTACT_NAME ?? "Sufyan Khan",
