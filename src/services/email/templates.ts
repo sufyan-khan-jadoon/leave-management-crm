@@ -442,6 +442,40 @@ export function attendanceWarningTemplate(options: {
   };
 }
 
+/**
+ * A message somebody wrote by hand, in the same envelope as everything else.
+ *
+ * `body` arrives as HTML and is interpolated **unescaped** — the only place in
+ * this file that happens, and the reason `custom-email.service.ts` runs it
+ * through the allowlist in `sanitize-html.ts` first. Nothing else here may
+ * follow that pattern: every other value is user data and is escaped.
+ *
+ * The sender is named in the body rather than in the From header. The header
+ * stays the company mailbox so replies reach a monitored address and the domain's
+ * SPF record keeps passing, but a recipient still needs to know which person
+ * wrote to them.
+ */
+export function customEmailTemplate(options: {
+  recipientName: string;
+  senderName: string;
+  subject: string;
+  /** Already sanitised. See `sanitizeEmailHtml`. */
+  html: string;
+  /** Derived from the sanitised markup, never from what the composer submitted. */
+  text: string;
+}): Template {
+  return {
+    subject: options.subject,
+    html: layout(
+      options.subject,
+      `<p>Hello ${esc(options.recipientName)},</p>
+       <div style="margin:16px 0;">${options.html}</div>
+       <p style="color:${C.muted};margin-top:24px;">Sent by ${esc(options.senderName)}</p>`,
+    ),
+    text: `Hello ${options.recipientName},\n\n${options.text}\n\nSent by ${options.senderName}\n\n—\n${BRAND}`,
+  };
+}
+
 export function profileUpdatedTemplate(name: string, changedBy: "you" | "an administrator"): Template {
   return {
     subject: "Your profile was updated",

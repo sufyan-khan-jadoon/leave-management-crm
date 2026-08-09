@@ -1,6 +1,7 @@
 import {
   CalendarDays,
   CalendarOff,
+  Mail,
   LayoutDashboard,
   MapPin,
   ShieldCheck,
@@ -50,6 +51,9 @@ export const ADMIN_NAV: NavItem[] = [
   // days the organisation works decides what everybody's leave costs, and the
   // screen is read-only without the grant.
   { href: ROUTES.adminWorkingDays, label: "Working days", icon: CalendarOff, group: "Manage" },
+  // Shown to every administrator. Whether they may actually send is granted per
+  // account, and the screen says so rather than vanishing from the sidebar.
+  { href: ROUTES.adminEmails, label: "Send email", icon: Mail, group: "Manage" },
 
   { href: ROUTES.dashboard, label: "My leave", icon: LayoutDashboard, exact: true, group: "Personal" },
   // Administrators turn up to the office like everybody else, so they mark

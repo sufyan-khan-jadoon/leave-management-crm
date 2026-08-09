@@ -12,6 +12,7 @@ export const employeeSelect = {
   status: true,
   canInviteEmployees: true,
   canManageHolidays: true,
+  canSendEmails: true,
   lockedAt: true,
   phone: true,
   department: true,
@@ -37,6 +38,17 @@ export const attendanceRosterSelect = {
 export type AttendanceRosterMember = Prisma.EmployeeGetPayload<{
   select: typeof attendanceRosterSelect;
 }>;
+
+/** Just enough to address somebody, and to show who they are without listing them. */
+export const mailRecipientSelect = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  department: true,
+} satisfies Prisma.EmployeeSelect;
+
+export type MailRecipient = Prisma.EmployeeGetPayload<{ select: typeof mailRecipientSelect }>;
 
 /**
  * The clean sign-in slate. Written wherever the owner has just proved who they
@@ -130,6 +142,14 @@ export const employeeRepository = {
     });
   },
 
+  setEmailPermission(id: string, canSendEmails: boolean): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { canSendEmails },
+      select: employeeSelect,
+    });
+  },
+
   /**
    * Everyone an organisation-wide announcement should reach.
    *
@@ -144,6 +164,45 @@ export const employeeRepository = {
       where: { status: EmployeeStatus.ACTIVE, emailVerified: { not: null } },
       orderBy: { name: "asc" },
       select: { id: true, name: true, email: true },
+    });
+  },
+
+  /**
+   * People a custom email may actually be addressed to.
+   *
+   * The same standing test `listNotifiable` applies — active, and at an address
+   * that has been proven — because writing to a suspended account or an
+   * unverified mailbox is either pointless or wrong. `roles` narrows to the
+   * audience being sent to, and `excludeId` drops the sender: nobody needs a
+   * copy of their own announcement, and it keeps the recipient count honest.
+   *
+   * The email address is selected because the mailer needs it. It is
+   * deliberately *not* carried into the recipient picker's payload — see
+   * `custom-email.service.ts`.
+   */
+  listMailRecipients(roles: Role[], excludeId?: string): Promise<MailRecipient[]> {
+    return prisma.employee.findMany({
+      where: {
+        role: { in: roles },
+        status: EmployeeStatus.ACTIVE,
+        emailVerified: { not: null },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      orderBy: { name: "asc" },
+      select: mailRecipientSelect,
+    });
+  },
+
+  /** One addressable person, checked against the same standing rules. */
+  findMailRecipient(id: string, roles: Role[]): Promise<MailRecipient | null> {
+    return prisma.employee.findFirst({
+      where: {
+        id,
+        role: { in: roles },
+        status: EmployeeStatus.ACTIVE,
+        emailVerified: { not: null },
+      },
+      select: mailRecipientSelect,
     });
   },
 

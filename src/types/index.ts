@@ -130,6 +130,34 @@ export type AttendanceRosterView = {
   summary: { expected: number; present: number; absent: number; onLeave: number };
 };
 
+/** Who a custom email went to. Mirrors the Prisma enum. */
+export type EmailAudienceView = "INDIVIDUAL" | "EMPLOYEES" | "ADMINS" | "ALL_MEMBERS";
+
+/**
+ * What the signed-in administrator may do with custom email.
+ *
+ * Shapes the composer only. Every audience listed here is checked again on the
+ * server when a message is actually sent.
+ */
+export type EmailCapabilitiesView = {
+  canSend: boolean;
+  audiences: EmailAudienceView[];
+  seesAllHistory: boolean;
+};
+
+/** One row of the send log. The message body is deliberately not part of it. */
+export type EmailDispatchView = {
+  id: string;
+  audience: EmailAudienceView;
+  subject: string;
+  recipientCount: number;
+  deliveredCount: number;
+  status: "SENT" | "PARTIAL" | "FAILED";
+  createdAt: string;
+  sender: { id: string; name: string; email: string; role: Role };
+  recipient: { id: string; name: string } | null;
+};
+
 export type PaginatedAttendance = { items: AttendanceView[]; pagination: Pagination };
 
 export type Pagination = {

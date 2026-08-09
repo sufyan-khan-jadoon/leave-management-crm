@@ -44,6 +44,28 @@ export const HOLIDAY_NOTICE_HOUR = 12;
 /** Enough for "Company retreat — Karachi office only", short of an essay. */
 export const MAX_HOLIDAY_REASON_LENGTH = 120;
 
+/** A subject line long enough to say something, short enough not to be truncated. */
+export const MAX_EMAIL_SUBJECT_LENGTH = 150;
+
+/**
+ * Upper bound on a custom email body, counted as raw HTML.
+ *
+ * Generous, because the composer's markup inflates what somebody actually typed
+ * — but bounded, because this string is held in memory once per recipient while
+ * a send is in flight.
+ */
+export const MAX_EMAIL_BODY_LENGTH = 50_000;
+
+/**
+ * How many people one custom email may reach in a single act.
+ *
+ * A guard against the send that was not meant to be organisation-wide, and
+ * against a mail host's hourly cap being spent in one request. Reaching it is a
+ * refusal with a number in it rather than a partial send, so nobody has to work
+ * out which half of the company was written to.
+ */
+export const MAX_EMAIL_RECIPIENTS = 500;
+
 /**
  * Where the office is. The single source of truth for attendance — nothing else
  * in the codebase names a coordinate.
@@ -119,6 +141,7 @@ export const ROUTES = {
   adminLeaves: "/admin/leaves",
   adminWorkingDays: "/admin/working-days",
   adminAttendance: "/admin/attendance",
+  adminEmails: "/admin/emails",
   adminAccess: "/admin/access",
   attendance: "/attendance",
 } as const;

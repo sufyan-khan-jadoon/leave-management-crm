@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarOff, ShieldCheck, UserPlus } from "lucide-react";
+import { CalendarOff, Mail, ShieldCheck, UserPlus } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/shared/empty-state";
@@ -15,11 +16,13 @@ export type Administrator = {
   email: string;
   canInviteEmployees: boolean;
   canManageHolidays: boolean;
+  canSendEmails: boolean;
 };
 
 /** One delegable right, described once and rendered for every administrator. */
 type Grant = {
-  key: "canInviteEmployees" | "canManageHolidays";
+  key: "canInviteEmployees" | "canManageHolidays" | "canSendEmails";
+  icon: LucideIcon;
   label: string;
   on: string;
   off: string;
@@ -30,6 +33,7 @@ type Grant = {
 const GRANTS: Grant[] = [
   {
     key: "canInviteEmployees",
+    icon: UserPlus,
     label: "Invite employees",
     on: "Can invite",
     off: "Cannot invite",
@@ -38,11 +42,23 @@ const GRANTS: Grant[] = [
   },
   {
     key: "canManageHolidays",
+    icon: CalendarOff,
     label: "Manage office days off",
     on: "Can close the office",
     off: "Cannot close the office",
     granted: "can now schedule office days off",
     revoked: "can no longer schedule office days off",
+  },
+  {
+    key: "canSendEmails",
+    icon: Mail,
+    label: "Send emails",
+    // Says what it does *not* grant, because that is the part somebody
+    // delegating it would otherwise have to guess at.
+    on: "Can write to one person or all employees",
+    off: "Cannot send email",
+    granted: "can now email individuals and employees",
+    revoked: "can no longer send email",
   },
 ];
 
@@ -88,8 +104,9 @@ export function AdminPermissions({
           What administrators may do
         </CardTitle>
         <CardDescription>
-          Administrators cannot onboard anyone or close the office until you allow it. Inviting other
-          administrators stays with you either way.
+          Administrators cannot onboard anyone, close the office or send email until you allow it.
+          Inviting other administrators stays with you either way, as does emailing every
+          administrator or the whole organisation at once.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -115,11 +132,7 @@ export function AdminPermissions({
                       key={grant.key}
                       className="border-border/60 bg-muted/30 flex items-center gap-3 rounded-lg border px-3 py-2"
                     >
-                      {grant.key === "canInviteEmployees" ? (
-                        <UserPlus className="text-muted-foreground size-4 shrink-0" aria-hidden />
-                      ) : (
-                        <CalendarOff className="text-muted-foreground size-4 shrink-0" aria-hidden />
-                      )}
+                      <grant.icon className="text-muted-foreground size-4 shrink-0" aria-hidden />
 
                       <div className="mr-auto min-w-0">
                         <p className="truncate text-sm font-medium">{grant.label}</p>

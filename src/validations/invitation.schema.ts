@@ -32,7 +32,7 @@ export const listInvitationsSchema = z.object({ role: inviteRoleSchema.optional(
 /**
  * What the super admin may delegate to one administrator.
  *
- * Both optional so a screen can toggle one right without restating the other,
+ * All optional so a screen can toggle one right without restating the others,
  * and at least one required so an empty body is reported rather than accepted
  * as a successful change of nothing.
  */
@@ -40,9 +40,13 @@ export const adminPermissionsSchema = z
   .object({
     canInviteEmployees: z.boolean().optional(),
     canManageHolidays: z.boolean().optional(),
+    canSendEmails: z.boolean().optional(),
   })
   .refine(
-    (value) => value.canInviteEmployees !== undefined || value.canManageHolidays !== undefined,
+    (value) =>
+      value.canInviteEmployees !== undefined ||
+      value.canManageHolidays !== undefined ||
+      value.canSendEmails !== undefined,
     "Name a permission to change.",
   );
 

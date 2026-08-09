@@ -9,6 +9,7 @@ import {
   accountStatusTemplate,
   adminDecisionTemplate,
   attendanceWarningTemplate,
+  customEmailTemplate,
   emailVerifiedTemplate,
   invitationTemplate,
   leaveApprovedTemplate,
@@ -148,6 +149,20 @@ export const emailService = {
         consecutiveMissed: options.consecutiveMissed,
       }),
     );
+  },
+
+  /**
+   * A message an administrator wrote by hand.
+   *
+   * `html` must already have been through `sanitizeEmailHtml` — this is the one
+   * template whose body is not escaped, and `custom-email.service.ts` is the
+   * only caller precisely so that the sanitising cannot be forgotten.
+   */
+  sendCustomEmail(
+    to: string,
+    options: { recipientName: string; senderName: string; subject: string; html: string; text: string },
+  ) {
+    return send(to, customEmailTemplate(options));
   },
 
   sendProfileUpdated(to: string, name: string, changedBy: "you" | "an administrator") {

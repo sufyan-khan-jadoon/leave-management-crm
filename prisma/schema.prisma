@@ -85,6 +85,76 @@ enum InvitationStatus {
   ACCEPTED
 }
 
+/// Who a custom email was addressed to.
+///
+/// This is the permission boundary, not merely a label. INDIVIDUAL and EMPLOYEES
+/// are delegable to an administrator through `canSendEmails`; ADMINS and
+/// ALL_MEMBERS are the super admin's alone, because writing to every
+/// administrator — or to the entire organisation in one act — is the kind of
+/// announcement that has to answer to the person who owns the system. The rule
+/// lives in `custom-email.service.ts` and is enforced there, against the role
+/// and the grant read fresh from this table, never against anything the browser
+/// claimed.
+enum EmailAudience {
+  INDIVIDUAL
+  EMPLOYEES
+  ADMINS
+  ALL_MEMBERS
+}
+
+/// How a send actually went, across all its recipients.
+///
+/// PARTIAL exists because mail here is fire-and-forget per address: one bounced
+/// mailbox out of forty is not a failed announcement, and recording the whole
+/// thing as FAILED would make the log useless for the case it exists to answer —
+/// "did this reach people?".
+enum EmailDispatchStatus {
+  SENT
+  PARTIAL
+  FAILED
+}
+
+/// One custom email, as an audit record.
+///
+/// Written for every send, successful or not, because the question this table
+/// answers is "who wrote to the organisation, when, and did it arrive" — and a
+/// send that failed is exactly the one somebody will come asking about.
+///
+/// The body is deliberately **not** stored. The brief asks for sender, audience,
+/// count, time, subject and status, and keeping the message itself would turn an
+/// access log into a copy of everybody's mail — the same restraint the leave
+/// assistant shows by never persisting the raw prompt. The subject is enough to
+/// identify which message is being discussed.
+model EmailDispatch {
+  id       String        @id @default(cuid())
+  audience EmailAudience
+  subject  String
+
+  /// How many addresses were resolved, and how many the mailer accepted. Both
+  /// are kept: "sent to 40, delivered 38" is the useful reading, and a single
+  /// number could not express it.
+  recipientCount Int
+  deliveredCount Int
+  status         EmailDispatchStatus
+
+  createdAt DateTime @default(now())
+
+  /// Restricted rather than cascading: deleting an administrator must not erase
+  /// the record of what they sent the whole company.
+  senderId String
+  sender   Employee @relation("EmailSender", fields: [senderId], references: [id], onDelete: Restrict)
+
+  /// Set only for INDIVIDUAL, where "one recipient" has a name worth keeping.
+  /// Nulled rather than cascading if that account is deleted — the send still
+  /// happened, and the count still says one.
+  recipientId String?
+  recipient   Employee? @relation("EmailRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
+
+  @@index([senderId, createdAt])
+  @@index([createdAt])
+  @@map("email_dispatches")
+}
+
 /// A person in the system. Admins are Employees with role = ADMIN.
 model Employee {
   id            String         @id @default(cuid())
@@ -112,6 +182,19 @@ model Employee {
   /// super admin's to delegate rather than something every admin inherits. Read
   /// from here on every request, never from the session.
   canManageHolidays Boolean @default(false)
+
+  /// Whether this administrator may write a custom email to people here.
+  ///
+  /// The third delegable right, following the same rule as the other two: off by
+  /// default, granted per administrator, and read from the database on every
+  /// send rather than carried in the session, so withdrawing it stops the next
+  /// attempt instead of waiting for a week-old token to expire.
+  ///
+  /// It never widens to the broadcast audiences. An administrator holding this
+  /// may write to one person at a time or to the employees; writing to every
+  /// administrator, or to the whole organisation at once, stays with the super
+  /// admin — see `EmailAudience`.
+  canSendEmails Boolean @default(false)
 
   /// Consecutive failed sign-ins since the last time the password was proven.
   /// Reset by a correct password, by verifying the address, or by a reset.
@@ -142,6 +225,8 @@ model Employee {
   invitationsSent    Invitation[] @relation("InvitationIssuer")
   invitationAccepted Invitation?  @relation("InvitationAcceptor")
   holidaysDeclared   Holiday[]    @relation("HolidayAuthor")
+  emailsSent         EmailDispatch[] @relation("EmailSender")
+  emailsReceived     EmailDispatch[] @relation("EmailRecipient")
 
   @@index([department])
   @@index([status])
