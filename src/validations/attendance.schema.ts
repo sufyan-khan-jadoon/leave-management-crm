@@ -60,6 +60,11 @@ export type AttendanceRosterQuery = z.infer<typeof attendanceRosterQuerySchema>;
  * is stored as minutes because every use of it is a comparison. Both fields are
  * optional so the panel can save one without restating the other, but an empty
  * body is refused — a request that changes nothing is a mistake worth reporting.
+ *
+ * `workingDays` is deliberately absent, though it lives on the same row. The
+ * working week governs leave as well as attendance, so it is written through
+ * `/api/admin/working-days` and nowhere else: two endpoints writing one value is
+ * how the two come to disagree about which days count.
  */
 export const updateAttendancePolicySchema = z
   .object({
@@ -71,15 +76,10 @@ export const updateAttendancePolicySchema = z
         return hour * 60 + minute;
       })
       .optional(),
-    workingDays: z
-      .array(z.number().int().min(1, "Days run 1–7").max(7, "Days run 1–7"))
-      .min(1, "Choose at least one working day")
-      .max(7)
-      .optional(),
     warningsEnabled: z.boolean().optional(),
   })
   .refine(
-    (value) => value.cutoff !== undefined || value.workingDays !== undefined || value.warningsEnabled !== undefined,
+    (value) => value.cutoff !== undefined || value.warningsEnabled !== undefined,
     "Change something first.",
   )
   .transform(({ cutoff, ...rest }) => ({ ...rest, cutoffMinutes: cutoff }));

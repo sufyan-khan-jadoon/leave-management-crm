@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Clock, Loader2, MailWarning } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,26 +11,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ApiClientError, apiClient } from "@/lib/api-client";
-import {
-  friendlyTimeLabel,
-  minutesToTimeLabel,
-  timeLabelToMinutes,
-  WEEKDAY_NAMES,
-  type IsoWeekday,
-} from "@/lib/attendance-policy";
+import { friendlyTimeLabel, minutesToTimeLabel, timeLabelToMinutes } from "@/lib/attendance-policy";
+import { ROUTES } from "@/lib/constants";
 import { formatDateTime } from "@/lib/date";
-import { cn } from "@/lib/utils";
+import { describeWeekdays, weeklyOffDays } from "@/lib/working-days";
 import type { AttendancePolicyView } from "@/types";
 
-const ALL_DAYS = [1, 2, 3, 4, 5, 6, 7] as const;
-
 /**
- * The one place the working day is defined.
+ * When the working day ends, and whether anybody is written to about missing it.
  *
- * Everything here feeds the warning sweep and nothing else decides it: the
- * cutoff is the deadline people are warned against, and the working days are
- * what stops the whole company being written to every weekend. Read by any
- * administrator, changed by the super admin alone.
+ * The working *week* is deliberately not editable here any more. It decides what
+ * a leave request costs as much as it decides who is chased, so it outgrew a
+ * panel about warning letters and lives on the Working days screen — two
+ * editors for one value is how the two come to disagree. It is still shown,
+ * because the cutoff means nothing without knowing which days it applies to.
+ *
+ * Read by any administrator, changed by the super admin alone.
  */
 export function AttendancePolicyPanel() {
   const [policy, setPolicy] = useState<AttendancePolicyView | null>(null);
@@ -38,7 +35,6 @@ export function AttendancePolicyPanel() {
   const [saving, setSaving] = useState(false);
 
   const [cutoff, setCutoff] = useState("17:00");
-  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [enabled, setEnabled] = useState(true);
 
   const load = useCallback(async () => {
@@ -50,7 +46,6 @@ export function AttendancePolicyPanel() {
       setPolicy(result.policy);
       setCanManage(result.canManage);
       setCutoff(minutesToTimeLabel(result.policy.cutoffMinutes));
-      setDays(result.policy.workingDays);
       setEnabled(result.policy.warningsEnabled);
     } catch (error) {
       toast.error(error instanceof ApiClientError ? error.message : "Couldn't load the attendance policy.");
@@ -63,12 +58,6 @@ export function AttendancePolicyPanel() {
     void load();
   }, [load]);
 
-  function toggleDay(day: number) {
-    setDays((current) =>
-      current.includes(day) ? current.filter((value) => value !== day) : [...current, day].sort(),
-    );
-  }
-
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (saving) return;
@@ -78,17 +67,11 @@ export function AttendancePolicyPanel() {
       return;
     }
 
-    if (days.length === 0) {
-      toast.error("Choose at least one working day.");
-      return;
-    }
-
     setSaving(true);
 
     try {
       const updated = await apiClient.patch<AttendancePolicyView>("/api/admin/attendance/policy", {
         cutoff,
-        workingDays: days,
         warningsEnabled: enabled,
       });
 
@@ -118,10 +101,8 @@ export function AttendancePolicyPanel() {
 
   if (!policy) return null;
 
-  const dirty =
-    cutoff !== minutesToTimeLabel(policy.cutoffMinutes) ||
-    enabled !== policy.warningsEnabled ||
-    days.join(",") !== [...policy.workingDays].sort((a, b) => a - b).join(",");
+  const dirty = cutoff !== minutesToTimeLabel(policy.cutoffMinutes) || enabled !== policy.warningsEnabled;
+  const daysOff = weeklyOffDays(policy.workingDays);
 
   return (
     <Card>
@@ -170,32 +151,14 @@ export function AttendancePolicyPanel() {
 
           <div className="space-y-2">
             <Label>Working days</Label>
-            <div className="flex flex-wrap gap-2">
-              {ALL_DAYS.map((day) => {
-                const active = days.includes(day);
-
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => canManage && !saving && toggleDay(day)}
-                    disabled={!canManage || saving}
-                    aria-pressed={active}
-                    className={cn(
-                      "rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
-                      "disabled:cursor-not-allowed disabled:opacity-60",
-                      active
-                        ? "bg-primary text-primary-foreground"
-                        : "glass-inset text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {WEEKDAY_NAMES[day as IsoWeekday].slice(0, 3)}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-muted-foreground text-xs">
-              Nobody is expected in, or warned, on a day left unselected.
+            <p className="text-muted-foreground text-sm">
+              {daysOff.length === 0
+                ? "Every day of the week is a working day."
+                : `${describeWeekdays(daysOff)} are days off, so nobody is expected in or warned on them.`}{" "}
+              <Link href={ROUTES.adminWorkingDays} className="text-primary-ink font-medium underline-offset-4 hover:underline">
+                Change the working week
+              </Link>
+              , where it also decides what a leave request costs.
             </p>
           </div>
 

@@ -77,12 +77,14 @@ export const leaveChatService = {
     const env = serverEnv();
     const quotaMessage = quotaExceededMessage(env.HR_CONTACT_PHONE, env.HR_CONTACT_NAME);
 
-    // More days than a month can ever hold is refused on the spot. Asking for a
-    // reason first only to throw the request away wastes the employee's time.
-    if (intent.days && intent.days > MONTHLY_LEAVE_ALLOWANCE) {
-      return { reply: quotaMessage };
-    }
-
+    // There is deliberately no early "more days than the allowance" shortcut here
+    // any more. It was sound while a request cost one day of allowance per
+    // calendar day, and became wrong the moment only working days were charged:
+    // six calendar days from a Thursday is three working days over a Sat/Sun
+    // weekend, and refusing it against a four-day allowance would turn down a
+    // request that fits. Nothing short of the real schedule can tell — a closure
+    // can take the cost down to zero — so the judgement waits for `planLeave`,
+    // which answers with the same quota wording below.
     if (!intent.startDate || !intent.days) {
       return { reply: intent.reply };
     }
@@ -110,14 +112,23 @@ export const leaveChatService = {
     }
 
     // Said out loud rather than quietly shortening the range: somebody asking
-    // for five days and being booked four would otherwise reasonably think the
-    // assistant had miscounted.
-    const closedNote = plan.closedDates?.length
-      ? ` The office is already closed ${formatDateRange(plan.closedDates)}, so ${plan.closedDates.length === 1 ? "that day is" : "those days are"} not counted.`
-      : "";
+    // for five days and being booked three would otherwise reasonably think the
+    // assistant had miscounted. Both reasons a day drops out are named, because
+    // "it's a weekend" and "the office is shut that day" are different facts and
+    // only one of them is news.
+    const notes = [
+      plan.weeklyOffDates?.length
+        ? `${formatDateRange(plan.weeklyOffDates)} ${plan.weeklyOffDates.length === 1 ? "is not a working day" : "are not working days"}`
+        : null,
+      plan.closedDates?.length
+        ? `the office is closed ${formatDateRange(plan.closedDates)}`
+        : null,
+    ].filter(Boolean);
+
+    const skippedNote = notes.length > 0 ? ` That skips ${notes.join(", and ")}, so you are not charged for them.` : "";
 
     return {
-      reply: `Just to confirm — ${dayWord(plan.dates.length)} off, ${formatDateRange(plan.dates)}, for ${plan.reason}.${closedNote} That would leave you ${dayWord(plan.remainingAfter ?? 0)} this month. Shall I book it?`,
+      reply: `Just to confirm — ${dayWord(plan.dates.length)} off, ${formatDateRange(plan.dates)}, for ${plan.reason}.${skippedNote} That would leave you ${dayWord(plan.remainingAfter ?? 0)} this month. Shall I book it?`,
       proposal: {
         startDate: toIsoDate(startDate),
         days: intent.days,

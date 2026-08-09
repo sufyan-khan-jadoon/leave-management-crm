@@ -218,6 +218,59 @@ stay in the enum so rows predating this still render, and `Leave.decidedById` / 
 the model for the same reason. Don't read a `PENDING` row as "waiting for someone" — nobody is
 coming.
 
+## Only working days cost a leave
+
+A request is a **calendar range**, and its duration is the number of *working days* inside it.
+Friday to Monday over a Saturday/Sunday weekend books two days, not four. `planLeave` leaves the
+range the employee asked for alone and splits it through `workingDaysService.split`, writing rows
+only for the working days — so every figure downstream is right for free, because they all count
+rows. **Don't add a second place that subtracts weekends**; balance, monthly limit, history, trend,
+department chart and CSV export all read `leaves`, and the filtering has already happened by the
+time a row exists.
+
+Two rules decide it, in `src/lib/working-days.ts`, free of Prisma so they can be read and tested
+alone exactly as `geo.ts` and `holiday-notice.ts` are: the ordinary week says which weekdays are
+worked, and a `Holiday` overrides it for one date. `dayKind` checks the closure first — both are
+non-working, but "closed for Independence Day" is what the screens should say, not "it was a
+Saturday anyway". `working-days.test.ts` pins every case from Mon→Mon = 1 to Sat→Sun = 0, plus
+month, year and leap boundaries, and passes under `TZ=America/New_York`.
+
+A range holding **no** working days is refused, never booked as nothing. Somebody asking for a
+Saturday off has misread the calendar, not asked for zero days, and a silent success would leave
+them thinking they were covered. `nothingToBook` names which days were ruled out and why.
+
+**The working week is not applied backwards, and the asymmetry from closures is deliberate.** A
+closure is a fact declared about one date, so `countApprovedInMonth` and friends discount it on
+every read — that is what lets a closure be withdrawn. The week is a standing configuration:
+re-judging old rows against today's week would silently rewrite what every past leave cost. Nothing
+lands on a non-working day any more, so this only ever concerns rows booked before the week was
+set, and those stay charged exactly as they were.
+
+There is deliberately **no early "more days than the allowance" shortcut** in `leave-chat.service.ts`
+any more. It was sound while a calendar day cost a day of allowance and became wrong the moment only
+working days were charged — six calendar days from a Thursday is three working days, which fits a
+four-day allowance. Nothing short of the real schedule can tell, since a closure can take the cost
+to zero, so the judgement waits for `planLeave`.
+
+### Who sets the week
+
+`AttendancePolicy.workingDays` is the storage — the singleton already existed for the warning sweep,
+and there is no second table, because a week is one row of configuration and a custom day off is
+already a `Holiday` with a date, reason and timestamps. What changed is its **reach**: it now
+governs leave as well as attendance, which is why `isWorkingWeekday` moved out of
+`attendance-policy.ts` into `working-days.ts`.
+
+It is written through `/api/admin/working-days` and **nowhere else** — `workingDays` was removed
+from `updateAttendancePolicySchema` on purpose, because two endpoints writing one value is how the
+two come to disagree. Super admin only, gated in the route: unlike closing the office this is not
+delegated per-administrator, since one week decides what every request in the organisation costs.
+An empty week is refused by both the schema and the service — it would leave every request holding
+zero working days and refuse them all.
+
+Saturday and Sunday are **nowhere** in the code as a default weekend. The seeded `[1,2,3,4,5]` is a
+starting value, not an assumption; a company that rests Friday and Sunday and works Saturday
+configures exactly that.
+
 ## An office day off outranks leave
 
 A `Holiday` is a date the whole company is closed. It is deliberately **not** modelled as a kind of
@@ -366,12 +419,13 @@ day → not a declared closure → the cutoff has actually passed**. The closure
 clock for the same reason marking present does — on a day the office was shut there is nothing to
 have missed.
 
-**`workingDays` exists because nothing else here knows a weekend.** Leave counts every day, and
-`Holiday` is per-date, so without it the sweep would write to the entire company every Saturday and
-Sunday and the streak would climb through them. It also feeds the roster, where a non-working day
-reads `NON_WORKING` rather than `ABSENT`. It deliberately does **not** block checking in: the working
+**`workingDays` is the same week leave is charged against** — see "Only working days cost a leave".
+Without it the sweep would write to the entire company every Saturday and Sunday and the streak
+would climb through them. It also feeds the roster, where a non-working day reads `NON_WORKING`
+rather than `ABSENT`, and the admin screen says so above the table so a weekend roster cannot read
+as a day everybody failed to turn up. It deliberately does **not** block checking in: the working
 week governs who is *expected* and who is *chased*, not who is permitted to record a day — somebody
-who comes in on a Saturday can still mark it.
+who comes in on a Saturday can still mark it, and it still costs them no leave.
 
 **The row is the claim, not the receipt.** `attendanceWarningRepository.claim` inserts before a word
 is written, so the unique index on `(employeeId, date)` picks one winner out of any number of racing

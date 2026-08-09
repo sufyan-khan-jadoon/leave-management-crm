@@ -1,7 +1,7 @@
 import type { Role } from "@prisma/client";
 
-import { isWorkingWeekday } from "@/lib/attendance-policy";
 import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
+import { isWorkingWeekday } from "@/lib/working-days";
 import { ConflictError, ForbiddenError, ValidationError } from "@/lib/errors";
 import { judgePosition } from "@/lib/geo";
 import {

@@ -100,6 +100,20 @@ export type AttendancePolicyView = {
   updatedBy: { id: string; name: string; email: string } | null;
 };
 
+/**
+ * The organisation's working week, as the settings screen receives it.
+ *
+ * `daysOff` is derived from `workingDays` on the server rather than stored, so
+ * the two can never contradict each other — a day is off precisely when it is
+ * not a working day.
+ */
+export type WorkingWeekView = {
+  workingDays: number[];
+  daysOff: number[];
+  updatedAt: string;
+  updatedBy: { id: string; name: string; email: string } | null;
+};
+
 export type AttendanceRosterEntry = {
   employee: Pick<EmployeeView, "id" | "name" | "email" | "department" | "position" | "profilePhoto">;
   status: AttendanceDayStatus;
@@ -109,6 +123,8 @@ export type AttendanceRosterEntry = {
 export type AttendanceRosterView = {
   date: string;
   officeClosed: boolean;
+  /** False outside the ordinary working week — a weekend, for most companies. */
+  isWorkingDay: boolean;
   items: AttendanceRosterEntry[];
   pagination: Pagination;
   summary: { expected: number; present: number; absent: number; onLeave: number };

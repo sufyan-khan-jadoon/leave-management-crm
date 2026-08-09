@@ -117,7 +117,7 @@ export const ROUTES = {
   adminDashboard: "/admin",
   adminEmployees: "/admin/employees",
   adminLeaves: "/admin/leaves",
-  adminHolidays: "/admin/holidays",
+  adminWorkingDays: "/admin/working-days",
   adminAttendance: "/admin/attendance",
   adminAccess: "/admin/access",
   attendance: "/attendance",

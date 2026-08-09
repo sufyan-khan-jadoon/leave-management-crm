@@ -1,12 +1,8 @@
 import { Role } from "@prisma/client";
 
-import {
-  countConsecutiveMissed,
-  hasCutoffPassed,
-  isWorkingWeekday,
-  type DayVerdict,
-} from "@/lib/attendance-policy";
+import { countConsecutiveMissed, hasCutoffPassed, type DayVerdict } from "@/lib/attendance-policy";
 import { addUtcDays, todayUtc, toIsoDate } from "@/lib/date";
+import { isWorkingWeekday } from "@/lib/working-days";
 import { attendanceRepository } from "@/repositories/attendance.repository";
 import { attendanceWarningRepository } from "@/repositories/attendance-warning.repository";
 import { employeeRepository } from "@/repositories/employee.repository";

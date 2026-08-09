@@ -199,11 +199,18 @@ export function AttendanceManager() {
             </div>
           </div>
 
-          {data?.officeClosed && (
+          {/*
+            Both reasons a day expects nobody are announced, and the declared
+            closure wins when they coincide: "closed for Independence Day" says
+            more than "it was a Saturday". Without the second line a weekend
+            roster would read as a day the whole company failed to turn up.
+          */}
+          {data && (data.officeClosed || !data.isWorkingDay) && (
             <div className="glass-inset text-muted-foreground flex items-center gap-2 rounded-xl p-3 text-sm">
               <CalendarOff className="size-4 shrink-0" aria-hidden />
-              The office was closed on {formatDate(data.date)}. Nobody was expected in, and the day cost
-              nobody a leave.
+              {data.officeClosed
+                ? `The office was closed on ${formatDate(data.date)}. Nobody was expected in, and the day cost nobody a leave.`
+                : `${formatDate(data.date)} is not a working day. Nobody was expected in, nobody is marked absent, and the day cost nobody a leave.`}
             </div>
           )}
 

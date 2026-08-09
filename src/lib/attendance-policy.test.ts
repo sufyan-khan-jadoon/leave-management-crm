@@ -16,8 +16,6 @@ import {
   cutoffInstant,
   friendlyTimeLabel,
   hasCutoffPassed,
-  isWorkingWeekday,
-  isoWeekday,
   minutesToTimeLabel,
   ordinal,
   timeLabelToMinutes,
@@ -29,32 +27,9 @@ function day(iso: string): Date {
   return new Date(`${iso}T00:00:00.000Z`);
 }
 
-describe("isoWeekday", () => {
-  it("calls Monday 1 and Sunday 7", () => {
-    // 2026-08-10 is a Monday.
-    expect(isoWeekday(day("2026-08-10"))).toBe(1);
-    expect(isoWeekday(day("2026-08-15"))).toBe(6);
-    expect(isoWeekday(day("2026-08-16"))).toBe(7);
-  });
-});
-
-describe("isWorkingWeekday", () => {
-  const monToFri = [1, 2, 3, 4, 5];
-
-  it("expects people in on a Monday", () => {
-    expect(isWorkingWeekday(day("2026-08-10"), monToFri)).toBe(true);
-  });
-
-  it("does not expect anyone on Saturday or Sunday", () => {
-    expect(isWorkingWeekday(day("2026-08-15"), monToFri)).toBe(false);
-    expect(isWorkingWeekday(day("2026-08-16"), monToFri)).toBe(false);
-  });
-
-  it("honours a six-day week when configured", () => {
-    expect(isWorkingWeekday(day("2026-08-15"), [1, 2, 3, 4, 5, 6])).toBe(true);
-    expect(isWorkingWeekday(day("2026-08-16"), [1, 2, 3, 4, 5, 6])).toBe(false);
-  });
-});
+// `isoWeekday` and `isWorkingWeekday` moved to `working-days.ts` when the
+// working week grew to govern leave as well as attendance; they are covered in
+// `working-days.test.ts`.
 
 describe("cutoffInstant", () => {
   it("is 5pm on the company's clock, not the server's", () => {

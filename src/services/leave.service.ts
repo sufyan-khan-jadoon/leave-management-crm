@@ -11,6 +11,7 @@ import {
   utcDayRange,
 } from "@/lib/date";
 import { ConflictError, NotFoundError } from "@/lib/errors";
+import type { DaySplit } from "@/lib/working-days";
 import { employeeRepository } from "@/repositories/employee.repository";
 import { holidayRepository } from "@/repositories/holiday.repository";
 import {
@@ -20,6 +21,7 @@ import {
   type LeaveWithEmployeeDto,
 } from "@/repositories/leave.repository";
 import { emailService } from "@/services/email/email.service";
+import { workingDaysService } from "@/services/working-days.service";
 
 /** Allowance picture for one calendar month a request touches. */
 export type LeaveMonthUsage = {
@@ -31,12 +33,18 @@ export type LeaveMonthUsage = {
 
 export type LeavePlan = {
   ok: boolean;
-  /** The days that will actually be booked — office closures already removed. */
+  /**
+   * The days that will actually be booked and charged — the working days of the
+   * requested range, with weekly days off and office closures already removed.
+   * Its length *is* the duration of the leave.
+   */
   dates: Date[];
   reason: string;
   months?: LeaveMonthUsage[];
   /** Days dropped from the request because the office is closed anyway. */
   closedDates?: Date[];
+  /** Days dropped because the ordinary week does not work them. */
+  weeklyOffDates?: Date[];
   /** Why the range cannot be booked, phrased for the employee. */
   problem?: string;
   remainingAfter?: number;
@@ -58,12 +66,45 @@ export type LeaveBalance = {
 };
 
 /**
+ * Why a requested range holds no leave at all, in the employee's words.
+ *
+ * Says which days were ruled out and why rather than just refusing: "there is no
+ * leave to book" on its own reads as a bug, where "Saturday and Sunday are not
+ * working days" reads as the answer to what was asked.
+ */
+function nothingToBook(split: DaySplit): string {
+  const parts: string[] = [];
+
+  if (split.closed.length > 0) {
+    parts.push(`the office is already closed ${formatDateRange(split.closed)}`);
+  }
+
+  if (split.weeklyOff.length > 0) {
+    const isPlural = split.weeklyOff.length > 1;
+    parts.push(
+      `${formatDateRange(split.weeklyOff)} ${isPlural ? "are not working days" : "is not a working day"}`,
+    );
+  }
+
+  return `There is no leave to book — ${parts.join(", and ")}.`;
+}
+
+/**
  * How much of a month's allowance an employee has actually spent.
  *
  * Days the office turned out to be closed are discounted rather than deleted:
  * when a closure is declared over leave somebody had already booked, the row
  * stays where it is and simply stops counting. That way withdrawing the closure
  * puts the day back without having to reconstruct anything.
+ *
+ * The weekly working days are deliberately *not* discounted here, and the
+ * asymmetry is the point. A closure is a fact declared about one date, so
+ * applying it backwards is the whole reason it can be withdrawn. The working
+ * week is a standing configuration: moving it must not silently rewrite what
+ * every past leave cost, which is what re-judging old rows against today's week
+ * would do. Nothing lands on a non-working day any more — `planLeave` never
+ * writes one — so this only ever concerns rows booked before the week was set,
+ * and those stay exactly as they were charged.
  */
 async function usedInMonth(employeeId: string, reference: Date): Promise<number> {
   const closedDates = await holidayRepository.closedDatesBetween(
@@ -104,22 +145,31 @@ export const leaveService = {
       return { dates: requested, reason, ok: false, problem: "Leave cannot start in the past." };
     }
 
-    // Days the office is shut are removed before anything else is judged: they
-    // are not working days, so they cannot clash, cannot be refused for want of
-    // allowance, and must not be written as leave. A request made entirely of
+    // Everything that is not a working day is removed before anything else is
+    // judged — days the ordinary week does not work, and days the office has
+    // been closed. Neither can clash, neither can be refused for want of
+    // allowance, and neither may be written as leave. A request made entirely of
     // them is nothing to book rather than something to deduct.
-    const closedDates = await holidayRepository.closedDatesAmong(requested);
-    const closed = new Set(closedDates.map((date) => date.getTime()));
-    const dates = requested.filter((date) => !closed.has(date.getTime()));
+    //
+    // This is what makes Friday-to-Monday cost two days rather than four: the
+    // range the employee asked for is unchanged, and only the working days
+    // inside it are booked and charged.
+    const split = await workingDaysService.split(requested);
+    const dates = split.working;
 
-    const base = { dates, reason, ...(closedDates.length > 0 ? { closedDates } : {}) };
+    const base = {
+      dates,
+      reason,
+      ...(split.closed.length > 0 ? { closedDates: split.closed } : {}),
+      ...(split.weeklyOff.length > 0 ? { weeklyOffDates: split.weeklyOff } : {}),
+    };
 
+    // Refused rather than quietly booked as nothing. Somebody asking for a
+    // Saturday off is not asking for zero days of leave, they have misunderstood
+    // the calendar, and a silent success would leave them thinking they were
+    // covered.
     if (dates.length === 0) {
-      return {
-        ...base,
-        ok: false,
-        problem: `The office is already closed ${formatDateRange(closedDates)}, so there is no leave to book.`,
-      };
+      return { ...base, ok: false, problem: nothingToBook(split) };
     }
 
     const clashes = await leaveRepository.findByEmployeeAndDates(employeeId, dates);

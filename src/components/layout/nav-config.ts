@@ -46,10 +46,10 @@ export const ADMIN_NAV: NavItem[] = [
   { href: ROUTES.adminEmployees, label: "Employees", icon: Users, group: "Manage" },
   { href: ROUTES.adminAttendance, label: "Attendance", icon: MapPin, group: "Manage" },
   { href: ROUTES.adminLeaves, label: "Leave requests", icon: CalendarDays, group: "Manage" },
-  // Shown to every administrator, not only those allowed to change it: knowing
-  // the office is shut is everyone's business, and the screen is read-only
-  // without the grant.
-  { href: ROUTES.adminHolidays, label: "Office days off", icon: CalendarOff, group: "Manage" },
+  // Shown to every administrator, not only those allowed to change it: which
+  // days the organisation works decides what everybody's leave costs, and the
+  // screen is read-only without the grant.
+  { href: ROUTES.adminWorkingDays, label: "Working days", icon: CalendarOff, group: "Manage" },
 
   { href: ROUTES.dashboard, label: "My leave", icon: LayoutDashboard, exact: true, group: "Personal" },
   // Administrators turn up to the office like everybody else, so they mark

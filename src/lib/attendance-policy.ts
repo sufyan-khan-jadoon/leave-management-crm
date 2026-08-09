@@ -1,44 +1,17 @@
 /**
- * When the working day ends, which days are working days at all, and how a run
- * of missed ones is counted.
+ * When the working day ends, and how a run of missed ones is counted.
  *
  * Kept free of Prisma and of the database so the rules can be read — and tested —
  * on their own, exactly as `holiday-notice.ts` is. `attendance-warning.service.ts`
  * decides what to do with the answers.
+ *
+ * Which days are working days at all is deliberately *not* here any more: the
+ * working week governs leave as well as attendance, so it outgrew this file and
+ * lives in `working-days.ts` as the one rule both read.
  */
 import { appZoneInstant } from "@/lib/date";
 
-/** 1 = Monday … 7 = Sunday, matching ISO-8601 rather than `Date.getUTCDay()`. */
-export type IsoWeekday = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-
-export const WEEKDAY_NAMES: Record<IsoWeekday, string> = {
-  1: "Monday",
-  2: "Tuesday",
-  3: "Wednesday",
-  4: "Thursday",
-  5: "Friday",
-  6: "Saturday",
-  7: "Sunday",
-};
-
 export const MINUTES_IN_DAY = 24 * 60;
-
-/**
- * ISO weekday for a calendar date.
- *
- * `getUTCDay()` calls Sunday 0, which sorts the week wrongly and makes "Mon–Fri"
- * an awkward set to write down. Shifting to 1–7 with Monday first means a
- * working week is a contiguous range.
- */
-export function isoWeekday(date: Date): IsoWeekday {
-  const day = date.getUTCDay();
-  return (day === 0 ? 7 : day) as IsoWeekday;
-}
-
-/** Whether the ordinary week expects anybody in on this date. */
-export function isWorkingWeekday(date: Date, workingDays: number[]): boolean {
-  return workingDays.includes(isoWeekday(date));
-}
 
 /** "17:00" ⇄ 1020. The form speaks the first, every comparison speaks the second. */
 export function minutesToTimeLabel(minutes: number): string {
