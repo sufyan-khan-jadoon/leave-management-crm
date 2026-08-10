@@ -14,7 +14,7 @@ export default async function AdminAccessPage() {
   const session = await auth();
 
   // The admin layout has already let every administrator through; this narrows
-  // it to the super admin, who alone invites administrators and decides requests.
+  // it to the super admin, who alone decides administrator requests and grants.
   if (!session?.user || !isSuperAdminRole(session.user.role)) {
     redirect(ROUTES.adminDashboard);
   }
@@ -23,7 +23,7 @@ export default async function AdminAccessPage() {
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Access"
-        description="Invite employees and administrators, approve administrator requests, and set the working day."
+        description="Approve administrator requests, decide what each administrator may do, and set the working day."
       />
       <div className="grid gap-4">
         <AccessPanel />

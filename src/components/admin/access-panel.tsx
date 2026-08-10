@@ -5,14 +5,11 @@ import { Check, Loader2, ShieldX, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AdminPermissions, type Administrator } from "@/components/admin/admin-permissions";
-import { InvitationSection, type Invitation } from "@/components/admin/invitation-section";
-import type { JobRole } from "@/components/admin/job-role-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/date";
-import { ROLE } from "@/lib/enums";
 
 type PendingAdmin = {
   id: string;
@@ -22,33 +19,29 @@ type PendingAdmin = {
 };
 
 /**
- * The super admin's onboarding screen: decide pending administrator requests,
- * and invite people at either role.
+ * The super admin's access screen: decide pending administrator requests, and
+ * grant or withdraw what each administrator may do.
  *
- * Employee invitations come first because they are the everyday task —
- * administrator onboarding is rare by comparison.
+ * Inviting is deliberately **not** here. It moved to Members, behind the
+ * `Invite member` button on the screen that lists the people it produces — see
+ * `InviteMemberDialog`. This screen is about what an existing account may do;
+ * that one is about bringing an account into existence.
  */
 export function AccessPanel() {
-  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [pending, setPending] = useState<PendingAdmin[]>([]);
   const [admins, setAdmins] = useState<Administrator[]>([]);
-  const [jobRoles, setJobRoles] = useState<JobRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [invited, requests, administrators, titles] = await Promise.all([
-        apiClient.get<{ items: Invitation[] }>("/api/admin/invitations"),
+      const [requests, administrators] = await Promise.all([
         apiClient.get<{ items: PendingAdmin[] }>("/api/admin/requests"),
         apiClient.get<{ items: Administrator[] }>("/api/admin/administrators"),
-        apiClient.get<{ items: JobRole[] }>("/api/admin/job-roles"),
       ]);
 
-      setInvitations(invited.items);
       setPending(requests.items);
       setAdmins(administrators.items);
-      setJobRoles(titles.items);
     } catch (error) {
       toast.error(error instanceof ApiClientError ? error.message : "Couldn't load the access panel.");
     } finally {
@@ -131,16 +124,6 @@ export function AccessPanel() {
           )}
         </CardContent>
       </Card>
-
-      {/* The super admin may invite at either role, so both are offered in the
-          picker rather than split across two panels. */}
-      <InvitationSection
-        roles={[ROLE.EMPLOYEE, ROLE.ADMIN]}
-        invitations={invitations}
-        jobRoles={jobRoles}
-        canManageJobRoles
-        onChanged={load}
-      />
 
       <AdminPermissions admins={admins} onChanged={load} />
     </div>

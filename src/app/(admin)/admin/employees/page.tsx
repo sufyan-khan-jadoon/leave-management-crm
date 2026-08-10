@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
-import { EmployeeInvitations } from "@/components/admin/employee-invitations";
 import { EmployeeManager } from "@/components/admin/employee-manager";
+import { InviteMemberDialog } from "@/components/admin/invite-member-dialog";
 import { MembersManager } from "@/components/admin/members-manager";
 import { PageHeader } from "@/components/layout/page-header";
 import { auth } from "@/lib/auth/auth";
@@ -23,16 +23,15 @@ export default async function AdminEmployeesPage() {
         title={isSuperAdmin ? "Members" : "Employees"}
         description={
           isSuperAdmin
-            ? "Search, edit, suspend or remove employees and administrators."
+            ? "Invite new people, then search, edit, suspend or remove employees and administrators."
             : "Invite new people, then search, edit, suspend or remove them."
         }
+        // The only route into onboarding, for every administrator who has one.
+        // It shows itself or not according to what the server says the viewer may
+        // grant, so this page never has to work out who is allowed to invite.
+        actions={<InviteMemberDialog />}
       />
       <div className="space-y-4">
-        {/* Only for administrators, whose sole route to inviting anyone this is.
-            The super admin already has it on Access, alongside administrator
-            invitations — repeating it here would be the same panel twice. */}
-        {!isSuperAdmin && <EmployeeInvitations />}
-
         {isSuperAdmin ? <MembersManager /> : <EmployeeManager role={ROLE.EMPLOYEE} />}
       </div>
     </>

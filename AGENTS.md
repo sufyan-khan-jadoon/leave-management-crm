@@ -84,7 +84,17 @@ grant is settled in the service, against the role in the body. `/api/admin/invit
 `canIssue` purely so the UI can hide a form it may not submit; it mirrors the real check, never
 replaces it.
 
-`InvitationSection` is shared by the super admin's access panel and the Employees screen.
+**Inviting lives on Members and nowhere else.** `InviteMemberDialog` is the `Invite member` button in
+that screen's header and the form behind it; `InvitationSection` is the body of that dialog — the
+form, and the list that resends and withdraws. It used to sit open as a panel on two screens, which
+put the same act in two places and put onboarding on Access, a screen otherwise about what an
+*existing* account may do. The invitation itself did not change when it moved.
+
+The button decides whether to render from `canIssue` alone, never from the role in the session — so
+a withdrawn grant removes it on the next load rather than when a week-old token expires, and the
+picker offers exactly the roles the server would accept. A viewer who may invite nobody gets no
+button, which is why `InvitationSection` has no "you may not do this" state of its own.
+
 `InvitationGate` resolves the link server-side and renders either the sign-up form or the one thing
 left to do about a link that has expired, been used, or never existed.
 
