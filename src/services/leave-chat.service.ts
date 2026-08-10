@@ -1,6 +1,15 @@
 import { describeOfficeHours } from "@/lib/attendance-policy";
 import { MONTHLY_LEAVE_ALLOWANCE, quotaExceededMessage } from "@/lib/constants";
-import { formatDate, formatDateRange, monthLabel, toIsoDate, toUtcDay, todayUtc } from "@/lib/date";
+import {
+  currentTimeInAppZone,
+  formatDate,
+  formatDateRange,
+  monthLabel,
+  toIsoDate,
+  toUtcDay,
+  todayUtc,
+  utcWeekday,
+} from "@/lib/date";
 import { serverEnv } from "@/lib/env";
 import { describeWeekdays, weeklyOffDays } from "@/lib/working-days";
 import { holidayRepository } from "@/repositories/holiday.repository";
@@ -88,6 +97,18 @@ export const leaveChatService = {
 
     if (intent.intent === "hours") {
       return { reply: await describeHours(today) };
+    }
+
+    // Answered from the server's clock rather than from the prompt, for the same
+    // reason the hours are: a value the model was handed is a value it may round,
+    // reformat, or repeat three turns later when it has moved on.
+    if (intent.intent === "time") {
+      // The weekday is carried because "time" also answers "what day is it", and
+      // `todayUtc()` is the company's calendar day rather than the server's — so
+      // the clock and the date below it can never disagree across midnight.
+      return {
+        reply: `It's ${currentTimeInAppZone()} on ${utcWeekday(today)}, ${formatDate(today)} in Pakistan.`,
+      };
     }
 
     if (intent.intent === "history") {

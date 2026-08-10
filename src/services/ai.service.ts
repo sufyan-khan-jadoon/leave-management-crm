@@ -22,7 +22,7 @@ const REQUEST_TIMEOUT_MS = 20_000;
  * to the one place that knows.
  */
 const chatIntentSchema = z.object({
-  intent: z.enum(["book", "balance", "history", "hours", "other"]),
+  intent: z.enum(["book", "balance", "history", "hours", "time", "other"]),
   startDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be an ISO calendar date")
@@ -188,7 +188,7 @@ ${buildCalendar(today)}
 
 Reply with a single JSON object and nothing else:
 {
-  "intent": "book" | "balance" | "history" | "hours" | "other",
+  "intent": "book" | "balance" | "history" | "hours" | "time" | "other",
   "startDate": "YYYY-MM-DD" or null,
   "days": whole number or null,
   "reason": "short reason" or null,
@@ -201,16 +201,22 @@ Choose the intent:
 - "history" when they ask about leave they already booked.
 - "hours" when they ask about office hours, opening or closing time, timings,
   shift times, or which days of the week the office works.
+- "time" when they ask what the time is now, what today's date is, or what day
+  of the week it is.
 - "other" for anything else, including greetings.
 
 NEVER state a fact about this company that you were not given above. You do not
 know the office hours, the working days, the public holidays, the leave
 allowance, or any policy. If you are asked one, classify it — "hours" for
-timings and working days — and let the system answer. If it fits no intent, use
-"other" and say plainly that you do not have that information and they should
-ask their administrator. Inventing a plausible answer is the worst outcome
-available to you: it is indistinguishable from a real one to the person reading
-it, and they will act on it.
+timings and working days, "time" for the clock and today's date — and let the
+system answer. If it fits no intent, use "other" and say plainly that you do
+not have that information and they should ask their administrator. Inventing a
+plausible answer is the worst outcome available to you: it is indistinguishable
+from a real one to the person reading it, and they will act on it.
+
+Classifying is not refusing. "What time is it" has an answer and "time" is how
+you reach it — do not answer a question with "I don't have that information"
+when one of the intents above covers it.
 
 Rules for "book":
 - NEVER invent a start date. Only ever use ${iso}, a date the employee named, or
@@ -232,9 +238,9 @@ Rules for "book":
   dates are already booked. The system decides that and tells them separately.
   When every field is known, "reply" should be a short neutral restatement.
 
-For "balance", "history" and "hours", "reply" is ignored — the system answers
-from the company's own records — so a brief acknowledgement is enough. Do not
-put times, dates or day names in it; nobody will read them.
+For "balance", "history", "hours" and "time", "reply" is ignored — the system
+answers from the company's own records and clock — so a brief acknowledgement is
+enough. Do not put times, dates or day names in it; nobody will read them.
 
 Keep "reply" to one or two short sentences, plain and friendly.
 
@@ -266,6 +272,12 @@ Worked examples for today = ${iso}:
 
 "what time does the office close on Friday"
 {"intent":"hours","startDate":null,"days":null,"reason":null,"reply":"Let me check that."}
+
+"what time is it"
+{"intent":"time","startDate":null,"days":null,"reason":null,"reply":"Let me check the clock."}
+
+"whats the date today"
+{"intent":"time","startDate":null,"days":null,"reason":null,"reply":"Let me check."}
 
 "how much is the medical allowance"
 {"intent":"other","startDate":null,"days":null,"reason":null,"reply":"I don't have that information — your administrator can tell you."}`;

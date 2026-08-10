@@ -517,6 +517,16 @@ the branch to watch. It is the only intent whose wording reaches the employee un
 else, so every question it can absorb is a question the model may answer from nothing — when you add
 a fact worth asking about, add an intent, not a paragraph to the prompt.
 
+**`time` is the second instance of that rule, and it exists because the first one over-corrected.**
+Once told it knew nothing it had not been given, the assistant began refusing *"what time is it"* —
+a question with a real answer, which the prompt had been stating in its own header all along. So the
+prompt now says plainly that classifying is not refusing, and the clock became an intent like the
+rest: `leave-chat.service.ts` answers from `currentTimeInAppZone()` and `todayUtc()`, never from the
+header. A value handed to a model is a value it may round, reformat, or repeat three turns later
+when it has moved on; a value read per-question cannot go stale. Both halves are formatted through
+`APP_TIME_ZONE`, so the sentence reads identically whether the server runs in UTC or anywhere else —
+verified by rendering it under both.
+
 ### Erasing check-ins — the danger zone
 
 `POST /api/admin/attendance/reset` deletes check-ins, either for one date or every one ever
@@ -684,3 +694,27 @@ the rules built on it, with no database, network or environment to stand up. Any
 those is verified by driving the real endpoints instead. Don't add a test that reaches for Prisma;
 it will need secrets and a live database, and the suite stops being something you can run on a
 plane.
+
+## Migrations ride with the build that needs them
+
+`npm run build` runs `scripts/migrate-production.mjs` between `prisma generate` and `next build`, and
+that script applies pending migrations **only when `VERCEL_ENV === "production"`**.
+
+The ordering is the point. Code that selects a column, shipped ahead of the migration that adds it,
+does not fail at deploy time — it fails later, on whichever screen touches that table first, so a
+green deploy comes to mean nothing. This happened in slow motion once already: the office-hours
+columns had to be applied by hand before the push, and only because somebody remembered to check.
+
+**The environment guard is the whole safety argument, not a tidy-up.** Vercel runs this same build
+command for preview deployments, against whatever `DATABASE_URL` that environment carries — which for
+most projects is the production database. An unguarded `prisma migrate deploy` here would let a
+half-finished branch migrate live data simply by being pushed.
+
+It is a Node script rather than the obvious `[ "$VERCEL_ENV" = production ] && ...` in `package.json`
+because npm runs scripts through `cmd.exe` on Windows: a POSIX test would break `npm run build` for
+anyone developing here while working perfectly in CI, which is the worst division of labour
+available. `process.env` reads the same on both.
+
+A failed migration deliberately fails the build. Deploying anyway is the outcome the script exists to
+prevent, so a migration that cannot be applied has to stop the release rather than be reported and
+stepped over. `npm run db:deploy` remains for applying migrations by hand.
