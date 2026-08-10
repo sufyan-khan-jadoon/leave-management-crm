@@ -76,13 +76,57 @@ export const employeeService = {
     return updated;
   },
 
-  /** Self-service profile edit. */
+  /**
+   * Self-service profile edit.
+   *
+   * **The super admin has full authority over their own account here, and it is
+   * the only account that does.** `assertMayManage` refuses every edit of a
+   * `SUPER_ADMIN` row from the dashboard — rightly, since nothing should be able
+   * to suspend or retitle the owner — but that left the name, address and job
+   * title of that one account unreachable by anybody at all, itself included.
+   * Everyone else has somebody senior to ask; the owner has nobody, so the
+   * authority lands here instead of nowhere.
+   *
+   * Both grants are decided against `employee.role` read from the database, not
+   * a role carried in the session, so a demoted account loses them on the next
+   * request rather than when a week-old token expires.
+   */
   async updateOwnProfile(employeeId: string, input: ProfileUpdateInput): Promise<EmployeeDto> {
     const employee = await employeeRepository.findById(employeeId);
     if (!employee) throw new NotFoundError("Employee not found.");
 
+    const owner = isSuperAdminRole(employee.role);
+
+    const email = input.email !== undefined ? normalizeEmail(input.email) : undefined;
+    const changingEmail = email !== undefined && email !== employee.email;
+
+    // Submitting the address you already have is not a change, so it is not
+    // refused — the form echoes the field back whether or not it was touched.
+    if (changingEmail) {
+      if (!owner) {
+        throw new ForbiddenError("Your email address is changed by an administrator.");
+      }
+
+      const clash = await employeeRepository.findByEmail(email);
+      if (clash) throw new ConflictError("Another account already uses that email address.");
+    }
+
+    // The title is assigned rather than claimed. `ProfileForm` renders it
+    // read-only once set, but that is a courtesy — this is the rule, so a
+    // hand-made request cannot award somebody a job title they were not given.
+    // An empty one is still claimable, which is what profile setup writes.
+    if (
+      input.position !== undefined &&
+      input.position !== employee.position &&
+      employee.position &&
+      !owner
+    ) {
+      throw new ForbiddenError("Your job title is set by an administrator.");
+    }
+
     const updated = await employeeRepository.update(employeeId, {
       ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(email !== undefined ? { email } : {}),
       ...(input.phone !== undefined ? { phone: input.phone } : {}),
       ...(input.department !== undefined ? { department: input.department } : {}),
       ...(input.position !== undefined ? { position: input.position } : {}),

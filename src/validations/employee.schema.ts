@@ -37,15 +37,44 @@ export const profileSetupSchema = z.object({
 
 export type ProfileSetupInput = z.infer<typeof profileSetupSchema>;
 
+const nameSchema = z.string().trim().min(2, "Name must be at least 2 characters").max(80);
+const emailSchema = z.string().trim().toLowerCase().email("Enter a valid email address");
+
+/**
+ * Self-service edit.
+ *
+ * `email` is accepted here but **granted to the super admin alone**, settled in
+ * `updateOwnProfile` against the role on the row rather than the one in the
+ * session. The looser schema with the real check behind it is the same split the
+ * invitation routes use: a shape that cannot express the request at all would
+ * mean a second endpoint for one account, and two ways to write one field is how
+ * the two come to disagree.
+ */
 export const profileUpdateSchema = profileSetupSchema.partial().extend({
-  name: z.string().trim().min(2, "Name must be at least 2 characters").max(80).optional(),
+  name: nameSchema.optional(),
+  email: emailSchema.optional(),
 });
 
 export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
 
+/**
+ * The profile form for an account that answers to nobody.
+ *
+ * Same required fields as setup, plus the name and address that are otherwise an
+ * administrator's to change. Used by `ProfileForm` for the super admin only —
+ * everyone else validates against `profileSetupSchema`, which has no field for
+ * either, so the form cannot submit what the server would refuse.
+ */
+export const ownIdentityProfileSchema = profileSetupSchema.extend({
+  name: nameSchema,
+  email: emailSchema,
+});
+
+export type OwnIdentityProfileInput = z.infer<typeof ownIdentityProfileSchema>;
+
 /** Admin-side edit — may additionally change identity and account status. */
 export const adminEmployeeUpdateSchema = profileUpdateSchema.extend({
-  email: z.string().trim().toLowerCase().email("Enter a valid email address").optional(),
+  email: emailSchema.optional(),
   status: z.nativeEnum(EmployeeStatus).optional(),
 });
 

@@ -62,8 +62,9 @@ does. There is deliberately no third field competing with `position` and `depart
 
 Any admin may add a title (naming the jobs you hire for is bookkeeping); only the super admin may
 remove one, since that changes what everyone else can pick. Because the title is assigned rather
-than claimed, `ProfileForm` renders `position` read-only once set — administrators change it
-through the separate edit dialog on the People screen.
+than claimed, `ProfileForm` renders `position` read-only once set and `updateOwnProfile` refuses to
+change one — the form is the courtesy, the service is the rule. Administrators change it through the
+separate edit dialog on the Staff screen; the super admin sets their own, having nobody to ask.
 
 **`canInviteEmployees` is off by default.** Being an admin is not by itself permission to onboard
 people; the super admin grants it per administrator. `permissionsFor()` reads it from the database
@@ -186,6 +187,29 @@ and write of another account — `adminUpdate`, `setStatus`, `remove`, and `byId
 Editing counts as a privileged action because changing an email address is the first half of an
 account takeover: the new address can then be sent a password reset. Refusals on reads are phrased
 as *not found*, so the endpoints cannot be used to discover which ids belong to administrators.
+
+**The super admin edits their own identity from `/profile`, and is the only account that may.** The
+rule above is right about the dashboard and left a gap behind it: every other account has somebody
+senior who can correct its name, address or job title from the Staff screen, and the owner has
+nobody — so those three fields were editable by no one at all, the owner included. `updateOwnProfile`
+is where that authority lands, because it is the one place an account acts on itself.
+
+Both grants are decided against `employee.role` **read from the row**, never the role in the session,
+so they follow the account rather than a week-old token. `profileUpdateSchema` accepts `email` from
+anybody and the service refuses it for everybody else — the same looser-schema-with-the-real-check-
+behind-it split the invitation routes use, because a shape that could not express the request would
+mean a second endpoint for one account.
+
+Two things this deliberately does **not** do. It does not let the owner suspend or delete themselves:
+`assertMayManage` still refuses all of that, and status is not a field `/profile` has. And it does not
+re-verify a changed address, matching `adminUpdate`, which has never done so either — demanding proof
+of the new mailbox would lock the owner out of their own system on a typo, with nobody able to undo
+it. The cost is that `emailVerified` can outlive the address it was proved against.
+
+`position` is enforced here too, not only in the form. The title is assigned rather than claimed, so
+`updateOwnProfile` refuses to change one that is already set — `ProfileForm` rendering it read-only
+is a courtesy, exactly as the read-only address on the registration form is. An unset title is still
+claimable, which is what profile setup writes. The owner is the exception, for the reason above.
 
 Listing is gated in the route handler — `role=ADMIN` on `/api/admin/employees` requires super
 admin — because the roster is the route to every action on those accounts. `SUPER_ADMIN` is not a
