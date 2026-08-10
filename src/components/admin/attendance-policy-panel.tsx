@@ -11,7 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ApiClientError, apiClient } from "@/lib/api-client";
-import { friendlyTimeLabel, minutesToTimeLabel, timeLabelToMinutes } from "@/lib/attendance-policy";
+import {
+  describeOfficeHours,
+  friendlyTimeLabel,
+  minutesToTimeLabel,
+  timeLabelToMinutes,
+} from "@/lib/attendance-policy";
 import { ROUTES } from "@/lib/constants";
 import { formatDateTime } from "@/lib/date";
 import { describeWeekdays, weeklyOffDays } from "@/lib/working-days";
@@ -35,6 +40,8 @@ export function AttendancePolicyPanel() {
   const [saving, setSaving] = useState(false);
 
   const [cutoff, setCutoff] = useState("17:00");
+  const [opening, setOpening] = useState("09:00");
+  const [closing, setClosing] = useState("17:00");
   const [enabled, setEnabled] = useState(true);
 
   const load = useCallback(async () => {
@@ -46,6 +53,8 @@ export function AttendancePolicyPanel() {
       setPolicy(result.policy);
       setCanManage(result.canManage);
       setCutoff(minutesToTimeLabel(result.policy.cutoffMinutes));
+      setOpening(minutesToTimeLabel(result.policy.openingMinutes));
+      setClosing(minutesToTimeLabel(result.policy.closingMinutes));
       setEnabled(result.policy.warningsEnabled);
     } catch (error) {
       toast.error(error instanceof ApiClientError ? error.message : "Couldn't load the attendance policy.");
@@ -67,11 +76,30 @@ export function AttendancePolicyPanel() {
       return;
     }
 
+    const openingMinutes = timeLabelToMinutes(opening);
+    const closingMinutes = timeLabelToMinutes(closing);
+
+    if (openingMinutes === null || closingMinutes === null) {
+      toast.error("Enter office hours between 00:00 and 23:59.");
+      return;
+    }
+
+    // Caught here so the sentence the panel is about to show never reads
+    // backwards. The server checks it again on the bytes that arrive.
+    if (openingMinutes >= closingMinutes) {
+      toast.error("The office must close after it opens.");
+      return;
+    }
+
     setSaving(true);
 
     try {
       const updated = await apiClient.patch<AttendancePolicyView>("/api/admin/attendance/policy", {
         cutoff,
+        // Always sent as a pair: the endpoint judges them together, and the
+        // panel has both in hand whether or not either was touched.
+        opening,
+        closing,
         warningsEnabled: enabled,
       });
 
@@ -101,25 +129,76 @@ export function AttendancePolicyPanel() {
 
   if (!policy) return null;
 
-  const dirty = cutoff !== minutesToTimeLabel(policy.cutoffMinutes) || enabled !== policy.warningsEnabled;
+  const dirty =
+    cutoff !== minutesToTimeLabel(policy.cutoffMinutes) ||
+    opening !== minutesToTimeLabel(policy.openingMinutes) ||
+    closing !== minutesToTimeLabel(policy.closingMinutes) ||
+    enabled !== policy.warningsEnabled;
   const daysOff = weeklyOffDays(policy.workingDays);
+
+  // Falls back to the saved values while either box is mid-edit, so the sentence
+  // never reads "Invalid Date to 5:00 PM" as somebody types.
+  const openingPreview = timeLabelToMinutes(opening) ?? policy.openingMinutes;
+  const closingPreview = timeLabelToMinutes(closing) ?? policy.closingMinutes;
+  const hoursLabel =
+    openingPreview < closingPreview
+      ? describeOfficeHours(openingPreview, closingPreview)
+      : "The office must close after it opens.";
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <MailWarning className="text-primary-ink size-4" aria-hidden />
-          Attendance warnings
+          Office hours and attendance
         </CardTitle>
         <CardDescription>
-          Anyone who has not marked attendance by the cutoff on a working day is emailed a warning
-          letter. Office closures and approved leave never count against anybody. The super admin is
-          never written to.
+          The hours the office keeps, and the deadline after which anyone who has not marked
+          attendance on a working day is emailed a warning letter. Office closures and approved
+          leave never count against anybody. The super admin is never written to.
         </CardDescription>
       </CardHeader>
 
       <CardContent>
         <form onSubmit={save} className="grid gap-5">
+          <div className="space-y-2">
+            <Label>Office hours</Label>
+            <div className="flex flex-wrap items-end gap-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="office-opening" className="text-muted-foreground text-xs font-normal">
+                  Opens
+                </Label>
+                <Input
+                  id="office-opening"
+                  type="time"
+                  value={opening}
+                  onChange={(event) => setOpening(event.target.value)}
+                  disabled={!canManage || saving}
+                  className="w-36"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="office-closing" className="text-muted-foreground text-xs font-normal">
+                  Closes
+                </Label>
+                <Input
+                  id="office-closing"
+                  type="time"
+                  value={closing}
+                  onChange={(event) => setClosing(event.target.value)}
+                  disabled={!canManage || saving}
+                  className="w-36"
+                />
+              </div>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {hoursLabel} Pakistan time. Published so people — and the leave assistant — can be told
+              the hours. Marking attendance is never judged by the clock: only where somebody is
+              standing, and whether the office is open that day.
+            </p>
+          </div>
+
           <div className="flex flex-wrap items-end gap-5">
             <div className="space-y-1.5">
               <Label htmlFor="attendance-cutoff">Cutoff time</Label>

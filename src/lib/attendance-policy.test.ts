@@ -14,8 +14,11 @@ import { describe, expect, it } from "vitest";
 import {
   countConsecutiveMissed,
   cutoffInstant,
+  describeOfficeHours,
   friendlyTimeLabel,
   hasCutoffPassed,
+  isTimeOfDay,
+  MINUTES_IN_DAY,
   minutesToTimeLabel,
   ordinal,
   timeLabelToMinutes,
@@ -122,6 +125,33 @@ describe("time labels", () => {
     expect(friendlyTimeLabel(9 * 60 + 30)).toBe("9:30 AM");
     expect(friendlyTimeLabel(0)).toBe("12:00 AM");
     expect(friendlyTimeLabel(12 * 60)).toBe("12:00 PM");
+  });
+});
+
+describe("isTimeOfDay", () => {
+  it("accepts every minute of a real day, and the boundaries", () => {
+    expect(isTimeOfDay(0)).toBe(true);
+    expect(isTimeOfDay(MINUTES_IN_DAY - 1)).toBe(true);
+    expect(isTimeOfDay(FIVE_PM)).toBe(true);
+  });
+
+  it("refuses anything that is not a minute on a clock", () => {
+    expect(isTimeOfDay(-1)).toBe(false);
+    expect(isTimeOfDay(MINUTES_IN_DAY)).toBe(false);
+    expect(isTimeOfDay(9.5)).toBe(false);
+    expect(isTimeOfDay(Number.NaN)).toBe(false);
+  });
+});
+
+describe("describeOfficeHours", () => {
+  it("reads as the sentence the assistant says out loud", () => {
+    expect(describeOfficeHours(9 * 60, FIVE_PM)).toBe("9:00 AM to 5:00 PM");
+    expect(describeOfficeHours(8 * 60 + 30, 16 * 60)).toBe("8:30 AM to 4:00 PM");
+  });
+
+  it("spans noon and midnight without losing the meridiem", () => {
+    expect(describeOfficeHours(0, 12 * 60)).toBe("12:00 AM to 12:00 PM");
+    expect(describeOfficeHours(12 * 60, MINUTES_IN_DAY - 1)).toBe("12:00 PM to 11:59 PM");
   });
 });
 

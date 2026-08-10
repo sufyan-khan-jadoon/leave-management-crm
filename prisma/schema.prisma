@@ -367,6 +367,25 @@ model AttendancePolicy {
   /// a comparison, and two columns would let them disagree.
   cutoffMinutes Int @default(1020)
 
+  /// When the office opens and closes, on the company's clock, in the same
+  /// minutes-after-midnight form as the cutoff above.
+  ///
+  /// These are **published facts, not rules**. Nothing judges attendance by
+  /// them: a check-in is decided by the geofence and by whether the office was
+  /// closed, never by the clock, so somebody who arrives early or stays late
+  /// records the day exactly as anybody else does. They exist because people ask
+  /// what the hours are and the assistant had nothing to answer from — so it
+  /// invented an answer.
+  ///
+  /// Do **not** reach for these to fill `AttendanceStatus.LATE` or `HALF_DAY`.
+  /// Those are absent because this project has no working hours in the sense
+  /// that judges a person, and publishing an opening time does not create one.
+  ///
+  /// 9-to-5 is a starting value, not an assumption, exactly as `[1,2,3,4,5]` is
+  /// below: a company opening at 08:30 and closing at 16:00 configures that.
+  openingMinutes Int @default(540)
+  closingMinutes Int @default(1020)
+
   /// ISO weekday numbers attendance is expected on — 1 = Monday, 7 = Sunday.
   ///
   /// Without this the warning sweep would write to the whole company every

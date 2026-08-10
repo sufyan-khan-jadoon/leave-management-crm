@@ -14,6 +14,8 @@ const POLICY_ID = "policy";
 export const attendancePolicySelect = {
   id: true,
   cutoffMinutes: true,
+  openingMinutes: true,
+  closingMinutes: true,
   workingDays: true,
   warningsEnabled: true,
   updatedAt: true,
@@ -42,7 +44,13 @@ export const attendancePolicyRepository = {
   },
 
   update(
-    data: { cutoffMinutes?: number; workingDays?: number[]; warningsEnabled?: boolean },
+    data: {
+      cutoffMinutes?: number;
+      openingMinutes?: number;
+      closingMinutes?: number;
+      workingDays?: number[];
+      warningsEnabled?: boolean;
+    },
     updatedById: string,
   ): Promise<AttendancePolicyDto> {
     return prisma.attendancePolicy.upsert({

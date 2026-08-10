@@ -1,4 +1,4 @@
-import { MINUTES_IN_DAY } from "@/lib/attendance-policy";
+import { isTimeOfDay } from "@/lib/attendance-policy";
 import { ValidationError } from "@/lib/errors";
 import {
   attendancePolicyRepository,
@@ -24,10 +24,29 @@ export const attendancePolicyService = {
     // Belt and braces over the schema: the cutoff decides when anybody is warned
     // at all, and a nonsensical one would quietly switch the whole feature off
     // while appearing configured.
-    if (input.cutoffMinutes !== undefined) {
-      if (!Number.isInteger(input.cutoffMinutes) || input.cutoffMinutes < 0 || input.cutoffMinutes >= MINUTES_IN_DAY) {
-        throw new ValidationError("Choose a time of day.", { cutoffMinutes: "Enter a time between 00:00 and 23:59." });
-      }
+    if (input.cutoffMinutes !== undefined && !isTimeOfDay(input.cutoffMinutes)) {
+      throw new ValidationError("Choose a time of day.", { cutoffMinutes: "Enter a time between 00:00 and 23:59." });
+    }
+
+    if (input.openingMinutes !== undefined && !isTimeOfDay(input.openingMinutes)) {
+      throw new ValidationError("Choose a time of day.", { openingMinutes: "Enter a time between 00:00 and 23:59." });
+    }
+
+    if (input.closingMinutes !== undefined && !isTimeOfDay(input.closingMinutes)) {
+      throw new ValidationError("Choose a time of day.", { closingMinutes: "Enter a time between 00:00 and 23:59." });
+    }
+
+    // Re-checked here rather than left to the schema, because this is the pair's
+    // one invariant and every screen quotes it as a sentence: "9:00 AM to 8:00
+    // AM" is not a day, and nothing downstream would notice it was reading one.
+    if (
+      input.openingMinutes !== undefined &&
+      input.closingMinutes !== undefined &&
+      input.openingMinutes >= input.closingMinutes
+    ) {
+      throw new ValidationError("Check the office hours.", {
+        closingMinutes: "The office must close after it opens.",
+      });
     }
 
     // `workingDays` shares this row but is not written here — it belongs to
@@ -35,6 +54,8 @@ export const attendancePolicyService = {
     return attendancePolicyRepository.update(
       {
         ...(input.cutoffMinutes !== undefined ? { cutoffMinutes: input.cutoffMinutes } : {}),
+        ...(input.openingMinutes !== undefined ? { openingMinutes: input.openingMinutes } : {}),
+        ...(input.closingMinutes !== undefined ? { closingMinutes: input.closingMinutes } : {}),
         ...(input.warningsEnabled !== undefined ? { warningsEnabled: input.warningsEnabled } : {}),
       },
       actorId,

@@ -42,6 +42,27 @@ export function friendlyTimeLabel(minutes: number): string {
 }
 
 /**
+ * Whether a stored minutes-after-midnight value is a real time of day.
+ *
+ * One question asked by the cutoff, the opening and the closing alike, so a new
+ * time-of-day setting cannot arrive with a looser idea of what a clock is.
+ */
+export function isTimeOfDay(minutes: number): boolean {
+  return Number.isInteger(minutes) && minutes >= 0 && minutes < MINUTES_IN_DAY;
+}
+
+/**
+ * The office hours as a sentence, e.g. "9:00 AM to 5:00 PM".
+ *
+ * Written here rather than in the assistant so the panel, the screens and the
+ * chat reply all quote the hours in one wording — the reply is read out to
+ * employees, and two phrasings of one fact is how they come to disagree.
+ */
+export function describeOfficeHours(openingMinutes: number, closingMinutes: number): string {
+  return `${friendlyTimeLabel(openingMinutes)} to ${friendlyTimeLabel(closingMinutes)}`;
+}
+
+/**
  * The instant the day's cutoff falls, on the company's clock.
  *
  * Measured through `appZoneInstant` rather than by adding an offset: a server in

@@ -398,9 +398,17 @@ everything (a closure declared afterwards must not erase the record of somebody 
 `CLOSED`, then `ON_LEAVE`, then `ABSENT`. Withdraw a closure and yesterday goes back to what it was
 with nothing migrated — verified.
 
-The project has **no working hours**, so `LATE` and `HALF_DAY` are deliberately absent rather than
-write-dead in the way `LeaveStatus.PENDING` became. The `status` column exists so they have somewhere
-to land once working hours are actually defined; don't invent them to fill it.
+The project has **no working hours that judge anybody**, so `LATE` and `HALF_DAY` are deliberately
+absent rather than write-dead in the way `LeaveStatus.PENDING` became. The `status` column exists so
+they have somewhere to land once working hours are actually defined; don't invent them to fill it.
+
+`AttendancePolicy.openingMinutes` / `closingMinutes` are **not** that definition, and the distinction
+is the whole of why they are safe. They are the hours the company *publishes* — a fact people ask
+for, so the assistant has something true to read out. Nothing compares a `checkInAt` against them:
+`markPresent` asks the geofence and the closure and never the clock, so somebody arriving at 07:40 or
+staying until 21:00 records the day exactly as anybody else does. Deriving `LATE` from
+`openingMinutes` is the change this note exists to prevent — it would turn a published courtesy into
+a verdict on a person, quietly, without any of the argument such a rule deserves.
 
 `@@unique([employeeId, date])` is what prevents a second check-in, so a duplicate is settled by the
 database rather than by the service that looked a moment earlier — eight concurrent taps produce one
@@ -480,6 +488,34 @@ an endpoint back.
 Geolocation needs a secure context: HTTPS in production, localhost in development. Opening the app
 over plain http on a LAN address to test on a phone is the one case that bites, and
 `isGeolocationAvailable()` reports it as `unsupported` with a message that says so.
+
+### The hours are published, and the assistant reads them
+
+`openingMinutes` and `closingMinutes` sit on the same singleton as the cutoff, written through the
+same `/api/admin/attendance/policy` by the super admin alone. They are validated **as a pair** — both
+or neither, and the office must close after it opens — because every surface quotes them as one
+sentence, and "9:00 AM to 8:00 AM" is not a day that anything downstream would notice it was reading.
+`describeOfficeHours` is that sentence, in `attendance-policy.ts` beside the other pure time rules, so
+the panel and the assistant cannot phrase one fact two ways.
+
+**They exist because the assistant was inventing them.** Asked "what are the timings of office", the
+model classified it as `other`, whose `reply` `leave-chat.service.ts` passes through untouched, and
+answered *"Our office hours are 9:00 AM to 5:00 PM, Monday to Friday."* That string was in no table.
+It was wrong twice: the hours were fabricated, and the working week is configurable, so a company
+resting Friday and Sunday was told its own week backwards by its own software.
+
+The fix is the rule the rest of this file already follows — **the model classifies, the database
+answers**. `hours` is an intent exactly like `balance` and `history`: its `reply` is discarded, and
+`describeHours` builds the answer from `AttendancePolicy` and `weeklyOffDays`, adding today's closure
+because somebody asking when the office opens is usually asking whether to come in. Do **not**
+"simplify" this by putting the hours into the system prompt instead — a fact in the prompt is a fact
+the model may paraphrase, round, or carry into the next turn after it has changed.
+
+The prompt now also forbids stating *any* company fact it was not given, and says why: an invented
+answer is indistinguishable from a real one to the person reading it, and they act on it. `other` is
+the branch to watch. It is the only intent whose wording reaches the employee unread by anything
+else, so every question it can absorb is a question the model may answer from nothing — when you add
+a fact worth asking about, add an intent, not a paragraph to the prompt.
 
 ## Administrators take leave too
 

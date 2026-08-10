@@ -56,32 +56,61 @@ export type AttendanceRosterQuery = z.infer<typeof attendanceRosterQuerySchema>;
 /**
  * The super admin's attendance policy.
  *
- * The cutoff arrives as "HH:MM" because that is what a time input produces, and
- * is stored as minutes because every use of it is a comparison. Both fields are
- * optional so the panel can save one without restating the other, but an empty
+ * Every time arrives as "HH:MM" because that is what a time input produces, and
+ * is stored as minutes because every use of it is a comparison. All fields are
+ * optional so the panel can save one without restating the others, but an empty
  * body is refused — a request that changes nothing is a mistake worth reporting.
+ *
+ * The opening and closing times are published hours, not a rule: nothing here or
+ * downstream judges a check-in by them. They are validated as a pair so that
+ * "closes before it opens" is refused at the door rather than reaching a screen
+ * that would have to describe it.
  *
  * `workingDays` is deliberately absent, though it lives on the same row. The
  * working week governs leave as well as attendance, so it is written through
  * `/api/admin/working-days` and nowhere else: two endpoints writing one value is
  * how the two come to disagree about which days count.
  */
+const timeOfDay = (label: string) =>
+  z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, label)
+    .transform((value) => {
+      const [hour, minute] = value.split(":").map(Number);
+      return hour * 60 + minute;
+    });
+
 export const updateAttendancePolicySchema = z
   .object({
-    cutoff: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a time between 00:00 and 23:59")
-      .transform((value) => {
-        const [hour, minute] = value.split(":").map(Number);
-        return hour * 60 + minute;
-      })
-      .optional(),
+    cutoff: timeOfDay("Enter a time between 00:00 and 23:59").optional(),
+    opening: timeOfDay("Enter an opening time between 00:00 and 23:59").optional(),
+    closing: timeOfDay("Enter a closing time between 00:00 and 23:59").optional(),
     warningsEnabled: z.boolean().optional(),
   })
   .refine(
-    (value) => value.cutoff !== undefined || value.warningsEnabled !== undefined,
+    (value) =>
+      value.cutoff !== undefined ||
+      value.opening !== undefined ||
+      value.closing !== undefined ||
+      value.warningsEnabled !== undefined,
     "Change something first.",
   )
-  .transform(({ cutoff, ...rest }) => ({ ...rest, cutoffMinutes: cutoff }));
+  // Both halves or neither, because the pair is judged as a pair. Accepting a
+  // lone closing time would mean comparing it against a stored opening the
+  // sender never saw, and reporting a contradiction they did not write.
+  .refine(
+    (value) => (value.opening === undefined) === (value.closing === undefined),
+    { message: "Set the opening and closing time together.", path: ["closing"] },
+  )
+  .refine(
+    (value) => value.opening === undefined || value.closing === undefined || value.opening < value.closing,
+    { message: "The office must close after it opens.", path: ["closing"] },
+  )
+  .transform(({ cutoff, opening, closing, ...rest }) => ({
+    ...rest,
+    cutoffMinutes: cutoff,
+    openingMinutes: opening,
+    closingMinutes: closing,
+  }));
 
 export type UpdateAttendancePolicyInput = z.infer<typeof updateAttendancePolicySchema>;

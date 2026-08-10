@@ -94,6 +94,9 @@ export type AttendanceTodayView = {
 export type AttendancePolicyView = {
   id: string;
   cutoffMinutes: number;
+  /** Published hours. Nothing judges a check-in by them — see the Prisma model. */
+  openingMinutes: number;
+  closingMinutes: number;
   workingDays: number[];
   warningsEnabled: boolean;
   updatedAt: string;

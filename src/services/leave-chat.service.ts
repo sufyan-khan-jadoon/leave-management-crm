@@ -1,6 +1,10 @@
+import { describeOfficeHours } from "@/lib/attendance-policy";
 import { MONTHLY_LEAVE_ALLOWANCE, quotaExceededMessage } from "@/lib/constants";
 import { formatDate, formatDateRange, monthLabel, toIsoDate, toUtcDay, todayUtc } from "@/lib/date";
 import { serverEnv } from "@/lib/env";
+import { describeWeekdays, weeklyOffDays } from "@/lib/working-days";
+import { holidayRepository } from "@/repositories/holiday.repository";
+import { attendancePolicyService } from "@/services/attendance-policy.service";
 import { interpretLeaveChat, type ChatTurn } from "@/services/ai.service";
 import { leaveService } from "@/services/leave.service";
 
@@ -27,6 +31,38 @@ function dayWord(count: number): string {
   return `${count} day${count === 1 ? "" : "s"}`;
 }
 
+/**
+ * The office hours, in the company's own words rather than the model's.
+ *
+ * Every part of this is read here: the hours, which days the week actually runs,
+ * and whether the office happens to be shut today. The assistant used to answer
+ * this from nothing at all — "9:00 AM to 5:00 PM, Monday to Friday" — which was
+ * wrong twice over, since the hours were invented and the week is configurable.
+ *
+ * Today's closure is mentioned because somebody asking when the office opens is
+ * usually asking whether to come in, and the closure is the more useful half of
+ * that answer. It deliberately does not go looking further ahead: this is a
+ * question about the hours, not a calendar.
+ */
+async function describeHours(today: Date): Promise<string> {
+  const [policy, closedToday] = await Promise.all([
+    attendancePolicyService.get(),
+    holidayRepository.closedDatesAmong([today]),
+  ]);
+
+  const hours = describeOfficeHours(policy.openingMinutes, policy.closingMinutes);
+  const daysOff = weeklyOffDays(policy.workingDays);
+
+  const week =
+    daysOff.length === 0
+      ? "The office works every day of the week."
+      : `${describeWeekdays(daysOff)} ${daysOff.length === 1 ? "is a day" : "are days"} off.`;
+
+  const closure = closedToday.length > 0 ? " The office is closed today." : "";
+
+  return `The office is open ${hours}, Pakistan time. ${week}${closure}`;
+}
+
 export const leaveChatService = {
   /**
    * Answers one turn of the conversation.
@@ -48,6 +84,10 @@ export const leaveChatService = {
             ? `You have ${dayWord(balance.remaining)} left of your ${balance.allowance} for ${monthLabel(today)}. You've used ${balance.approvedThisMonth}.`
             : `You've used all ${balance.allowance} of your leaves for ${monthLabel(today)}. Your allowance resets next month.`,
       };
+    }
+
+    if (intent.intent === "hours") {
+      return { reply: await describeHours(today) };
     }
 
     if (intent.intent === "history") {
