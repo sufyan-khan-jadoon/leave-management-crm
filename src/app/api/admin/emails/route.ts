@@ -1,4 +1,4 @@
-import { created, handleRoute, ok, parseBody, parseQuery } from "@/lib/api";
+import { created, handleRoute, ok, parseMultipart, parseQuery } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth/guards";
 import { customEmailService } from "@/services/custom-email.service";
 import { emailLogQuerySchema, sendCustomEmailSchema } from "@/validations/email.schema";
@@ -45,12 +45,22 @@ export async function GET(request: Request) {
   });
 }
 
+/**
+ * Multipart rather than JSON, because a message may carry files.
+ *
+ * One encoding for both kinds of send: a text-only message is the same request
+ * with no file parts on it, so there is no second path that could drift out of
+ * step with this one. The handler stays what it always was — parse, guard,
+ * shape — and hands the files to the service, which is where whether they may
+ * be sent is decided, alongside whether *this* administrator may send to *that*
+ * audience.
+ */
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const user = await requireAdmin();
-    const input = await parseBody(request, sendCustomEmailSchema);
+    const { data, files } = await parseMultipart(request, sendCustomEmailSchema, "attachments");
 
-    const result = await customEmailService.send(user, input);
+    const result = await customEmailService.send(user, data, files);
 
     return created(result);
   });

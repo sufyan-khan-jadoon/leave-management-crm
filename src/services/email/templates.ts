@@ -463,16 +463,39 @@ export function customEmailTemplate(options: {
   html: string;
   /** Derived from the sanitised markup, never from what the composer submitted. */
   text: string;
+  /**
+   * The names of the files travelling with this message, already sanitised.
+   *
+   * Named in the body as well as carried as MIME parts, because a mail client
+   * that hides its attachment bar — or a plain-text reader, which has no way to
+   * show one — would otherwise deliver a message referring to a document with no
+   * sign that anything came with it.
+   */
+  attachments?: string[];
 }): Template {
+  const attachments = options.attachments ?? [];
+
+  const attachmentHtml = attachments.length
+    ? `<p style="color:${C.muted};font-size:13px;margin:20px 0 0;">
+         ${attachments.length === 1 ? "Attached" : `${attachments.length} files attached`}:
+         ${attachments.map((name) => `<strong style="color:${C.black};">${esc(name)}</strong>`).join(", ")}
+       </p>`
+    : "";
+
+  const attachmentText = attachments.length
+    ? `\n\nAttached: ${attachments.join(", ")}`
+    : "";
+
   return {
     subject: options.subject,
     html: layout(
       options.subject,
       `<p>Hello ${esc(options.recipientName)},</p>
        <div style="margin:16px 0;">${options.html}</div>
+       ${attachmentHtml}
        <p style="color:${C.muted};margin-top:24px;">Sent by ${esc(options.senderName)}</p>`,
     ),
-    text: `Hello ${options.recipientName},\n\n${options.text}\n\nSent by ${options.senderName}\n\n—\n${BRAND}`,
+    text: `Hello ${options.recipientName},\n\n${options.text}${attachmentText}\n\nSent by ${options.senderName}\n\n—\n${BRAND}`,
   };
 }
 

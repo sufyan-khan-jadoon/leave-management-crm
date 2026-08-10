@@ -20,11 +20,16 @@ export class ApiClientError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
 
+  // A multipart body must be left to declare its own content type: the boundary
+  // is generated per request and lives in that header, so writing
+  // `application/json` over it would leave the server unable to parse anything.
+  const isMultipart = typeof FormData !== "undefined" && init?.body instanceof FormData;
+
   try {
     response = await fetch(path, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
+        ...(isMultipart ? {} : { "Content-Type": "application/json" }),
         ...init?.headers,
       },
     });
@@ -57,6 +62,9 @@ export const apiClient = {
 
   post: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: "POST", body: payload === undefined ? undefined : JSON.stringify(payload) }),
+
+  /** For a request carrying files. Unwraps the same envelope as the rest. */
+  postForm: <T>(path: string, form: FormData) => request<T>(path, { method: "POST", body: form }),
 
   put: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: "PUT", body: payload === undefined ? undefined : JSON.stringify(payload) }),

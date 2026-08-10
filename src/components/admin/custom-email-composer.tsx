@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Mail, Send, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 
+import { EmailAttachmentsField } from "@/components/admin/email-attachments-field";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -51,6 +52,18 @@ const STATUS: Record<EmailDispatchView["status"], { label: string; variant: "suc
 type Recipient = { id: string; name: string; role: string; department: string | null };
 
 /**
+ * Names the files in the confirmation, because an attachment is the half of an
+ * announcement that cannot be corrected by writing again — a wrong file has
+ * already been delivered to everybody by the time anybody notices.
+ */
+function describeAttached(files: File[]): string {
+  if (files.length === 0) return "";
+  if (files.length === 1) return `, with ${files[0]!.name} attached`;
+
+  return `, with ${files.length} files attached`;
+}
+
+/**
  * Compose and send a message to people here.
  *
  * The audiences offered come from the server's `capabilities`, so an
@@ -74,6 +87,7 @@ export function CustomEmailComposer() {
   const [recipientSearch, setRecipientSearch] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -124,17 +138,23 @@ export function CustomEmailComposer() {
     setSending(true);
 
     try {
-      const result = await apiClient.post<{ message: string }>("/api/admin/emails", {
-        audience,
-        ...(audience === "INDIVIDUAL" ? { recipientId } : {}),
-        subject: subject.trim(),
-        body,
-      });
+      // Multipart, not JSON: the files travel as their own parts rather than as
+      // base64 inside a string. The text fields are exactly the ones this form
+      // always sent — the schema on the other side is unchanged.
+      const form = new FormData();
+      form.append("audience", audience);
+      if (audience === "INDIVIDUAL") form.append("recipientId", recipientId);
+      form.append("subject", subject.trim());
+      form.append("body", body);
+      for (const file of attachments) form.append("attachments", file);
+
+      const result = await apiClient.postForm<{ message: string }>("/api/admin/emails", form);
 
       toast.success(result.message);
       setSubject("");
       setBody("");
       setRecipientId("");
+      setAttachments([]);
       setPage(1);
       await load();
     } catch (error) {
@@ -268,6 +288,8 @@ export function CustomEmailComposer() {
               />
             </div>
 
+            <EmailAttachmentsField files={attachments} onChange={setAttachments} disabled={sending} />
+
             <div className="flex items-center gap-3">
               <Button type="submit" loading={sending} disabled={!ready}>
                 {!sending && <Send className="size-4" />}
@@ -349,7 +371,7 @@ export function CustomEmailComposer() {
         open={confirming}
         onOpenChange={setConfirming}
         title={`Send to ${AUDIENCES[audience].label.toLowerCase()}?`}
-        description={`"${subject.trim()}" will be emailed to ${AUDIENCES[audience].label.toLowerCase()}. This cannot be recalled once sent.`}
+        description={`"${subject.trim()}" will be emailed to ${AUDIENCES[audience].label.toLowerCase()}${describeAttached(attachments)}. This cannot be recalled once sent.`}
         confirmLabel="Send email"
         onConfirm={async () => {
           setConfirming(false);

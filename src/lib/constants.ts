@@ -56,6 +56,31 @@ export const MAX_EMAIL_SUBJECT_LENGTH = 150;
  */
 export const MAX_EMAIL_BODY_LENGTH = 50_000;
 
+/** How many files may ride along with one custom email. */
+export const MAX_EMAIL_ATTACHMENTS = 5;
+
+/**
+ * The whole attachment budget for one message, across every file on it.
+ *
+ * **One budget, deliberately — not a per-file limit and a total.** Two numbers
+ * would have to be kept in a sensible relation to each other, and the second one
+ * is the only one that decides whether the message can actually leave: what the
+ * mail host and the platform care about is the size of the request and the size
+ * of the envelope, neither of which knows how many files it was divided into.
+ *
+ * 4 MB because the send is a plain route handler and Vercel refuses a request
+ * body over 4.5 MB before any of this code runs — a limit chosen above that
+ * would surface as an opaque platform error instead of the message below. It
+ * also keeps the encoded message well inside the 25 MB most mail hosts accept,
+ * since attachments go on the wire base64-encoded and grow by about a third.
+ *
+ * Counted in binary megabytes because that is what `formatFileSize` and every
+ * operating system's file browser show: a limit that a sender's own machine
+ * reports as 4 MB has to be 4 MB here too, or a file it calls 3.9 MB comes back
+ * refused for being over 3.8.
+ */
+export const MAX_EMAIL_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+
 /**
  * How many people one custom email may reach in a single act.
  *

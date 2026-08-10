@@ -484,6 +484,65 @@ Admins are waved past `/profile/setup` by the middleware, so an admin can reach 
 screens with a blank department and joining date. `/api/leaves/chat` refuses that either way;
 `ProfileRequiredNotice` stands in for the assistant so the refusal comes with somewhere to go.
 
+## A message may carry files
+
+The composer sends `multipart/form-data`, and it does so whether or not anything is attached. One
+encoding for both kinds of send, on purpose: a text-only message is the same request with no file
+parts on it, so there is no second path to drift out of step. `parseMultipart` in `src/lib/api.ts`
+splits the body — text fields against the unchanged `sendCustomEmailSchema`, files kept as files —
+and a file arriving under any field name but `attachments` is refused outright rather than dropped,
+the same reason `markAttendanceSchema` is a `strictObject`.
+
+Base64 is deliberately **not** used. It inflates a file by a third before it is held in memory as a
+string, and the platform counts its request limit on the encoded bytes, so the encoding would spend
+a quarter of the budget on nothing. Nothing is written to disk at any point, which is why there is
+no temporary file to clean up after a send and none left behind by a failed one — the buffers live
+for the request and go with it.
+
+**Permissions are untouched, and attachments cannot route around them.** `send()` still calls
+`assertMaySend` first and still resolves the audience through `resolveRecipients` against the grant
+read fresh from the database. A file is judged *after* that and *before* the recipients are
+resolved, because whether these files may be sent has nothing to do with who they were going to.
+
+### What may be attached
+
+`src/lib/email-attachments.ts` holds the whole rule, free of Prisma so it can be read and tested
+alone exactly as `email-audience.ts`, `geo.ts` and `holiday-notice.ts` are. It is a pure function of
+a file's **name and size** — never its bytes, and never `file.type`.
+
+**The extension decides the MIME type.** The browser's `file.type` is read nowhere: believing it
+would let `payroll.exe` be delivered labelled `application/pdf`, or a real PDF be labelled
+`text/html` and rendered inline by a mail client. Deriving the label from the extension we already
+allowlisted means the name and the type can never disagree.
+
+**An allowlist, not a blocklist.** The dangerous set is open-ended — `.exe`, `.bat`, `.cmd`, `.sh`,
+`.php`, `.js`, `.msi`, and whichever one is invented next — so naming what is *permitted* refuses a
+new executable format on the day it appears rather than on the day somebody remembers it. Archives
+are absent because a `.zip` would allow everything above by wrapping it; SVG is absent because it is
+a document that can carry script, not an image. The last extension is the one judged, so
+`invoice.pdf.exe` is an executable.
+
+**One budget, not a per-file limit and a total.** `MAX_EMAIL_ATTACHMENT_BYTES` is 4 MB across the
+whole message, in binary megabytes so a file the sender's own machine calls 4 MB is not refused for
+being over 3.8. It is pinned below Vercel's 4.5 MB request-body cap, which refuses the request
+before any of this code runs — a larger limit would surface as an opaque platform error instead of a
+sentence somebody can act on.
+
+A set is refused **whole** on its first bad file rather than the good ones going without it. A
+message that quietly went out missing the document it promised is worse than one that did not go:
+the sender believes the file arrived, and an email cannot be recalled to add it.
+
+`EmailAttachmentsField` imports the same functions to warn while the sender is still looking at the
+picker. That copy is a courtesy and never the rule — `custom-email.service.ts` judges the files
+again, on the bytes that actually arrived, exactly as `sanitize-html.ts` re-judges what the editor
+produced.
+
+Attachment names are listed in the message body as well as carried as MIME parts, because a client
+that hides its attachment bar — or a plain-text reader, which has none — would otherwise deliver a
+message referring to a document with no sign that anything came with it. Delivery stays
+fire-and-forget: a host that refuses a file is an ordinary failed delivery and reads as `FAILED`,
+with the wording pointed at the attachment rather than at the mail settings.
+
 ## Brand colour — the FILL vs INK rule
 
 The Zovencia palette is fixed: **#0AEA0A** (brand green), **#023506** (dark green), black, white.

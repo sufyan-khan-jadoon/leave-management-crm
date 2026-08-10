@@ -23,6 +23,20 @@ import {
 
 type Template = { subject: string; html: string; text: string };
 
+/**
+ * A file to hang off a message, in the shape nodemailer builds a MIME part from.
+ *
+ * `content` is a Buffer rather than a path: nothing in this system writes an
+ * upload to disk, so there is no temporary file to remove after a send and none
+ * left behind by a failed one. The buffers are held for the length of the
+ * request and released with it.
+ *
+ * `filename` has already been through `sanitizeAttachmentName` and `contentType`
+ * was derived from its extension — see `email-attachments.ts`. Neither is ever
+ * taken from what a browser claimed.
+ */
+export type MailAttachment = { filename: string; content: Buffer; contentType: string };
+
 const globalForMailer = globalThis as unknown as { mailer?: Transporter };
 
 function transporter(): Transporter {
@@ -46,7 +60,7 @@ function transporter(): Transporter {
  * approval is still valid even if the confirmation email doesn't send), so
  * failures are logged and swallowed.
  */
-async function send(to: string, template: Template): Promise<boolean> {
+async function send(to: string, template: Template, attachments?: MailAttachment[]): Promise<boolean> {
   try {
     await transporter().sendMail({
       from: serverEnv().EMAIL_FROM,
@@ -54,6 +68,9 @@ async function send(to: string, template: Template): Promise<boolean> {
       subject: template.subject,
       html: template.html,
       text: template.text,
+      // Omitted entirely rather than sent as `[]`, so a text-only message
+      // produces exactly the single-part MIME structure it always has.
+      ...(attachments?.length ? { attachments } : {}),
     });
 
     return true;
@@ -152,17 +169,39 @@ export const emailService = {
   },
 
   /**
-   * A message an administrator wrote by hand.
+   * A message an administrator wrote by hand, with whatever they attached to it.
    *
    * `html` must already have been through `sanitizeEmailHtml` — this is the one
    * template whose body is not escaped, and `custom-email.service.ts` is the
-   * only caller precisely so that the sanitising cannot be forgotten.
+   * only caller precisely so that neither the sanitising nor the attachment
+   * rules can be forgotten.
+   *
+   * The same attachment buffers are handed to every recipient's message. They
+   * are read once for the whole send rather than once per person, which is what
+   * keeps a five-file message to forty people from being forty copies of it in
+   * memory.
    */
   sendCustomEmail(
     to: string,
-    options: { recipientName: string; senderName: string; subject: string; html: string; text: string },
+    options: {
+      recipientName: string;
+      senderName: string;
+      subject: string;
+      html: string;
+      text: string;
+      attachments?: MailAttachment[];
+    },
   ) {
-    return send(to, customEmailTemplate(options));
+    return send(
+      to,
+      customEmailTemplate({
+        ...options,
+        // The template lists what is attached by name; the transport carries the
+        // bytes. Both read the same array, so they cannot disagree.
+        attachments: options.attachments?.map((file) => file.filename) ?? [],
+      }),
+      options.attachments,
+    );
   },
 
   sendProfileUpdated(to: string, name: string, changedBy: "you" | "an administrator") {

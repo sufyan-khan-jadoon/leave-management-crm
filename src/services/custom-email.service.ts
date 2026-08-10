@@ -7,6 +7,7 @@ import {
   maySendAnything,
   permittedAudiences,
 } from "@/lib/email-audience";
+import { judgeAttachments } from "@/lib/email-attachments";
 import { isSuperAdminRole } from "@/lib/enums";
 import { ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { hasVisibleText, htmlToPlainText, sanitizeEmailHtml } from "@/lib/sanitize-html";
@@ -15,7 +16,7 @@ import {
   type EmailDispatchDto,
 } from "@/repositories/email-dispatch.repository";
 import { employeeRepository, type MailRecipient } from "@/repositories/employee.repository";
-import { emailService } from "@/services/email/email.service";
+import { emailService, type MailAttachment } from "@/services/email/email.service";
 import type { EmailLogQuery, SendCustomEmailInput } from "@/validations/email.schema";
 
 /** Who is asking. The same shape the holiday and invitation rules take. */
@@ -139,6 +140,38 @@ async function resolveRecipients(
   return { recipients, individual: null };
 }
 
+/**
+ * Turns the uploaded files into MIME parts, refusing the ones that may not go.
+ *
+ * The composer runs the same rules over the same files before the send button
+ * does anything, and that check is a courtesy — this is the one that decides,
+ * for the reason `sanitizeEmailHtml` re-parses what the editor produced. A
+ * hand-made request carrying `payroll.exe` reaches exactly here.
+ *
+ * It judges `file.size`, which is the length of the part the runtime actually
+ * parsed rather than a number the browser wrote down, and it takes the content
+ * type from the sanitised filename rather than from `file.type`, which is a
+ * claim. Bytes are read only after the whole set has passed, so an oversized or
+ * forbidden file is never buffered at all.
+ */
+async function readAttachments(files: File[]): Promise<MailAttachment[]> {
+  if (files.length === 0) return [];
+
+  const verdict = judgeAttachments(files.map((file) => ({ name: file.name, size: file.size })));
+
+  if (!verdict.ok) {
+    throw new ValidationError(verdict.message, { attachments: verdict.message });
+  }
+
+  return Promise.all(
+    verdict.files.map(async (judged, index) => ({
+      filename: judged.filename,
+      contentType: judged.contentType,
+      content: Buffer.from(await files[index]!.arrayBuffer()),
+    })),
+  );
+}
+
 export const customEmailService = {
   maySend,
 
@@ -191,8 +224,18 @@ export const customEmailService = {
    * Delivery failures do not throw. Mail is fire-and-forget everywhere here, and
    * a bounced mailbox out of forty is not a failed announcement — it is a
    * PARTIAL, which is what the log exists to be able to say.
+   *
+   * Attachments are the exception to that tolerance in one direction only: a
+   * file that may not be sent stops the message before anybody is written to,
+   * because a message that went out without the document it promised cannot be
+   * recalled to add it. A file the *mail host* then rejects is an ordinary
+   * delivery failure and reads as one.
    */
-  async send(actor: EmailActor, input: SendCustomEmailInput): Promise<SendResult> {
+  async send(
+    actor: EmailActor,
+    input: SendCustomEmailInput,
+    files: File[] = [],
+  ): Promise<SendResult> {
     await assertMaySend(actor);
 
     const html = sanitizeEmailHtml(input.body);
@@ -202,6 +245,11 @@ export const customEmailService = {
     if (!hasVisibleText(html)) {
       throw new ValidationError("Write a message before sending.", { body: "The message is empty." });
     }
+
+    // Before the audience is resolved: whether these files may be sent has
+    // nothing to do with who they were going to, and finding out costs a
+    // database round trip that a refused message does not need to spend.
+    const attachments = await readAttachments(files);
 
     const { recipients, individual } = await resolveRecipients(actor, input);
 
@@ -231,6 +279,7 @@ export const customEmailService = {
           subject: input.subject,
           html,
           text,
+          attachments,
         }),
       ),
     );
@@ -259,7 +308,10 @@ export const customEmailService = {
       recipientCount: recipients.length,
       deliveredCount,
       status,
-      message: describeOutcome(status, deliveredCount, recipients.length, individual?.name),
+      message: describeOutcome(status, deliveredCount, recipients.length, {
+        individualName: individual?.name,
+        hadAttachments: attachments.length > 0,
+      }),
     };
   },
 
@@ -306,13 +358,18 @@ function describeOutcome(
   status: EmailDispatchStatus,
   delivered: number,
   total: number,
-  individualName?: string,
+  context: { individualName?: string; hadAttachments: boolean },
 ): string {
-  const who = individualName ?? `${total} ${total === 1 ? "person" : "people"}`;
+  const who = context.individualName ?? `${total} ${total === 1 ? "person" : "people"}`;
 
   if (status === EmailDispatchStatus.SENT) return `Sent to ${who}.`;
   if (status === EmailDispatchStatus.FAILED) {
-    return `Couldn't deliver that message to ${who}. Nothing was sent — check the mail settings and try again.`;
+    // A message the host refused wholesale, when it carried files, is far more
+    // often an attachment the host would not take than a broken configuration —
+    // so the sender is pointed at the thing they can actually change.
+    return context.hadAttachments
+      ? `Couldn't deliver that message to ${who}. Nothing was sent — the mail server may have refused an attachment. Try sending it without the files, or with smaller ones.`
+      : `Couldn't deliver that message to ${who}. Nothing was sent — check the mail settings and try again.`;
   }
 
   return `Sent to ${delivered} of ${total}. ${total - delivered} ${total - delivered === 1 ? "address" : "addresses"} could not be reached.`;
