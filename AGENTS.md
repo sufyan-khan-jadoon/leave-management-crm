@@ -517,6 +517,43 @@ the branch to watch. It is the only intent whose wording reaches the employee un
 else, so every question it can absorb is a question the model may answer from nothing — when you add
 a fact worth asking about, add an intent, not a paragraph to the prompt.
 
+### Erasing check-ins — the danger zone
+
+`POST /api/admin/attendance/reset` deletes check-ins, either for one date or every one ever
+recorded, and is the super admin's alone — gated in the route, and deliberately **not** delegated per
+administrator the way closing the office is. Seeing who is in is ordinary people-management; deleting
+the record that they were is not, and there is nothing left afterwards to work out who did it.
+
+**It is not a blanking, it is a rewrite.** Absence is the lack of a row, so clearing a day does not
+return it to "no data" — it asserts that everybody was absent. Clearing all time asserts it about
+every working day in the system's history, which is why the two are separate acts with separate
+confirmations rather than one button with a checkbox: a day is recoverable by asking people to mark
+present again, and all time is recoverable by nothing this application can do.
+
+`RESET` is typed out for the all-time branch and **checked in `resetAttendanceSchema`**, not only in
+the dialog. A confirmation that lives in the browser is a courtesy to whoever is clicking; this one
+is the rule, so `curl` has to spell the same word. The day branch has no such field on purpose — a
+ceremony demanded for every ordinary fix is a ceremony somebody eventually automates away.
+
+**Attendance warnings are never deleted.** They record letters already delivered, which no amount of
+deleting can unsend, and the row doubles as the claim that stops a second letter for a day already
+swept. Clearing them would make somebody warned twice for one day, which is precisely what the
+claim-before-send design exists to prevent.
+
+**The mass-email trap, and why it is reported rather than prevented.** `dispatchAttendanceWarnings`
+only ever sweeps `todayUtc()`, so clearing any *past* day cannot produce a letter however many
+absentees it creates — the sweep will never look there again. The one live case is clearing **today**
+after the cutoff: everyone who had checked in becomes absent, and because they were present they have
+no claim row to stop the next sweep writing to them. `warningExposure` computes exactly that
+conjunction — warnings enabled, a working day, the cutoff passed — and the dialog says so and points
+at the off switch on the same panel. Suppressing it by inserting warning rows for letters nobody sent
+was the obvious alternative and is worse: it would put a lie in the table that `consecutiveMissed`
+and every future letter are built from.
+
+The count is read when the dialog opens rather than kept on screen, so the number being confirmed is
+the number in the table a moment ago. A check-in landing between the preview and the delete is
+ordinary; the reset reports what it actually removed.
+
 ## Administrators take leave too
 
 An admin is an `Employee` with `role = ADMIN`, and draws the same `MONTHLY_LEAVE_ALLOWANCE`. The

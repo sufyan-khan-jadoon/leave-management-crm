@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 import { AccessPanel } from "@/components/admin/access-panel";
+import { AttendanceDangerZone } from "@/components/admin/attendance-danger-zone";
 import { AttendancePolicyPanel } from "@/components/admin/attendance-policy-panel";
 import { PageHeader } from "@/components/layout/page-header";
 import { auth } from "@/lib/auth/auth";
@@ -28,6 +29,7 @@ export default async function AdminAccessPage() {
       <div className="grid gap-4">
         <AccessPanel />
         <AttendancePolicyPanel />
+        <AttendanceDangerZone />
       </div>
     </div>
   );

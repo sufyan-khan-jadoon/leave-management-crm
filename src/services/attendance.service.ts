@@ -1,5 +1,6 @@
 import type { Role } from "@prisma/client";
 
+import { hasCutoffPassed } from "@/lib/attendance-policy";
 import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { ConflictError, ForbiddenError, ValidationError } from "@/lib/errors";
@@ -15,7 +16,12 @@ import {
 import { holidayRepository } from "@/repositories/holiday.repository";
 import { leaveRepository } from "@/repositories/leave.repository";
 import { attendancePolicyService } from "@/services/attendance-policy.service";
-import type { MarkAttendanceInput, AttendanceRosterQuery } from "@/validations/attendance.schema";
+import type {
+  MarkAttendanceInput,
+  AttendanceRosterQuery,
+  ResetAttendanceInput,
+  ResetAttendancePreviewQuery,
+} from "@/validations/attendance.schema";
 
 /**
  * What one person's day amounts to.
@@ -87,6 +93,57 @@ const OUTSIDE_MESSAGE =
 
 const INACCURATE_MESSAGE =
   "Unable to verify your location accurately. Please move to an area with better location accuracy and try again.";
+
+export type ResetPreview = {
+  /** How many check-ins the reset would remove, counted now. */
+  count: number;
+  /**
+   * True when clearing this would leave people the warning sweep reads as absent
+   * and writes to. See `warningExposure` for why it is so narrow.
+   */
+  mayTriggerWarnings: boolean;
+  /** The cutoff, so the screen can name the deadline it is talking about. */
+  cutoffMinutes: number;
+};
+
+export type ResetResult = {
+  removed: number;
+  scope: ResetAttendanceInput["scope"];
+};
+
+/**
+ * Whether erasing a day would cause warning letters to be sent about it.
+ *
+ * Narrow on purpose, because the exposure genuinely is. `dispatchAttendanceWarnings`
+ * only ever sweeps `todayUtc()`, so clearing any past day cannot produce a letter
+ * however many people it turns into absentees — the sweep will never look there
+ * again. The one real case is clearing **today** after the cutoff has passed:
+ * everyone who had checked in becomes absent, and because they were present they
+ * have no claim row to stop the next sweep writing to them.
+ *
+ * It is reported rather than prevented. Suppressing it would mean inserting
+ * warning rows for letters nobody sent, which would put a lie in the table that
+ * `consecutiveMissed` and every future letter are built from — worse than the
+ * mail it avoided. The screen names the risk and points at the off switch, which
+ * is on the same panel, and the super admin decides.
+ */
+async function warningExposure(date: Date | null): Promise<{
+  mayTriggerWarnings: boolean;
+  cutoffMinutes: number;
+}> {
+  const policy = await attendancePolicyService.get();
+
+  // An all-time reset takes today with it, so it carries the same exposure.
+  const touchesToday = date === null || date.getTime() === todayUtc().getTime();
+
+  const mayTriggerWarnings =
+    policy.warningsEnabled &&
+    touchesToday &&
+    isWorkingWeekday(todayUtc(), policy.workingDays) &&
+    hasCutoffPassed(todayUtc(), policy.cutoffMinutes);
+
+  return { mayTriggerWarnings, cutoffMinutes: policy.cutoffMinutes };
+}
 
 /**
  * Whether the office was open on a date.
@@ -339,6 +396,45 @@ export const attendanceService = {
    */
   rosterEntries(date: Date, filters: { roles?: Role[] } = {}) {
     return buildRoster(date, filters);
+  },
+
+  /**
+   * How much a reset would erase, and what else it would set in motion.
+   *
+   * Asked before the dialog shows a number, so the person confirming is looking
+   * at the real count rather than at whatever the screen last happened to load.
+   * The count is read again during the reset itself — this one is a preview, and
+   * a check-in landing between the two is ordinary rather than a problem.
+   */
+  async resetPreview(query: ResetAttendancePreviewQuery): Promise<ResetPreview> {
+    const [count, warning] = await Promise.all([
+      query.scope === "ALL_TIME"
+        ? attendanceRepository.countAll()
+        : attendanceRepository.countOnDate(query.date),
+      warningExposure(query.scope === "ALL_TIME" ? null : query.date),
+    ]);
+
+    return { count, ...warning };
+  },
+
+  /**
+   * Erases check-ins, and says how many went.
+   *
+   * There is no undo and nothing to inspect afterwards: the rows are the only
+   * record that anybody was in, so this is as irreversible as anything in the
+   * codebase. It is the super admin's alone, gated in the route.
+   *
+   * Attendance warnings are deliberately **left alone**. They are the record of
+   * letters already delivered, which no amount of deleting can unsend, and they
+   * double as the claim that stops a second letter for a day already swept —
+   * clearing them would make somebody warned twice for one day, which is the one
+   * outcome the whole claim-before-send design exists to prevent.
+   */
+  async reset(input: ResetAttendanceInput): Promise<ResetResult> {
+    const date = input.scope === "ALL_TIME" ? undefined : input.date;
+    const removed = await attendanceRepository.deleteMany(date);
+
+    return { removed, scope: input.scope };
   },
 
   /**

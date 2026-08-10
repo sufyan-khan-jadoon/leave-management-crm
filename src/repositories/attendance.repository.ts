@@ -94,6 +94,31 @@ export const attendanceRepository = {
     return prisma.attendance.count({ where: { employeeId, date: { gte: from, lt: to } } });
   },
 
+  /** How many check-ins exist on one day, and in the table at all. */
+  countOnDate(date: Date): Promise<number> {
+    return prisma.attendance.count({ where: { date } });
+  },
+
+  countAll(): Promise<number> {
+    return prisma.attendance.count();
+  },
+
+  /**
+   * Erases check-ins. The only destructive read-write in this file.
+   *
+   * Returns how many rows went, because the count is the whole receipt: there is
+   * no soft delete and nothing to inspect afterwards, so a caller that cannot say
+   * "47 removed" cannot say anything at all about what it did.
+   *
+   * `date` omitted means every row ever recorded. That is spelled as an absent
+   * filter rather than a magic date so the two cases read as what they are, and
+   * the service decides which it is asking for.
+   */
+  async deleteMany(date?: Date): Promise<number> {
+    const result = await prisma.attendance.deleteMany({ where: date ? { date } : undefined });
+    return result.count;
+  },
+
   /**
    * Who checked in on which day, across several people at once.
    *

@@ -114,3 +114,44 @@ export const updateAttendancePolicySchema = z
   }));
 
 export type UpdateAttendancePolicyInput = z.infer<typeof updateAttendancePolicySchema>;
+
+/** The word an all-time reset must carry, typed out by the person asking for it. */
+export const RESET_CONFIRMATION = "RESET";
+
+/**
+ * Erasing check-ins — one day, or every one ever recorded.
+ *
+ * A discriminated union rather than an optional date, because the two are
+ * different acts and only one of them is routine. `date` cannot be left off an
+ * `ALL_TIME` reset by accident, and cannot be smuggled into one either.
+ *
+ * `confirm` is required on the all-time branch and checked **here**, not only in
+ * the dialog. A confirmation that lives in the browser is a courtesy to the
+ * person clicking; this one is the rule, so a curl at the endpoint has to spell
+ * out the same word as the screen does. The day branch deliberately has no such
+ * field — that reset is recoverable by asking people to mark present again, and
+ * a ceremony demanded for every ordinary fix is a ceremony that gets automated
+ * away.
+ */
+export const resetAttendanceSchema = z.discriminatedUnion("scope", [
+  z.strictObject({
+    scope: z.literal("DATE"),
+    date: calendarDateSchema,
+  }),
+  z.strictObject({
+    scope: z.literal("ALL_TIME"),
+    confirm: z.literal(RESET_CONFIRMATION, {
+      message: `Type ${RESET_CONFIRMATION} to confirm erasing every check-in.`,
+    }),
+  }),
+]);
+
+export type ResetAttendanceInput = z.infer<typeof resetAttendanceSchema>;
+
+/** What the dialog asks before it shows a number: how much would this remove? */
+export const resetAttendancePreviewSchema = z.discriminatedUnion("scope", [
+  z.object({ scope: z.literal("DATE"), date: calendarDateSchema }),
+  z.object({ scope: z.literal("ALL_TIME") }),
+]);
+
+export type ResetAttendancePreviewQuery = z.infer<typeof resetAttendancePreviewSchema>;
