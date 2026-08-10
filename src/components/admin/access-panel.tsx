@@ -22,9 +22,9 @@ type PendingAdmin = {
  * The super admin's access screen: decide pending administrator requests, and
  * grant or withdraw what each administrator may do.
  *
- * Inviting is deliberately **not** here. It moved to Members, behind the
- * `Invite member` button on the screen that lists the people it produces — see
- * `InviteMemberDialog`. This screen is about what an existing account may do;
+ * Inviting is deliberately **not** here. It moved to Staff, behind the
+ * `Invite staff` button on the screen that lists the people it produces — see
+ * `InviteStaffDialog`. This screen is about what an existing account may do;
  * that one is about bringing an account into existence.
  */
 export function AccessPanel() {

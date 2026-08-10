@@ -202,9 +202,9 @@ export type EmployeeDashboardData = {
 export type AdminOverviewView = {
   /** Which population every figure below is measured over. */
   population: "EMPLOYEE" | "ADMIN";
-  totalMembers: number;
-  activeMembers: number;
-  suspendedMembers: number;
+  totalStaff: number;
+  activeStaff: number;
+  suspendedStaff: number;
   awaitingApproval: number;
   approvedLeaves: number;
   rejectedLeaves: number;

@@ -8,16 +8,16 @@ import { attendanceService, type AttendanceSummary } from "@/services/attendance
 import { leaveService } from "@/services/leave.service";
 
 /**
- * Which population the overview reports on — the same split the Members screen
+ * Which population the overview reports on — the same split the Staff screen
  * makes. `SUPER_ADMIN` is absent because that account is managed nowhere.
  */
 export type OverviewPopulation = typeof Role.EMPLOYEE | typeof Role.ADMIN;
 
 export type AdminOverview = {
   population: OverviewPopulation;
-  totalMembers: number;
-  activeMembers: number;
-  suspendedMembers: number;
+  totalStaff: number;
+  activeStaff: number;
+  suspendedStaff: number;
   /** Administrators only: employees never sit in PENDING_APPROVAL. */
   awaitingApproval: number;
   approvedLeaves: number;
@@ -28,7 +28,7 @@ export type AdminOverview = {
 /**
  * The roles a population covers.
  *
- * The super admin counts as an administrator here, unlike on the Members
+ * The super admin counts as an administrator here, unlike on the Staff
  * screen, which lists only what can be managed. This is a report rather than a
  * roster: leaving that account out would mean its leave was counted in neither
  * view and simply vanished from the organisation's figures.
@@ -53,7 +53,7 @@ export const adminService = {
    * Both the headcount and the leave figures are narrowed to it, so switching
    * between employees and administrators changes what is being measured rather
    * than only what the cards are called. `SUPER_ADMIN` belongs to neither
-   * population, which keeps these totals consistent with the Members screen —
+   * population, which keeps these totals consistent with the Staff screen —
    * that role cannot be listed or managed there either.
    */
   async overview(population: OverviewPopulation): Promise<AdminOverview> {
@@ -84,9 +84,9 @@ export const adminService = {
       // Every status, not just active plus suspended: an administrator awaiting
       // approval is a real person on the books, and would otherwise be counted
       // nowhere at all.
-      totalMembers: headcount.reduce((total, row) => total + row.count, 0),
-      activeMembers: countWhere((status) => status === EmployeeStatus.ACTIVE),
-      suspendedMembers: countWhere((status) => status === EmployeeStatus.SUSPENDED),
+      totalStaff: headcount.reduce((total, row) => total + row.count, 0),
+      activeStaff: countWhere((status) => status === EmployeeStatus.ACTIVE),
+      suspendedStaff: countWhere((status) => status === EmployeeStatus.SUSPENDED),
       awaitingApproval: countWhere((status) => status === EmployeeStatus.PENDING_APPROVAL),
       // No pending total: nothing creates a PENDING leave any more, so it would
       // be a permanent zero dressed up as a metric.

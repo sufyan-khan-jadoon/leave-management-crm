@@ -50,7 +50,7 @@ type InvitationSectionProps = {
    * directly. The server enforces this either way — what is rendered only ever
    * reflects the decision, never makes it.
    *
-   * Never empty: `InviteMemberDialog` is the only host, and it shows no button
+   * Never empty: `InviteStaffDialog` is the only host, and it shows no button
    * at all to somebody who may invite nobody, so there is no "you may not do
    * this" state left for this component to render.
    */
@@ -67,7 +67,7 @@ type InvitationSectionProps = {
 const NO_JOB_ROLE = "none";
 
 /**
- * Invite-and-manage panel — the body of `InviteMemberDialog`, and nothing else.
+ * Invite-and-manage panel — the body of `InviteStaffDialog`, and nothing else.
  *
  * The address and the role are chosen together and travel on the invitation, so
  * whoever opens the emailed link becomes exactly what was picked here —

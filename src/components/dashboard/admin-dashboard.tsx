@@ -139,8 +139,8 @@ export function AdminDashboard({
 
   const headcountHint =
     overview.awaitingApproval > 0
-      ? `${overview.suspendedMembers} suspended · ${overview.awaitingApproval} awaiting approval`
-      : `${overview.suspendedMembers} suspended`;
+      ? `${overview.suspendedStaff} suspended · ${overview.awaitingApproval} awaiting approval`
+      : `${overview.suspendedStaff} suspended`;
 
   return (
     <>
@@ -150,14 +150,14 @@ export function AdminDashboard({
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
             label={copy.total}
-            value={overview.totalMembers}
+            value={overview.totalStaff}
             icon={Users}
             tone="primary"
             hint={headcountHint}
           />
           <StatCard
             label={copy.active}
-            value={overview.activeMembers}
+            value={overview.activeStaff}
             icon={UserCheck}
             tone="success"
             hint="Able to sign in"

@@ -84,7 +84,7 @@ grant is settled in the service, against the role in the body. `/api/admin/invit
 `canIssue` purely so the UI can hide a form it may not submit; it mirrors the real check, never
 replaces it.
 
-**Inviting lives on Members and nowhere else.** `InviteMemberDialog` is the `Invite member` button in
+**Inviting lives on Staff and nowhere else.** `InviteStaffDialog` is the `Invite staff` button in
 that screen's header and the form behind it; `InvitationSection` is the body of that dialog — the
 form, and the list that resends and withdraws. It used to sit open as a panel on two screens, which
 put the same act in two places and put onboarding on Access, a screen otherwise about what an

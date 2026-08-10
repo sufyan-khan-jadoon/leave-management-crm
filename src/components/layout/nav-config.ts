@@ -44,7 +44,10 @@ export const EMPLOYEE_NAV: NavItem[] = [
  */
 export const ADMIN_NAV: NavItem[] = [
   { href: ROUTES.adminDashboard, label: "Overview", icon: LayoutDashboard, exact: true, group: "Manage" },
-  { href: ROUTES.adminEmployees, label: "Employees", icon: Users, group: "Manage" },
+  // One name for one screen. It lists employees for an administrator and both
+  // populations for the super admin, but which rows you are shown is a
+  // permission, not a different place to be.
+  { href: ROUTES.adminEmployees, label: "Staff", icon: Users, group: "Manage" },
   { href: ROUTES.adminAttendance, label: "Attendance", icon: MapPin, group: "Manage" },
   { href: ROUTES.adminLeaves, label: "Leave requests", icon: CalendarDays, group: "Manage" },
   // Shown to every administrator, not only those allowed to change it: which
@@ -68,17 +71,13 @@ export const ADMIN_NAV: NavItem[] = [
  * The access panel belongs to the super admin alone: it is where administrator
  * requests are decided and every per-administrator grant is handed out or taken
  * back. Inviting is not there — every administrator who may onboard anybody does
- * it from Members, which is also where the people it produces turn up.
+ * it from Staff, which is also where the people it produces turn up.
  */
 // Splits on "not personal" rather than on "is manage", so an item added to
 // ADMIN_NAV without a group still reaches the super admin instead of silently
 // vanishing from their sidebar.
 export const SUPER_ADMIN_NAV: NavItem[] = [
-  ...ADMIN_NAV.filter((item) => item.group !== "Personal").map((item) =>
-    // The same screen carries an extra tab for the super admin, so it is no
-    // longer only about employees.
-    item.href === ROUTES.adminEmployees ? { ...item, label: "Members" } : item,
-  ),
+  ...ADMIN_NAV.filter((item) => item.group !== "Personal"),
   { href: ROUTES.adminAccess, label: "Access", icon: ShieldCheck, group: "Manage" },
   ...ADMIN_NAV.filter((item) => item.group === "Personal"),
 ];

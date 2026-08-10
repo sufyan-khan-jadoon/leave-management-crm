@@ -7,13 +7,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ROLE } from "@/lib/enums";
 
 /**
- * Splits the roster into the two populations a super admin manages.
+ * Splits the staff into the two populations a super admin manages.
  *
  * Each tab mounts its own `EmployeeManager`, so search, filters, sorting and
  * page position stay independent — switching back to Employees does not reset
  * what you had narrowed it down to.
  */
-export function MembersManager() {
+export function StaffManager() {
   return (
     <Tabs defaultValue={ROLE.EMPLOYEE} className="space-y-4">
       <TabsList>

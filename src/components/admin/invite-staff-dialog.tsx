@@ -21,7 +21,7 @@ type InvitationsResponse = { items: Invitation[]; canIssue: { employee: boolean;
 type JobRolesResponse = { items: JobRole[] };
 
 /**
- * The one way into onboarding: a button on Members, and the invitation form
+ * The one way into onboarding: a button on Staff, and the invitation form
  * behind it.
  *
  * Inviting used to be a panel sitting open on two screens — Access for the super
@@ -37,7 +37,7 @@ type JobRolesResponse = { items: JobRole[] };
  * from the database on every request, and this reflects that read rather than
  * guessing alongside it. A viewer who may invite nobody gets no button at all.
  */
-export function InviteMemberDialog() {
+export function InviteStaffDialog() {
   const [open, setOpen] = useState(false);
 
   const invitations = useApiResource<InvitationsResponse>("/api/admin/invitations");
@@ -66,15 +66,17 @@ export function InviteMemberDialog() {
     <>
       <Button onClick={() => setOpen(true)}>
         <UserPlus className="size-4" />
-        Invite member
+        Invite staff
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
+              {/* "Invite staff" on the button matches the screen it sits on;
+                  written out here because "invite a staff" is not English. */}
               <UserPlus className="text-primary-ink size-4" aria-hidden />
-              Invite a member
+              Invite a staff member
             </DialogTitle>
             <DialogDescription>
               Enter someone&apos;s email address and pick what they should become. We&apos;ll send them a
