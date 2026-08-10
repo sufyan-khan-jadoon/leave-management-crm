@@ -33,7 +33,17 @@ describe("the office configuration is the one that was specified", () => {
   it("has not drifted", () => {
     expect(OFFICE_LOCATION.latitude).toBe(34.1751648);
     expect(OFFICE_LOCATION.longitude).toBe(73.2264346);
-    expect(ALLOWED_RADIUS_METERS).toBe(30);
+    expect(ALLOWED_RADIUS_METERS).toBe(100);
+  });
+
+  /**
+   * The invariant the whole accuracy rule rests on. If somebody ever tunes one
+   * of these two numbers without the other, this is what says so — an accuracy
+   * ceiling above the radius would let a fix too vague to place anybody mark
+   * them present, and one below it would refuse fixes precise enough to trust.
+   */
+  it("keeps the accuracy ceiling pinned to the radius", () => {
+    expect(MAX_ACCURACY_METERS).toBe(ALLOWED_RADIUS_METERS);
   });
 });
 
@@ -82,10 +92,10 @@ describe("judgePosition", () => {
     expect(verdict.distanceMeters).toBeCloseTo(15, 0);
   });
 
-  it("admits the boundary itself — 30 metres is inside", () => {
-    // Just under, because the offset helper is accurate to centimetres and the
-    // rule is `<=`; the exact-boundary case is asserted directly below.
-    expect(judgePosition(reading(29.9)).allowed).toBe(true);
+  it.each([10, 50, 99.9])("admits somebody %s metres away", (metres) => {
+    // Just under 100 on the last one, because the offset helper is accurate to
+    // centimetres and the rule is `<=`; the exact boundary is asserted below.
+    expect(judgePosition(reading(metres)).allowed).toBe(true);
   });
 
   it("treats a distance of exactly the radius as inside", () => {
@@ -94,10 +104,22 @@ describe("judgePosition", () => {
   });
 
   it("turns away somebody a metre outside the fence", () => {
-    const verdict = judgePosition(reading(31));
+    const verdict = judgePosition(reading(101));
 
     expect(verdict).toMatchObject({ allowed: false, reason: "outside" });
-    expect(verdict.distanceMeters).toBeCloseTo(31, 0);
+    expect(verdict.distanceMeters).toBeCloseTo(101, 0);
+  });
+
+  /**
+   * The reason the radius was widened from 30m to 100m.
+   *
+   * A phone indoors falls back on wifi and cell triangulation and reports a fix
+   * uncertain by tens of metres. Under the old pairing that was refused outright
+   * as inaccurate — so somebody standing in the office was turned away for the
+   * quality of their fix rather than for where they were.
+   */
+  it.each([25, 45, 65])("believes an ordinary indoor fix accurate to ±%sm", (accuracy) => {
+    expect(judgePosition(reading(20, 0, accuracy)).allowed).toBe(true);
   });
 
   it("turns away somebody across town", () => {
@@ -105,9 +127,10 @@ describe("judgePosition", () => {
   });
 
   it("refuses a vague reading that lands inside the fence", () => {
-    // The case the accuracy rule exists for: believing this would mark somebody
-    // present who may be 100m away.
-    expect(judgePosition(reading(5, 0, 120))).toMatchObject({ allowed: false, reason: "inaccurate" });
+    // The case the accuracy rule exists for, and the one widening the radius
+    // must not have removed: believing a ±250m fix would mark somebody present
+    // who could be a quarter of a kilometre away.
+    expect(judgePosition(reading(5, 0, 250))).toMatchObject({ allowed: false, reason: "inaccurate" });
   });
 
   it("reports a vague reading as inaccurate rather than outside", () => {
@@ -117,9 +140,9 @@ describe("judgePosition", () => {
   });
 
   it("never widens the fence to accommodate a poor fix", () => {
-    // 40m out with a ±30m fix would be "inside" if accuracy were added to the
+    // 140m out with a ±100m fix would be "inside" if accuracy were added to the
     // radius. It must not be.
-    expect(judgePosition(reading(40, 0, MAX_ACCURACY_METERS)).allowed).toBe(false);
+    expect(judgePosition(reading(140, 0, MAX_ACCURACY_METERS)).allowed).toBe(false);
   });
 
   it("accepts a fix exactly at the accuracy ceiling", () => {

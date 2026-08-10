@@ -364,18 +364,27 @@ The browser sends **three numbers and no opinion** — latitude, longitude, `acc
 to land in, and the loud refusal means an attempt to send one surfaces as an error somebody sees
 instead of as attendance that appeared to work.
 
-The office is `OFFICE_LOCATION` in `src/lib/constants.ts`, and `ALLOWED_RADIUS_METERS` is **30**.
+The office is `OFFICE_LOCATION` in `src/lib/constants.ts`, and `ALLOWED_RADIUS_METERS` is **100**.
 Nothing else in the codebase names a coordinate. `src/lib/geo.ts` holds the whole rule — Haversine
 and one `judgePosition` — free of Prisma so it can be read and tested alone, exactly like
 `holiday-notice.ts`; `geo.test.ts` pins the boundary with offsets converted at the office's own
 latitude, because a rule that only worked at the equator would pass a test built from round degrees.
 
 **`MAX_ACCURACY_METERS` equals the radius, and that equality is the argument.** A fix accurate to
-±30m cannot tell "inside a 30m circle" from "somewhere near it", so believing it would widen the
+±100m cannot tell "inside a 100m circle" from "somewhere near it", so believing it would widen the
 fence by exactly the amount the reading is unsure by. Such a reading is refused as *inaccurate*
 rather than resolved generously — including when it lands inside the circle, which is the case that
 matters, since that is the one where believing it marks somebody present who is not there. Accuracy
-is **never added to the radius**. Don't "fix" a flaky check-in by widening either constant.
+is **never added to the radius**, and `geo.test.ts` asserts the two constants stay equal.
+
+**The radius was 30m and had to be widened, and the reason is worth keeping.** Thirty metres was the
+building. But because the ceiling is pinned to the radius, it was also a demand for a fix accurate
+to ±30m — and a phone indoors falls back on wifi and cell triangulation, which routinely reports
+20–60m. People standing in the office were told *"unable to verify your location accurately"*: turned
+away for the quality of their fix rather than for where they were. Widening the radius fixed both
+halves at once, which is the point of deriving one number from the other. **Widen the radius if the
+fence is wrong; never relax the accuracy check on its own** — that is the change that would let a
+reading too vague to place anybody mark them present.
 
 The two refusals are told apart by status on purpose: `422` for a vague fix asks for better input,
 `403` for a real fix somewhere else is a refusal. A vague reading far outside still reports as

@@ -54,8 +54,10 @@ export function requestPosition(): Promise<GeolocationOutcome> {
         }),
       (error) => resolve({ ok: false, failure: describeError(error) }),
       {
-        // The whole point is a fix good enough to place someone inside a 30m
-        // circle, which the coarse network-based fix cannot do.
+        // Ask the device for its best effort rather than the coarse network
+        // fix. It is a request, not a guarantee — indoors the phone often
+        // answers with wifi triangulation anyway, which is why the server judges
+        // what came back instead of assuming this flag was honoured.
         enableHighAccuracy: true,
         timeout: GEOLOCATION_TIMEOUT_MS,
         // Never a cached fix: a position from an hour ago is a position from

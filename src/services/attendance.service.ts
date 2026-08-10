@@ -73,9 +73,17 @@ export type MarkResult = {
   alreadyMarked: boolean;
 };
 
-/** The refusals, in the words the employee sees. */
+/**
+ * The refusals, in the words the employee sees.
+ *
+ * They say different things because they mean different things: the first is
+ * "we know where you are, and it is not here", the second is "we do not know
+ * where you are". Neither quotes a distance, a coordinate or an accuracy figure
+ * — what the server worked out about somebody's position is not something to
+ * read back to them, and a number invites an argument rather than a walk.
+ */
 const OUTSIDE_MESSAGE =
-  "You are outside the office location. Attendance can only be marked from the office.";
+  "You are outside the allowed office attendance area. Please move closer to the office and try again.";
 
 const INACCURATE_MESSAGE =
   "Unable to verify your location accurately. Please move to an area with better location accuracy and try again.";

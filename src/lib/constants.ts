@@ -104,17 +104,30 @@ export const OFFICE_LOCATION = {
   longitude: 73.2264346,
 } as const;
 
-/** How close to `OFFICE_LOCATION` counts as being at the office. */
-export const ALLOWED_RADIUS_METERS = 30;
+/**
+ * How close to `OFFICE_LOCATION` counts as being at the office.
+ *
+ * 100m, widened from an original 30m. Thirty metres was the building, and it was
+ * the wrong thing to measure: a phone indoors falls back on wifi and cell
+ * triangulation, which routinely reports a fix uncertain by 20–60m, and this
+ * number is also the accuracy ceiling below — so people standing in the office
+ * were turned away for having an ordinary indoor fix rather than for being
+ * somewhere else. A hundred metres is the office and its immediate approach,
+ * still far too small to reach anybody's home.
+ *
+ * It is the one number to change if that judgement turns out wrong; the ceiling
+ * follows it automatically.
+ */
+export const ALLOWED_RADIUS_METERS = 100;
 
 /**
  * The worst GPS uncertainty a reading may carry and still be believed.
  *
  * Pinned to the radius rather than chosen separately, and that equality is the
- * whole argument: a fix accurate to ±30m cannot tell "inside a 30m circle" from
- * "somewhere near it", so believing it would widen the geofence by exactly the
- * amount the reading is unsure by. Refusing instead keeps the fence at 30m and
- * puts the cost on the one reading that could not be trusted.
+ * whole argument: a fix accurate to ±100m cannot tell "inside a 100m circle"
+ * from "somewhere near it", so believing it would widen the geofence by exactly
+ * the amount the reading is unsure by. Refusing instead keeps the fence where it
+ * is and puts the cost on the one reading that could not be trusted.
  *
  * This is deliberately *not* added to the radius anywhere. A poor fix is a
  * reason to ask for a better one, never a reason to accept a wider circle.
