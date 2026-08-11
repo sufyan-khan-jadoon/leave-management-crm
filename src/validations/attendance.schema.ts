@@ -46,7 +46,7 @@ export const attendanceRosterQuerySchema = z.object({
   employeeId: z.string().trim().max(40).optional(),
   department: z.string().trim().max(60).optional(),
   search: z.string().trim().max(120).optional(),
-  status: z.enum(["ALL", "PRESENT", "ABSENT", "ON_LEAVE"]).default("ALL"),
+  status: z.enum(["ALL", "PRESENT", "ABSENT", "ON_LEAVE", "NO_RECORD"]).default("ALL"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });

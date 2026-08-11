@@ -43,6 +43,17 @@ export type AttendanceDayStatus =
   | "NON_WORKING"
   /** A working day, not on leave, and no check-in. */
   | "ABSENT"
+  /**
+   * A working day the system holds nothing whatsoever about.
+   *
+   * Not a softer word for absent — see `dayHoldsRecord`. Absence is a claim that
+   * somebody did not turn up, and it is only worth making about a day the system
+   * was actually watching. When a working day carries no check-in and no leave
+   * for *anybody* in the company, nothing was recorded rather than everybody
+   * having failed to appear, and saying "absent" about all of them asserts
+   * something nobody has evidence for.
+   */
+  | "NO_RECORD"
   /** The day has not happened yet, so there is nothing to be absent from. */
   | "UPCOMING";
 
@@ -154,34 +165,85 @@ export type ResetResult = {
  * everyone who had checked in becomes absent, and because they were present they
  * have no claim row to stop the next sweep writing to them.
  *
- * It is reported rather than prevented. Suppressing it would mean inserting
- * warning rows for letters nobody sent, which would put a lie in the table that
- * `consecutiveMissed` and every future letter are built from — worse than the
- * mail it avoided. The screen names the risk and points at the off switch, which
- * is on the same panel, and the super admin decides.
+ * Where it survives it is reported rather than prevented. Suppressing it by
+ * inserting warning rows for letters nobody sent would put a lie in the table
+ * that `consecutiveMissed` and every future letter are built from — worse than
+ * the mail it avoided. The screen names the risk and points at the off switch,
+ * which is on the same panel, and the super admin decides.
  *
- * An all-time reset now widens *who* is exposed without changing the answer
- * here. It clears leave as well, and somebody on approved leave today is
- * excluded from the sweep by that row alone — so deleting it turns them into an
- * ordinary absentee the cutoff applies to. The conjunction below already covers
- * them, because it is about the day rather than about any one person.
+ * A **whole** scope now closes the exposure by itself rather than by suppressing
+ * anything, and that falls out of `NO_RECORD` rather than being arranged here: a
+ * day left holding no check-in and no leave has no absentees on it, and the
+ * sweep writes only to people the roster calls `ABSENT`. So the question below
+ * is no longer "does this touch today" but "would today still hold anything
+ * afterwards" — which leaves the partial resets exposed, and only them.
  */
-async function warningExposure(date: Date | null): Promise<{
-  mayTriggerWarnings: boolean;
-  cutoffMinutes: number;
-}> {
+async function warningExposure(
+  scope: ResetAttendancePreviewQuery["scope"],
+  date: Date | null,
+): Promise<{ mayTriggerWarnings: boolean; cutoffMinutes: number }> {
   const policy = await attendancePolicyService.get();
+  const today = todayUtc();
 
   // An all-time reset takes today with it, so it carries the same exposure.
-  const touchesToday = date === null || date.getTime() === todayUtc().getTime();
+  const touchesToday = date === null || date.getTime() === today.getTime();
 
-  const mayTriggerWarnings =
+  const dayIsChaseable =
     policy.warningsEnabled &&
     touchesToday &&
-    isWorkingWeekday(todayUtc(), policy.workingDays) &&
-    hasCutoffPassed(todayUtc(), policy.cutoffMinutes);
+    isWorkingWeekday(today, policy.workingDays) &&
+    hasCutoffPassed(today, policy.cutoffMinutes);
 
-  return { mayTriggerWarnings, cutoffMinutes: policy.cutoffMinutes };
+  if (!dayIsChaseable) return { mayTriggerWarnings: false, cutoffMinutes: policy.cutoffMinutes };
+
+  // What today would still hold once this scope had run. A day left holding
+  // nothing reads as `NO_RECORD` for everybody, and the sweep only ever writes
+  // to people the roster calls `ABSENT` — so it would find nobody, and no letter
+  // can go out however many rows were removed. The exposure is therefore real
+  // only for the *partial* resets: clearing check-ins while somebody's leave
+  // stays behind, or clearing leave while somebody's check-in does, leaves a day
+  // the system still considers itself to have been watching.
+  const [checkIns, onLeave] = await Promise.all([
+    scope === "DATE" || scope === "ATTENDANCE" || scope === "ALL_TIME"
+      ? 0
+      : attendanceRepository.countOnDate(today),
+    scope === "LEAVES" || scope === "ALL_TIME"
+      ? 0
+      : leaveRepository.employeeIdsOnApprovedLeave(today).then((ids) => ids.length),
+  ]);
+
+  return {
+    mayTriggerWarnings: dayHoldsRecord(checkIns, onLeave),
+    cutoffMinutes: policy.cutoffMinutes,
+  };
+}
+
+/**
+ * Whether the system holds anything at all about a date.
+ *
+ * The one question that tells "everybody missed this day" apart from "this day
+ * was never recorded", and it is asked about the **whole company** rather than
+ * about the person or the filtered page in front of you — otherwise narrowing to
+ * a department that happened to be away would turn its absences into nothing
+ * having happened.
+ *
+ * It exists because absence is derived rather than stored, so no reset can
+ * delete one: erasing every check-in and every leave left the roster asserting
+ * that the entire company had failed to turn up on every working day in its
+ * history, which is both false and indistinguishable from a reset that had done
+ * nothing. Reported honestly instead — a day holding no evidence either way says
+ * so, and nobody is accused.
+ *
+ * The trade is deliberate and worth stating: a genuine day on which literally
+ * nobody in the company checked in and nobody was on leave also reads as no
+ * record, and — because the warning sweep only ever writes to people the roster
+ * calls `ABSENT` — nobody is chased for it either. That is the same conjunction
+ * a reset produces, and no stored fact can separate them. A company of any size
+ * clears it the moment one person checks in; a total no-show is a fire drill or
+ * an outage, not a day to send everybody a letter about.
+ */
+function dayHoldsRecord(checkIns: number, onLeave: number): boolean {
+  return checkIns > 0 || onLeave > 0;
 }
 
 /**
@@ -221,6 +283,11 @@ async function buildRoster(
   const onLeave = new Set(onLeaveIds);
   const workingDay = isWorkingWeekday(date, policy.workingDays);
 
+  // Both counts are company-wide — `listOnDate` and `employeeIdsOnApprovedLeave`
+  // take no notice of the filters above — so the same day cannot read as empty
+  // through one department's view and as everybody-absent through another's.
+  const holdsRecord = dayHoldsRecord(records.length, onLeaveIds.length);
+
   const entries = members.map((employee) => {
     const attendance = byEmployee.get(employee.id) ?? null;
 
@@ -233,6 +300,7 @@ async function buildRoster(
         isWorkingDay: workingDay,
         onLeave: onLeave.has(employee.id),
         isFuture,
+        holdsRecord,
       }),
     };
   });
@@ -255,6 +323,8 @@ function describeDay(options: {
   isWorkingDay: boolean;
   onLeave: boolean;
   isFuture: boolean;
+  /** Whether anybody at all checked in or booked leave — see `dayHoldsRecord`. */
+  holdsRecord: boolean;
 }): AttendanceDayStatus {
   // Order matters. A check-in that exists is a fact about the day and outranks
   // anything derived — including a closure declared afterwards, which would
@@ -270,7 +340,12 @@ function describeDay(options: {
   if (!options.isWorkingDay) return "NON_WORKING";
 
   if (options.onLeave) return "ON_LEAVE";
-  return options.isFuture ? "UPCOMING" : "ABSENT";
+  if (options.isFuture) return "UPCOMING";
+
+  // Last, because it is the weakest thing known about the day: any of the facts
+  // above outranks it. A person with a check-in still reads PRESENT on a day
+  // that would otherwise be empty, which is why this cannot be decided earlier.
+  return options.holdsRecord ? "ABSENT" : "NO_RECORD";
 }
 
 export const attendanceService = {
@@ -335,17 +410,27 @@ export const attendanceService = {
   async todayFor(employeeId: string): Promise<TodayState> {
     const date = todayUtc();
 
-    const [attendance, officeClosed, onLeaveIds, policy] = await Promise.all([
+    const [attendance, officeClosed, onLeaveIds, checkIns, policy] = await Promise.all([
       attendanceRepository.findByEmployeeAndDate(employeeId, date),
       officeClosedOn(date),
       leaveRepository.employeeIdsOnApprovedLeave(date),
+      // Company-wide, exactly as the roster counts it — one extra count so this
+      // screen and the admin screen cannot describe the same morning differently.
+      attendanceRepository.countOnDate(date),
       attendancePolicyService.get(),
     ]);
 
     const onLeave = onLeaveIds.includes(employeeId);
     const isWorkingDay = isWorkingWeekday(date, policy.workingDays);
 
-    const status = describeDay({ attendance, officeClosed, isWorkingDay, onLeave, isFuture: false });
+    const status = describeDay({
+      attendance,
+      officeClosed,
+      isWorkingDay,
+      onLeave,
+      isFuture: false,
+      holdsRecord: dayHoldsRecord(checkIns, onLeaveIds.length),
+    });
 
     const blockedReason = attendance
       ? null
@@ -460,7 +545,7 @@ export const attendanceService = {
       touchesLeave ? leaveRepository.countAll() : null,
       touchesWarnings ? attendanceWarningRepository.countAll() : null,
       touchesWarnings ? attendanceWarningRepository.countOnDate(todayUtc()) : null,
-      warningExposure(scope === "DATE" ? query.date : null),
+      warningExposure(scope, scope === "DATE" ? query.date : null),
     ]);
 
     return { count, leaveCount, warningCount, warningsForToday, ...warning };

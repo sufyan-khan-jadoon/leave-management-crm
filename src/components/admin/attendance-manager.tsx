@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   CalendarOff,
   CheckCircle2,
+  CircleDashed,
   Download,
   Eye,
   MapPin,
@@ -40,6 +41,7 @@ const STATUS_FILTERS = [
   { value: "PRESENT", label: "Present" },
   { value: "ABSENT", label: "Absent" },
   { value: "ON_LEAVE", label: "On leave" },
+  { value: "NO_RECORD", label: "No record" },
 ] as const;
 
 /**
@@ -217,13 +219,13 @@ export function AttendanceManager() {
           {/*
             A day with nothing recorded against it, said out loud.
 
-            Everyone reads ABSENT, which is correct and looks exactly like a
-            reset that failed to delete anything — the roster is built from the
-            staff list, so it lists all of them however empty the tables are.
-            Only shown when the day genuinely holds nothing and no filter is
-            narrowing the view, so it cannot be mistaken for a claim about a
-            filtered subset. It deliberately does not hide the rows: "who missed
-            today" is the question this screen exists to answer.
+            The roster is built from the staff list, so it lists everybody
+            however empty the tables are — which is exactly what a reset that
+            deleted nothing would look like. The rows are deliberately not
+            hidden: "who was in" is the question this screen exists to answer,
+            and an empty table would answer it with silence. Only shown when no
+            filter is narrowing the view, so it cannot be read as a claim about
+            a subset.
           */}
           {data &&
             !loading &&
@@ -236,10 +238,11 @@ export function AttendanceManager() {
             summary.onLeave === 0 &&
             entries.length > 0 && (
               <div className="glass-inset text-muted-foreground flex items-center gap-2 rounded-xl p-3 text-sm">
-                <XCircle className="size-4 shrink-0" aria-hidden />
-                Nothing is recorded for {formatDate(data.date)} — no check-ins and no leave. Everyone
-                below reads as absent because absence is the lack of a check-in rather than a record
-                of its own, so this is what an empty day looks like.
+                <CircleDashed className="size-4 shrink-0" aria-hidden />
+                Nothing is recorded for {formatDate(data.date)} — no check-ins and no leave for
+                anybody. Everyone below reads <strong>No record</strong> rather than absent: with no
+                evidence either way the day was never watched, so nobody is marked down for it and
+                nobody is sent a warning letter about it.
               </div>
             )}
 

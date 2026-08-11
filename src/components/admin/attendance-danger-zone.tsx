@@ -183,10 +183,11 @@ export function AttendanceDangerZone() {
             Danger zone
           </CardTitle>
           <CardDescription>
-            Permanently deletes recorded activity. Absence is the lack of a check-in rather than a
-            row of its own, so anyone cleared reads as absent — this does not blank the record, it
-            rewrites what the day says, and no reset empties the roster. Warning letters already
-            sent, and declared office closures, are kept.
+            Permanently deletes recorded activity. A day left holding no check-in and no leave for
+            anybody reads <strong>No record</strong> rather than marking the whole company absent,
+            and nobody is chased for it. The roster itself is never emptied — it is built from the
+            staff list, so everyone still appears. Warning letters already sent, and declared office
+            closures, are kept.
           </CardDescription>
         </CardHeader>
 
@@ -242,18 +243,18 @@ export function AttendanceDangerZone() {
               </Button>
             </div>
 
-            {/* The question this panel kept being asked. Absence is the lack of a
-                check-in rather than a row, so no button here can remove it, and
-                somebody expecting an empty roster reads a working reset as a
-                broken one. Said next to the buttons, where the expectation forms. */}
+            {/* The question this panel kept being asked: which button makes the
+                absences go away. Answered by naming the two, because they are
+                not the same thing and the obvious-sounding one is the narrower. */}
             <p className="text-muted-foreground border-muted border-l-2 pl-3 text-sm">
               <strong>Reset all absences</strong> clears the absence <em>record</em> — the warning
               letters issued and the consecutive-days streak they carry, which is the only place
-              absence is ever written down. It does not, and cannot, make anybody stop reading as
-              absent: that status is not stored, it is what the screen shows for a person with no
-              check-in. So none of these buttons empties the attendance screen. Once everything is
-              cleared every employee reads as <strong>Absent</strong>, and that is what a successful
-              reset looks like.
+              absence is ever written down. It does not clear the roster, because absence is not
+              stored there: it is what the screen shows for a person with no check-in on a day
+              something was recorded. To clear the days themselves use{" "}
+              <strong>Reset everything</strong>, which leaves every day holding nothing — those read{" "}
+              <strong>No record</strong>, not Absent. The roster still lists everybody either way;
+              it is built from the staff list, and no button here empties it.
             </p>
           </div>
         </CardContent>
@@ -319,8 +320,9 @@ export function AttendanceDangerZone() {
                           "Clearing leave returns each person's monthly allowance in full. "}
                         {preview.warningCount !== null &&
                           "Letters already delivered cannot be unsent — what goes is the record of having sent them, and the consecutive-days streak future letters count from. "}
-                        Every employee will read as absent afterwards — that is the roster with
-                        nothing recorded against it, not a failed reset.
+                        The roster still lists everybody afterwards. A day left holding no check-in
+                        and no leave for anybody reads <strong>No record</strong>; a day where
+                        something is still recorded goes on marking the rest absent.
                       </span>
                     )}
 
@@ -339,11 +341,17 @@ export function AttendanceDangerZone() {
                         </span>
                       )}
 
-                    {preview.mayTriggerWarnings && total > 0 && preview.count !== null && (
+                    {/* Only ever shown when today would still hold something
+                        afterwards. A scope that empties the day leaves nobody
+                        reading as absent, so there is no letter to warn about —
+                        the server works that out rather than this dialog. */}
+                    {preview.mayTriggerWarnings && total > 0 && (
                       <span className="text-destructive-ink block">
-                        Today&apos;s {friendlyTimeLabel(preview.cutoffMinutes)} cutoff has passed, so
-                        the next sweep will read everyone cleared as absent and email them a warning
-                        letter. Switch off warning letters above first if that is not what you want.
+                        Today&apos;s {friendlyTimeLabel(preview.cutoffMinutes)} cutoff has passed and
+                        today would still hold a record afterwards, so the next sweep will read
+                        everyone cleared as absent and email them a warning letter. Clearing
+                        everything for today instead leaves nothing to chase. Otherwise switch off
+                        warning letters above first.
                       </span>
                     )}
                   </>

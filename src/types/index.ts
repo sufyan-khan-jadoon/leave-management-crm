@@ -77,6 +77,8 @@ export type AttendanceDayStatus =
   | "CLOSED"
   | "NON_WORKING"
   | "ABSENT"
+  /** A working day holding no check-in and no leave for anybody — see `dayHoldsRecord`. */
+  | "NO_RECORD"
   | "UPCOMING";
 
 export type AttendanceTodayView = {

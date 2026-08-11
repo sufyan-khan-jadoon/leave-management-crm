@@ -422,6 +422,22 @@ everything (a closure declared afterwards must not erase the record of somebody 
 `CLOSED`, then `ON_LEAVE`, then `ABSENT`. Withdraw a closure and yesterday goes back to what it was
 with nothing migrated — verified.
 
+**`ABSENT` is a claim, and `NO_RECORD` is the admission that there is nothing to claim.** Deriving
+absence from a missing row quietly assumes the day was being watched, and after a reset it is not:
+an empty table had the roster asserting that the whole company failed to turn up on every working
+day in its history. `dayHoldsRecord` is the one question that separates the two — does *anybody* in
+the company have a check-in or approved leave on this date — and it is asked **company-wide**, never
+about the filtered page, or narrowing to a department that happened to be away would turn its
+absences into nothing having happened. It is judged last, below every other fact, so somebody who
+did check in still reads `PRESENT` on an otherwise empty day.
+
+The trade is deliberate: a genuine day on which literally nobody checked in and nobody was on leave
+also reads `NO_RECORD`, and nobody is chased for it either, because the warning sweep writes only to
+people the roster calls `ABSENT`. No stored fact can tell that day apart from a reset. One person
+checking in clears it, and a total no-show is an outage or a fire drill rather than a day to write
+to the whole company about. **Don't reintroduce a bare `ABSENT` for empty days to "fix" the warning
+sweep** — that is the accusation the status exists to withhold, and it is where this came in.
+
 The project has **no working hours that judge anybody**, so `LATE` and `HALF_DAY` are deliberately
 absent rather than write-dead in the way `LeaveStatus.PENDING` became. The `status` column exists so
 they have somewhere to land once working hours are actually defined; don't invent them to fill it.
@@ -587,30 +603,36 @@ place that needs correcting afterwards.
 **Holidays survive both scopes.** A closure is a fact declared about the office rather than about
 anybody's attendance, and it outranks leave rather than belonging to it.
 
-**It is not a blanking, it is a rewrite.** Absence is the lack of a row, so clearing a day does not
-return it to "no data" — it asserts that everybody was absent. Clearing all time asserts it about
-every working day in the system's history, which is why the two are separate acts with separate
-confirmations rather than one button with a checkbox: a day is recoverable by asking people to mark
-present again, and all time is recoverable by nothing this application can do.
+**A reset that empties a day now says so, rather than blaming everybody for it.** Clearing a date
+used to leave the roster asserting that the whole company had been absent, and clearing all time
+asserted it about every working day in the system's history — which is how "the reset doesn't work,
+the absences are still there" came to be reported. It is `dayHoldsRecord` that answers it, up in the
+attendance section: a working day holding no check-in and no leave for anybody reads `NO_RECORD`, so
+an all-time reset is visibly a reset. The two remain separate acts with separate confirmations
+anyway, because a day is recoverable by asking people to mark present again and all time is
+recoverable by nothing this application can do.
 
-**No reset ever empties the admin attendance screen, and three places now say so.** The roster is
-built from the employee list, so after a total wipe every account still appears, reading `ABSENT`.
-Somebody expecting an empty table reads a working reset as a broken one — which is the same
-misreading the leave rows caused, arriving by a different route, and it was reported twice before
-the wording existed. It is said beside the buttons where the expectation forms, in the confirmation
-dialog, and on the attendance screen itself when a working day holds no check-ins and no leave.
+**No reset ever empties the admin attendance screen, and three places still say so.** The roster is
+built from the employee list, so after a total wipe every account still appears — now reading
+`NO_RECORD` rather than `ABSENT`. Somebody expecting an empty table reads a working reset as a broken
+one, which is the same misreading the leave rows caused arriving by a different route, and it was
+reported twice before the wording existed. It is said beside the buttons where the expectation forms,
+in the confirmation dialog, and on the attendance screen itself when a working day holds nothing.
 
-**"Reset absences" clears the record, not the status, and the distinction is the whole of it.**
-`AttendanceStatus` has one value, `PRESENT`, and absence is computed at render time from the lack of
-a row — so nothing can delete an absence, and `ABSENCES` does not pretend to. What it clears is
-`attendance_warnings`: the letters issued and the `consecutiveMissed` streak they carry, which is
-the only place in the system absence is ever written down. After it runs, everybody still reads
-`ABSENT`, and the panel says so in as many words.
+**"Reset absences" clears the record, not the status, and the distinction is still the whole of it.**
+`AttendanceStatus` has one value, `PRESENT`, and absence is computed at render time — so nothing can
+delete an absence, and `ABSENCES` does not pretend to. What it clears is `attendance_warnings`: the
+letters issued and the `consecutiveMissed` streak they carry, which is the only place in the system
+absence is ever written down. On its own it changes nothing on the roster, because it removes neither
+a check-in nor a leave; the day goes on holding a record and the rest go on reading `ABSENT`. The
+panel says so and names `ALL_TIME` as the button that clears the days themselves — **that pairing is
+the answer to the question this scope keeps being asked**, and neither half of it works alone.
 
 This note previously said the scope could not exist and that the answer was wording or a filter.
 That was wrong, and wrong in a specific way worth keeping: it confused the derived status with the
 one table that records it, and so answered a real request with an explanation. Say what cannot be
-done *and* what can.
+done *and* what can. It was then wrong a second way, in claiming the derived status could never be
+improved on — `NO_RECORD` is the same lesson learned again one level up.
 
 **Deleting warnings is permitted by argument, not by relaxing the invariant.** The rule elsewhere in
 this file — that warnings are never deleted, because the row is the claim that stops a second letter
@@ -641,21 +663,28 @@ design exists to prevent. That is why the two scopes that can do it say so, coun
 apart from the rest, and make the super admin type the word. Nothing else in the codebase may remove
 one; don't add a cascade or a tidy-up sweep that does.
 
-**The mass-email trap, and why it is reported rather than prevented.** `dispatchAttendanceWarnings`
-only ever sweeps `todayUtc()`, so clearing any *past* day cannot produce a letter however many
-absentees it creates — the sweep will never look there again. The one live case is clearing **today**
-after the cutoff: everyone who had checked in becomes absent, and because they were present they have
-no claim row to stop the next sweep writing to them. `warningExposure` computes exactly that
-conjunction — warnings enabled, a working day, the cutoff passed — and the dialog says so and points
-at the off switch on the same panel. Suppressing it by inserting warning rows for letters nobody sent
-was the obvious alternative and is worse: it would put a lie in the table that `consecutiveMissed`
-and every future letter are built from.
+**The mass-email trap, and what closed most of it.** `dispatchAttendanceWarnings` only ever sweeps
+`todayUtc()`, so clearing any *past* day cannot produce a letter however many absentees it creates —
+the sweep will never look there again. The live case was clearing **today** after the cutoff:
+everyone who had checked in becomes absent, and because they were present they have no claim row to
+stop the next sweep writing to them.
 
-Clearing leave **widens who that catches without changing the test**. Somebody on approved leave
-today is kept out of the sweep by that row alone, so deleting it turns them into an ordinary absentee
-the cutoff applies to. `warningExposure` already covers them, because the conjunction is about the
-day rather than about any one person — but that is now a second population it silently protects, so
-don't narrow it to "people who had checked in".
+`NO_RECORD` shuts that for any scope clearing the **whole** of today, and shuts it as a consequence
+rather than as a special case: a day left holding no check-in and no leave has no absentees on it,
+and the sweep writes only to people the roster calls `ABSENT`. So `warningExposure` no longer asks
+"does this touch today" but **"would today still hold anything afterwards"** — which leaves exactly
+the partial resets exposed. `ATTENDANCE` with somebody's leave still standing, `LEAVES` with somebody
+else's check-in still standing, `ABSENCES` on a day that holds either: in each the day remains one
+the system considers itself to have been watching, so the rest read `ABSENT` and are written to.
+`ALL_TIME`, and `DATE` on a day with no leave, cannot send anything.
+
+That is why the check is a **conjunction over the day rather than over any one person**. Clearing
+leave catches a second population — somebody on approved leave today is kept out of the sweep by
+that row alone — and asking about the day covers them for free. Don't narrow it back to "people who
+had checked in", and don't reach for the other obvious fix: suppressing letters by inserting warning
+rows for mail nobody sent would put a lie in the table that `consecutiveMissed` and every future
+letter are built from. Where exposure survives it is still reported, not prevented — the dialog says
+so, points at the off switch on the same panel, and now also names emptying the day as the way out.
 
 Both counts are read when the dialog opens rather than kept on screen, so the numbers being confirmed
 are the ones in the tables a moment ago, and they are shown **separately rather than summed**: a
