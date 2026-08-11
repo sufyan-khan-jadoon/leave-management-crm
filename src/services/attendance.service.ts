@@ -98,6 +98,17 @@ export type ResetPreview = {
   /** How many check-ins the reset would remove, counted now. */
   count: number;
   /**
+   * How many leave rows would go with them — `null` for a single day, which
+   * clears check-ins and nothing else.
+   *
+   * Reported beside the check-in count rather than folded into one total,
+   * because the two are not the same loss. A cleared check-in can be recorded
+   * again by walking into the building; a cleared leave hands an allowance back
+   * and takes a history away. Somebody confirming this should see both numbers
+   * rather than their sum.
+   */
+  leaveCount: number | null;
+  /**
    * True when clearing this would leave people the warning sweep reads as absent
    * and writes to. See `warningExposure` for why it is so narrow.
    */
@@ -108,6 +119,8 @@ export type ResetPreview = {
 
 export type ResetResult = {
   removed: number;
+  /** Leave rows removed. Always 0 for a single day, which never touches them. */
+  removedLeaves: number;
   scope: ResetAttendanceInput["scope"];
 };
 
@@ -126,6 +139,12 @@ export type ResetResult = {
  * `consecutiveMissed` and every future letter are built from — worse than the
  * mail it avoided. The screen names the risk and points at the off switch, which
  * is on the same panel, and the super admin decides.
+ *
+ * An all-time reset now widens *who* is exposed without changing the answer
+ * here. It clears leave as well, and somebody on approved leave today is
+ * excluded from the sweep by that row alone — so deleting it turns them into an
+ * ordinary absentee the cutoff applies to. The conjunction below already covers
+ * them, because it is about the day rather than about any one person.
  */
 async function warningExposure(date: Date | null): Promise<{
   mayTriggerWarnings: boolean;
@@ -407,34 +426,66 @@ export const attendanceService = {
    * a check-in landing between the two is ordinary rather than a problem.
    */
   async resetPreview(query: ResetAttendancePreviewQuery): Promise<ResetPreview> {
-    const [count, warning] = await Promise.all([
-      query.scope === "ALL_TIME"
-        ? attendanceRepository.countAll()
-        : attendanceRepository.countOnDate(query.date),
-      warningExposure(query.scope === "ALL_TIME" ? null : query.date),
+    const allTime = query.scope === "ALL_TIME";
+
+    const [count, leaveCount, warning] = await Promise.all([
+      allTime ? attendanceRepository.countAll() : attendanceRepository.countOnDate(query.date),
+      allTime ? leaveRepository.countAll() : Promise.resolve(null),
+      warningExposure(allTime ? null : query.date),
     ]);
 
-    return { count, ...warning };
+    return { count, leaveCount, ...warning };
   },
 
   /**
-   * Erases check-ins, and says how many went.
+   * Erases the record of a day, and says how much went.
    *
-   * There is no undo and nothing to inspect afterwards: the rows are the only
-   * record that anybody was in, so this is as irreversible as anything in the
-   * codebase. It is the super admin's alone, gated in the route.
+   * The two scopes are deliberately not the same act. `DATE` clears **check-ins
+   * only**, which is why it needs no typed confirmation: presence can be
+   * recorded again by walking into the building. `ALL_TIME` also erases every
+   * leave ever booked, and nothing can put those back.
    *
-   * Attendance warnings are deliberately **left alone**. They are the record of
-   * letters already delivered, which no amount of deleting can unsend, and they
-   * double as the claim that stops a second letter for a day already swept —
-   * clearing them would make somebody warned twice for one day, which is the one
-   * outcome the whole claim-before-send design exists to prevent.
+   * Leave belongs here because a roster is decided by both tables at once —
+   * `describeDay` reads a leave before it reads an absence, so a reset that took
+   * only check-ins left people on the screen marked *On leave* and looked to
+   * whoever pressed it like a button that had done nothing at all. That is
+   * precisely how this came to be reported as broken.
+   *
+   * Clearing leave hands every allowance back, since nothing about a balance is
+   * stored — `countApprovedInMonth` and every figure beside it count these rows.
+   * Removing them *is* the undo; there is no second place to correct.
+   *
+   * Attendance warnings are deliberately **left alone**, and holidays with them.
+   * Warnings are the record of letters already delivered, which no amount of
+   * deleting can unsend, and they double as the claim that stops a second letter
+   * for a day already swept — clearing them would make somebody warned twice for
+   * one day, which is the one outcome the whole claim-before-send design exists
+   * to prevent. A closure is a fact about the office rather than about anybody's
+   * attendance, and outlives both tables here.
+   *
+   * The super admin's alone, gated in the route.
    */
   async reset(input: ResetAttendanceInput): Promise<ResetResult> {
-    const date = input.scope === "ALL_TIME" ? undefined : input.date;
-    const removed = await attendanceRepository.deleteMany(date);
+    if (input.scope !== "ALL_TIME") {
+      return {
+        removed: await attendanceRepository.deleteMany(input.date),
+        removedLeaves: 0,
+        scope: input.scope,
+      };
+    }
 
-    return { removed, scope: input.scope };
+    // Two deletes rather than one transaction, because a transaction spanning
+    // both tables would have to be written where `prisma` is in scope, and the
+    // layering keeps that in the repositories. The cost is a crash in between
+    // leaving one table cleared, which is safe here in a way it is not for the
+    // warning sweep: both deletes are unfiltered, so pressing the button again
+    // finishes the job rather than doing anything a second time.
+    const [removed, removedLeaves] = await Promise.all([
+      attendanceRepository.deleteMany(),
+      leaveRepository.deleteAll(),
+    ]);
+
+    return { removed, removedLeaves, scope: input.scope };
   },
 
   /**

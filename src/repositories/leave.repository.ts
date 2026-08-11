@@ -55,6 +55,29 @@ export const leaveRepository = {
     return prisma.leave.delete({ where: { id }, select: leaveSelect });
   },
 
+  countAll(): Promise<number> {
+    return prisma.leave.count();
+  },
+
+  /**
+   * Erases every leave ever booked, and says how many went.
+   *
+   * Takes no filter at all, deliberately unlike everything else in this file.
+   * Narrowing it to one employee or one month is the shape it must not have:
+   * the only caller is the super admin's total reset, and a partial variant
+   * would be a way to give one person their allowance back while the counts
+   * that police the policy went on reading everybody else's history.
+   *
+   * Every figure downstream is derived from these rows rather than stored —
+   * balance, the monthly limit, the trend and the department chart all count
+   * them — so removing them is the whole of the undo. There is nothing else to
+   * put back.
+   */
+  async deleteAll(): Promise<number> {
+    const result = await prisma.leave.deleteMany();
+    return result.count;
+  },
+
   /**
    * Approved leaves an employee has consumed in the calendar month of
    * `reference`, discounting any day the office turned out to be closed.

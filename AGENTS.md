@@ -551,18 +551,41 @@ when it has moved on; a value read per-question cannot go stale. Both halves are
 `APP_TIME_ZONE`, so the sentence reads identically whether the server runs in UTC or anywhere else —
 verified by rendering it under both.
 
-### Erasing check-ins — the danger zone
+### Erasing the record — the danger zone
 
-`POST /api/admin/attendance/reset` deletes check-ins, either for one date or every one ever
-recorded, and is the super admin's alone — gated in the route, and deliberately **not** delegated per
-administrator the way closing the office is. Seeing who is in is ordinary people-management; deleting
-the record that they were is not, and there is nothing left afterwards to work out who did it.
+`POST /api/admin/attendance/reset` is the super admin's alone — gated in the route, and deliberately
+**not** delegated per administrator the way closing the office is. Seeing who is in is ordinary
+people-management; deleting the record that they were is not, and there is nothing left afterwards to
+work out who did it.
+
+**The two scopes are different acts, and only one of them touches leave.** `DATE` clears check-ins
+for one day and nothing else. `ALL_TIME` clears every check-in *and every leave ever booked*.
+
+**Leave belongs in the all-time reset because a roster is decided by both tables at once.**
+`describeDay` reads a leave before it reads an absence, so a reset that took only check-ins left
+people on the admin screen still marked *On leave* — and to whoever pressed it, a button that had
+plainly done nothing. That is how it came to be reported as broken: a database with zero check-ins
+and two live leave rows answered "there are no check-ins to remove" while the screen went on showing
+somebody on leave. Truthful, and useless. Don't narrow this back to attendance alone without
+answering what then clears the leave rows.
+
+Clearing leave hands every allowance back, because no balance is stored anywhere — `countApprovedInMonth`
+and every figure beside it count these rows. Removing them **is** the undo, and there is no second
+place that needs correcting afterwards.
+
+**Holidays survive both scopes.** A closure is a fact declared about the office rather than about
+anybody's attendance, and it outranks leave rather than belonging to it.
 
 **It is not a blanking, it is a rewrite.** Absence is the lack of a row, so clearing a day does not
 return it to "no data" — it asserts that everybody was absent. Clearing all time asserts it about
 every working day in the system's history, which is why the two are separate acts with separate
 confirmations rather than one button with a checkbox: a day is recoverable by asking people to mark
 present again, and all time is recoverable by nothing this application can do.
+
+**No reset ever empties the admin attendance screen, and the dialog says so.** The roster is built
+from the employee list, so after a total wipe every account still appears, reading `ABSENT`. Somebody
+expecting an empty table reads a working reset as a broken one — which is the same misreading the
+leave rows caused, arriving by a different route.
 
 `RESET` is typed out for the all-time branch and **checked in `resetAttendanceSchema`**, not only in
 the dialog. A confirmation that lives in the browser is a courtesy to whoever is clicking; this one
@@ -584,9 +607,23 @@ at the off switch on the same panel. Suppressing it by inserting warning rows fo
 was the obvious alternative and is worse: it would put a lie in the table that `consecutiveMissed`
 and every future letter are built from.
 
-The count is read when the dialog opens rather than kept on screen, so the number being confirmed is
-the number in the table a moment ago. A check-in landing between the preview and the delete is
-ordinary; the reset reports what it actually removed.
+Clearing leave **widens who that catches without changing the test**. Somebody on approved leave
+today is kept out of the sweep by that row alone, so deleting it turns them into an ordinary absentee
+the cutoff applies to. `warningExposure` already covers them, because the conjunction is about the
+day rather than about any one person — but that is now a second population it silently protects, so
+don't narrow it to "people who had checked in".
+
+Both counts are read when the dialog opens rather than kept on screen, so the numbers being confirmed
+are the ones in the tables a moment ago, and they are shown **separately rather than summed**: a
+cleared check-in can be recorded again by walking into the building, a cleared leave cannot, and one
+total would hide which of the two somebody was actually about to lose. A check-in landing between the
+preview and the delete is ordinary; the reset reports what it actually removed.
+
+The all-time branch is two `deleteMany` calls rather than one transaction, because a transaction
+spanning both tables would have to be written where `prisma` is in scope and the layering keeps that
+in the repositories. A crash between them leaves one table cleared, which is safe here in a way it is
+not for the warning sweep: both deletes are unfiltered, so pressing the button again finishes the job
+rather than doing anything twice.
 
 ## Administrators take leave too
 

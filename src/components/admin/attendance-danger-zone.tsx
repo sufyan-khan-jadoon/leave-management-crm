@@ -26,9 +26,12 @@ type Scope = "DATE" | "ALL_TIME";
 
 type ResetPreview = {
   count: number;
+  leaveCount: number | null;
   mayTriggerWarnings: boolean;
   cutoffMinutes: number;
 };
+
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 /**
  * Erasing check-ins, kept away from everything that merely reads them.
@@ -87,15 +90,18 @@ export function AttendanceDangerZone() {
     setWorking(true);
 
     try {
-      const result = await apiClient.post<{ removed: number }>("/api/admin/attendance/reset", {
-        scope,
-        ...(scope === "ALL_TIME" ? { confirm: typed } : { date }),
-      });
+      const result = await apiClient.post<{ removed: number; removedLeaves: number }>(
+        "/api/admin/attendance/reset",
+        { scope, ...(scope === "ALL_TIME" ? { confirm: typed } : { date }) },
+      );
+
+      const parts = [plural(result.removed, "check-in")];
+      if (scope === "ALL_TIME") parts.push(plural(result.removedLeaves, "leave"));
 
       toast.success(
-        result.removed === 0
+        result.removed + result.removedLeaves === 0
           ? "There was nothing to remove."
-          : `Removed ${result.removed} check-in${result.removed === 1 ? "" : "s"}.`,
+          : `Removed ${parts.join(" and ")}.`,
       );
       close();
     } catch (error) {
@@ -107,6 +113,8 @@ export function AttendanceDangerZone() {
 
   const isAllTime = scope === "ALL_TIME";
   const blocked = isAllTime && typed !== RESET_CONFIRMATION;
+  // Both tables together, because either one alone is something to remove.
+  const total = preview ? preview.count + (preview.leaveCount ?? 0) : 0;
 
   return (
     <>
@@ -117,16 +125,17 @@ export function AttendanceDangerZone() {
             Danger zone
           </CardTitle>
           <CardDescription>
-            Permanently deletes recorded check-ins. Absence is the lack of a check-in, so anyone
-            cleared reads as absent for that day — this does not blank the record, it rewrites what
-            the day says. Warning letters already sent are kept.
+            Permanently deletes recorded activity. Absence is the lack of a check-in rather than a
+            row of its own, so anyone cleared reads as absent — this does not blank the record, it
+            rewrites what the day says, and no reset empties the roster. Warning letters already
+            sent, and declared office closures, are kept.
           </CardDescription>
         </CardHeader>
 
         <CardContent className="grid gap-6">
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1.5">
-              <Label htmlFor="reset-date">Clear one day</Label>
+              <Label htmlFor="reset-date">Clear check-ins for one day</Label>
               <Input
                 id="reset-date"
                 type="date"
@@ -145,15 +154,17 @@ export function AttendanceDangerZone() {
 
           <div className="border-destructive/30 space-y-3 border-t pt-5">
             <div>
-              <p className="text-sm font-medium">Clear every check-in ever recorded</p>
+              <p className="text-sm font-medium">Reset everything</p>
               <p className="text-muted-foreground text-sm">
-                Every person, every day, all the way back. Nothing in this application can undo it.
+                Every check-in <em>and</em> every booked leave, for every person, all the way back.
+                Clearing leave returns everyone&apos;s monthly allowance in full. Nothing in this
+                application can undo it.
               </p>
             </div>
 
             <Button variant="destructive" onClick={() => ask("ALL_TIME")} disabled={working}>
               <Trash2 className="size-4" />
-              Reset all attendance
+              Reset everything
             </Button>
           </div>
         </CardContent>
@@ -163,7 +174,9 @@ export function AttendanceDangerZone() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {isAllTime ? "Delete every check-in ever recorded?" : `Clear ${formatDate(date)}?`}
+              {isAllTime
+                ? "Delete every check-in and leave ever recorded?"
+                : `Clear check-ins for ${formatDate(date)}?`}
             </AlertDialogTitle>
 
             <AlertDialogDescription asChild>
@@ -176,12 +189,37 @@ export function AttendanceDangerZone() {
                 ) : (
                   <>
                     <span className="block">
-                      {preview.count === 0
-                        ? "There are no check-ins to remove."
-                        : `This permanently deletes ${preview.count} check-in${preview.count === 1 ? "" : "s"}. It cannot be undone.`}
+                      {total === 0 ? (
+                        isAllTime ? (
+                          "There are no check-ins or leaves to remove."
+                        ) : (
+                          "There are no check-ins to remove on that day."
+                        )
+                      ) : (
+                        <>
+                          This permanently deletes{" "}
+                          <strong>{plural(preview.count, "check-in")}</strong>
+                          {preview.leaveCount !== null && (
+                            <>
+                              {" and "}
+                              <strong>{plural(preview.leaveCount, "booked leave")}</strong>
+                            </>
+                          )}
+                          . It cannot be undone.
+                        </>
+                      )}
                     </span>
 
-                    {preview.mayTriggerWarnings && preview.count > 0 && (
+                    {isAllTime && total > 0 && (
+                      <span className="text-muted-foreground block">
+                        Everyone keeps their account. Clearing leave returns each person&apos;s
+                        monthly allowance in full, and every employee will read as absent
+                        afterwards — that is the roster with nothing recorded against it, not a
+                        failed reset.
+                      </span>
+                    )}
+
+                    {preview.mayTriggerWarnings && total > 0 && (
                       <span className="text-destructive-ink block">
                         Today&apos;s {friendlyTimeLabel(preview.cutoffMinutes)} cutoff has passed, so
                         the next sweep will read everyone cleared as absent and email them a warning
@@ -194,7 +232,7 @@ export function AttendanceDangerZone() {
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          {isAllTime && !loading && preview && preview.count > 0 && (
+          {isAllTime && !loading && preview && total > 0 && (
             <div className="space-y-1.5">
               <Label htmlFor="reset-confirm">
                 Type {RESET_CONFIRMATION} to confirm
@@ -215,7 +253,7 @@ export function AttendanceDangerZone() {
               variant="destructive"
               onClick={confirm}
               loading={working}
-              disabled={loading || !preview || preview.count === 0 || blocked}
+              disabled={loading || !preview || total === 0 || blocked}
             >
               {isAllTime ? "Delete everything" : "Clear the day"}
             </Button>
