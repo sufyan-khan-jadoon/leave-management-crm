@@ -43,6 +43,12 @@ export type EmailCapabilities = {
   audiences: EmailAudience[];
   /** True for the super admin, whose log covers everybody's sends rather than their own. */
   seesAllHistory: boolean;
+  /**
+   * Named separately from `seesAllHistory` even though both are the super admin
+   * today. Reading the trail and destroying it are different rights, and one flag
+   * standing for both is how a later change to either quietly moves the other.
+   */
+  canClearHistory: boolean;
 };
 
 /**
@@ -182,6 +188,7 @@ export const customEmailService = {
       canSend: audiences.length > 0,
       audiences,
       seesAllHistory: isSuperAdminRole(actor.role),
+      canClearHistory: isSuperAdminRole(actor.role),
     };
   },
 
@@ -333,6 +340,32 @@ export const customEmailService = {
       ...query,
       ...(isSuperAdminRole(actor.role) ? {} : { senderId: actor.id }),
     });
+  },
+
+  /**
+   * Erases the whole sent-message log.
+   *
+   * **The super admin's alone, and not delegable** — deliberately unlike sending,
+   * which is. An administrator who could clear the log could send to the whole
+   * organisation and then remove the only record that they had, which is the one
+   * thing the trail exists to prevent. `canSendEmails` therefore buys no part of
+   * this: the right to write to people is not the right to erase what was
+   * written.
+   *
+   * It clears everything rather than the caller's own rows, because for the only
+   * account that may call it those are the same thing, and a "mine only" variant
+   * is exactly the shape that would let a sender edit themselves out.
+   *
+   * Nothing about delivered mail changes. The messages have been read; this
+   * discards the administrative record of having sent them, which is why it is
+   * gated harder than the sending was.
+   */
+  async clearHistory(actor: EmailActor): Promise<{ removed: number }> {
+    if (!isSuperAdminRole(actor.role)) {
+      throw new ForbiddenError("Only the super administrator can clear the sent message log.");
+    }
+
+    return { removed: await emailDispatchRepository.deleteAll() };
   },
 
   /**

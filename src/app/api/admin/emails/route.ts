@@ -1,5 +1,5 @@
 import { created, handleRoute, ok, parseMultipart, parseQuery } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth/guards";
+import { requireAdmin, requireSuperAdmin } from "@/lib/auth/guards";
 import { customEmailService } from "@/services/custom-email.service";
 import { emailLogQuerySchema, sendCustomEmailSchema } from "@/validations/email.schema";
 
@@ -63,5 +63,24 @@ export async function POST(request: Request) {
     const result = await customEmailService.send(user, data, files);
 
     return created(result);
+  });
+}
+
+/**
+ * Clears the sent-message log.
+ *
+ * Guarded with `requireSuperAdmin` rather than the looser `requireAdmin` the
+ * other two verbs take, and that difference is the point: sending is delegable
+ * through `canSendEmails`, and erasing the record of having sent is not. The
+ * service refuses non-owners again regardless, so the two cannot drift apart.
+ *
+ * No body, because there is nothing to say — the log goes whole or not at all,
+ * and a scope parameter would only ever be used to keep somebody's own rows.
+ */
+export async function DELETE() {
+  return handleRoute(async () => {
+    const user = await requireSuperAdmin();
+
+    return ok(await customEmailService.clearHistory(user));
   });
 }

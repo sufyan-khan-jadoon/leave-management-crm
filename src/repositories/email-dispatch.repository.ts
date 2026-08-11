@@ -68,4 +68,22 @@ export const emailDispatchRepository = {
 
     return { items, total };
   },
+
+  count(): Promise<number> {
+    return prisma.emailDispatch.count();
+  },
+
+  /**
+   * Erases the whole trail, and says how many rows went.
+   *
+   * Deliberately takes no `senderId`, unlike `list` above. Narrowing this to one
+   * administrator's own sends is the single shape it must not have: the log
+   * exists to answer "who wrote to the organisation", and a sender able to remove
+   * their own rows would be answering that question for everybody but themselves.
+   * Who may call it at all is settled a layer up.
+   */
+  async deleteAll(): Promise<number> {
+    const result = await prisma.emailDispatch.deleteMany();
+    return result.count;
+  },
 };
