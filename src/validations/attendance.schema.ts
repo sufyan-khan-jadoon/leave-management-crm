@@ -152,9 +152,16 @@ const resetConfirmation = z
  *
  * `ATTENDANCE` and `LEAVES` exist because the two tables answer different
  * questions and are worth clearing apart: wiping a month of trial check-ins
- * should not have to cost everybody the leave they booked. `ALL_TIME` remains
- * the pair, rather than something the caller assembles by sending two requests
- * and hoping both land.
+ * should not have to cost everybody the leave they booked.
+ *
+ * `ABSENCES` clears `attendance_warnings`, which is the only place absence is
+ * ever written down — the status itself is derived from the lack of a check-in
+ * and cannot be deleted at all. It is a separate scope rather than part of the
+ * others because it is the only one whose risk is a *duplicate* letter rather
+ * than a lost record.
+ *
+ * `ALL_TIME` is all three, rather than something the caller assembles by firing
+ * three requests and hoping each lands.
  */
 export const resetAttendanceSchema = z.discriminatedUnion("scope", [
   z.strictObject({
@@ -163,6 +170,7 @@ export const resetAttendanceSchema = z.discriminatedUnion("scope", [
   }),
   z.strictObject({ scope: z.literal("ATTENDANCE"), confirm: resetConfirmation }),
   z.strictObject({ scope: z.literal("LEAVES"), confirm: resetConfirmation }),
+  z.strictObject({ scope: z.literal("ABSENCES"), confirm: resetConfirmation }),
   z.strictObject({ scope: z.literal("ALL_TIME"), confirm: resetConfirmation }),
 ]);
 
@@ -174,6 +182,7 @@ export const resetAttendancePreviewSchema = z.discriminatedUnion("scope", [
   z.object({ scope: z.literal("DATE"), date: calendarDateSchema }),
   z.object({ scope: z.literal("ATTENDANCE") }),
   z.object({ scope: z.literal("LEAVES") }),
+  z.object({ scope: z.literal("ABSENCES") }),
   z.object({ scope: z.literal("ALL_TIME") }),
 ]);
 

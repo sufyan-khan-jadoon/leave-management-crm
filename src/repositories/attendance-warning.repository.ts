@@ -57,6 +57,41 @@ export const attendanceWarningRepository = {
     return rows.map((row) => row.employeeId);
   },
 
+  countAll(): Promise<number> {
+    return prisma.attendanceWarning.count();
+  },
+
+  /** Claims held for one date — the rows that would stop a re-sweep writing again. */
+  countOnDate(date: Date): Promise<number> {
+    return prisma.attendanceWarning.count({ where: { date } });
+  },
+
+  /**
+   * Erases the absence record — every warning ever claimed.
+   *
+   * This is the **only** stored trace of absence in the system. Nothing else
+   * records that somebody missed a day: `AttendanceStatus` has one value, and
+   * absence is derived from the lack of a check-in. So this is the whole of what
+   * "clear the absences" can mean, and the reason the scope exists at all.
+   *
+   * Permitted by argument rather than forbidden outright, and the argument is
+   * the one `warningExposure` already makes. `dispatchAttendanceWarnings` only
+   * ever sweeps `todayUtc()`, so deleting a claim for any **past** day cannot
+   * produce a second letter — the sweep will never look there again, and the row
+   * was only ever load-bearing on the day it was written. The live case is
+   * today's claims: removing one lets the next sweep write to somebody it has
+   * already written to. That is reported in the dialog rather than prevented
+   * here, exactly as clearing today's check-ins is.
+   *
+   * Delivered mail is untouched, and cannot be otherwise. The letters have been
+   * read; what goes is the record of having sent them, and the
+   * `consecutiveMissed` streak that later letters would have counted from.
+   */
+  async deleteAll(): Promise<number> {
+    const result = await prisma.attendanceWarning.deleteMany();
+    return result.count;
+  },
+
   /** One person's warnings, most recent first. */
   listForEmployee(employeeId: string, take = 20): Promise<AttendanceWarningDto[]> {
     return prisma.attendanceWarning.findMany({

@@ -74,14 +74,20 @@ describe("resetAttendanceSchema", () => {
   });
 
   /**
-   * The two single-table scopes. They exist so that clearing a month of trial
+   * The three single-table scopes. They exist so that clearing a month of trial
    * check-ins need not cost everybody the leave they booked, which means the
    * thing worth pinning is that each still demands the word — an irreversible
    * act is not made routine by being narrower.
+   *
+   * `ABSENCES` is the odd one: it clears `attendance_warnings`, the only place
+   * absence is written down at all. It belongs here rather than in a scope of
+   * its own because the parsing rules are identical; what differs is the risk,
+   * which is a duplicate letter rather than a lost record, and lives in the
+   * service and the dialog.
    */
   describe("the single-table scopes", () => {
     it("takes each with the word, in any case", () => {
-      for (const scope of ["ATTENDANCE", "LEAVES"] as const) {
+      for (const scope of ["ATTENDANCE", "LEAVES", "ABSENCES"] as const) {
         expect(resetAttendanceSchema.safeParse({ scope, confirm: "reset" }).success, scope).toBe(
           true,
         );
@@ -89,7 +95,7 @@ describe("resetAttendanceSchema", () => {
     });
 
     it("refuses each without it", () => {
-      for (const scope of ["ATTENDANCE", "LEAVES"] as const) {
+      for (const scope of ["ATTENDANCE", "LEAVES", "ABSENCES"] as const) {
         expect(resetAttendanceSchema.safeParse({ scope }).success, scope).toBe(false);
         expect(
           resetAttendanceSchema.safeParse({ scope, confirm: "yes" }).success,
@@ -99,7 +105,7 @@ describe("resetAttendanceSchema", () => {
     });
 
     it("refuses a date on either, which would silently mean nothing", () => {
-      for (const scope of ["ATTENDANCE", "LEAVES"] as const) {
+      for (const scope of ["ATTENDANCE", "LEAVES", "ABSENCES"] as const) {
         expect(
           resetAttendanceSchema.safeParse({ scope, confirm: "RESET", date: "2026-08-11" }).success,
           scope,

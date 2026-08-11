@@ -558,14 +558,19 @@ verified by rendering it under both.
 people-management; deleting the record that they were is not, and there is nothing left afterwards to
 work out who did it.
 
-**Four scopes, and only the first is routine.** `DATE` clears check-ins for one day and nothing else.
-`ATTENDANCE` clears every check-in ever recorded, `LEAVES` every leave ever booked, and `ALL_TIME`
-both. The three all-time scopes each demand the typed word; `DATE` deliberately does not.
+**Five scopes, and only the first is routine.** `DATE` clears check-ins for one day and nothing else.
+`ATTENDANCE` clears every check-in ever recorded, `LEAVES` every leave ever booked, `ABSENCES` every
+warning ever issued, and `ALL_TIME` all three. The four all-time scopes each demand the typed word;
+`DATE` deliberately does not.
 
-The two single-table scopes exist because the tables answer different questions — wiping a month of
-trial check-ins should not have to cost everybody the leave they booked. `ALL_TIME` stays a scope of
-its own rather than two requests fired in sequence, so a half-finished reset is not something the
-client can produce by having the second call fail.
+The single-table scopes exist because the tables answer different questions — wiping a month of trial
+check-ins should not have to cost everybody the leave they booked. `ALL_TIME` stays a scope of its
+own rather than three requests fired in sequence, so a half-finished reset is not something the
+client can produce by having a later call fail.
+
+**Attendance warnings are the one thing `ALL_TIME` gained rather than kept out.** They were excluded
+while there was no way to clear them deliberately; once `ABSENCES` existed, a "reset everything" that
+quietly left a table behind would have been a worse lie than the risk it was avoiding.
 
 **Leave belongs in the all-time reset because a roster is decided by both tables at once.**
 `describeDay` reads a leave before it reads an absence, so a reset that took only check-ins left
@@ -595,22 +600,46 @@ misreading the leave rows caused, arriving by a different route, and it was repo
 the wording existed. It is said beside the buttons where the expectation forms, in the confirmation
 dialog, and on the attendance screen itself when a working day holds no check-ins and no leave.
 
-**There is no "reset absences", and there cannot be.** `AttendanceStatus` has one value, `PRESENT`;
-absence is computed at render time from the lack of a row. A button for it would issue a delete that
-matched nothing, every time, and leave the screen identical — which is precisely the appearance of
-failure it would have been added to fix. If this is asked for again, the answer is wording or a
-filter, not a fifth scope. The status filter on the attendance screen already hides absentees for
-anyone who wants them out of the way.
+**"Reset absences" clears the record, not the status, and the distinction is the whole of it.**
+`AttendanceStatus` has one value, `PRESENT`, and absence is computed at render time from the lack of
+a row — so nothing can delete an absence, and `ABSENCES` does not pretend to. What it clears is
+`attendance_warnings`: the letters issued and the `consecutiveMissed` streak they carry, which is
+the only place in the system absence is ever written down. After it runs, everybody still reads
+`ABSENT`, and the panel says so in as many words.
+
+This note previously said the scope could not exist and that the answer was wording or a filter.
+That was wrong, and wrong in a specific way worth keeping: it confused the derived status with the
+one table that records it, and so answered a real request with an explanation. Say what cannot be
+done *and* what can.
+
+**Deleting warnings is permitted by argument, not by relaxing the invariant.** The rule elsewhere in
+this file — that warnings are never deleted, because the row is the claim that stops a second letter
+— still holds for every automated path. `dispatchAttendanceWarnings` only ever sweeps `todayUtc()`,
+so a claim for any past day is inert: the sweep will never look at it again, and deleting it cannot
+produce a letter. The live case is **today's** claims, where removing the row lets the next sweep
+write to somebody it has already written to. `warningsForToday` counts exactly those, separately from
+the total, so the dialog can name the risk on the rows it actually applies to rather than describing
+a danger to somebody clearing a year of dead history. Reported, not prevented — the same trade the
+mass-email trap makes directly above.
+
+Delivered mail is untouched and cannot be otherwise. The letters have been read; what goes is the
+administrative record of having sent them.
+
+The status filter on the attendance screen still hides absentees for anyone who only wants them out
+of the way, and remains the right answer to "I don't want to look at these".
 
 `RESET` is typed out for the all-time branch and **checked in `resetAttendanceSchema`**, not only in
 the dialog. A confirmation that lives in the browser is a courtesy to whoever is clicking; this one
 is the rule, so `curl` has to spell the same word. The day branch has no such field on purpose — a
 ceremony demanded for every ordinary fix is a ceremony somebody eventually automates away.
 
-**Attendance warnings are never deleted.** They record letters already delivered, which no amount of
-deleting can unsend, and the row doubles as the claim that stops a second letter for a day already
-swept. Clearing them would make somebody warned twice for one day, which is precisely what the
-claim-before-send design exists to prevent.
+**Attendance warnings are never deleted by anything automatic**, and only ever by `ABSENCES` or
+`ALL_TIME`, deliberately. They record letters already delivered, which no amount of deleting can
+unsend, and the row doubles as the claim that stops a second letter for a day already swept —
+clearing today's is precisely how somebody gets warned twice, which is what the claim-before-send
+design exists to prevent. That is why the two scopes that can do it say so, count today's claims
+apart from the rest, and make the super admin type the word. Nothing else in the codebase may remove
+one; don't add a cascade or a tidy-up sweep that does.
 
 **The mass-email trap, and why it is reported rather than prevented.** `dispatchAttendanceWarnings`
 only ever sweeps `todayUtc()`, so clearing any *past* day cannot produce a letter however many

@@ -13,6 +13,7 @@ import {
   employeeRepository,
   type AttendanceRosterMember,
 } from "@/repositories/employee.repository";
+import { attendanceWarningRepository } from "@/repositories/attendance-warning.repository";
 import { holidayRepository } from "@/repositories/holiday.repository";
 import { leaveRepository } from "@/repositories/leave.repository";
 import { attendancePolicyService } from "@/services/attendance-policy.service";
@@ -112,6 +113,20 @@ export type ResetPreview = {
    */
   leaveCount: number | null;
   /**
+   * Warning rows the reset would remove — `null` when the scope leaves them
+   * alone. This is the only stored trace of absence there is.
+   */
+  warningCount: number | null;
+  /**
+   * Claims held for today specifically, out of `warningCount`.
+   *
+   * The whole of the risk in clearing absences, isolated: a claim for a past day
+   * is inert, because the sweep only ever revisits today. Counted separately so
+   * the dialog can say "two of these are today's" rather than describing a
+   * danger that may not apply to a single row being removed.
+   */
+  warningsForToday: number | null;
+  /**
    * True when clearing this would leave people the warning sweep reads as absent
    * and writes to. See `warningExposure` for why it is so narrow.
    */
@@ -124,6 +139,8 @@ export type ResetResult = {
   removed: number;
   /** Leave rows removed. Always 0 for a single day, which never touches them. */
   removedLeaves: number;
+  /** Warning rows removed — the record of absence, not the absence itself. */
+  removedWarnings: number;
   scope: ResetAttendanceInput["scope"];
 };
 
@@ -429,20 +446,24 @@ export const attendanceService = {
    * a check-in landing between the two is ordinary rather than a problem.
    */
   async resetPreview(query: ResetAttendancePreviewQuery): Promise<ResetPreview> {
-    const touchesAttendance = query.scope !== "LEAVES";
-    const touchesLeave = query.scope === "LEAVES" || query.scope === "ALL_TIME";
+    const { scope } = query;
+    const touchesAttendance = scope === "DATE" || scope === "ATTENDANCE" || scope === "ALL_TIME";
+    const touchesLeave = scope === "LEAVES" || scope === "ALL_TIME";
+    const touchesWarnings = scope === "ABSENCES" || scope === "ALL_TIME";
 
-    const [count, leaveCount, warning] = await Promise.all([
+    const [count, leaveCount, warningCount, warningsForToday, warning] = await Promise.all([
       !touchesAttendance
         ? null
-        : query.scope === "DATE"
+        : scope === "DATE"
           ? attendanceRepository.countOnDate(query.date)
           : attendanceRepository.countAll(),
       touchesLeave ? leaveRepository.countAll() : null,
-      warningExposure(query.scope === "DATE" ? query.date : null),
+      touchesWarnings ? attendanceWarningRepository.countAll() : null,
+      touchesWarnings ? attendanceWarningRepository.countOnDate(todayUtc()) : null,
+      warningExposure(scope === "DATE" ? query.date : null),
     ]);
 
-    return { count, leaveCount, ...warning };
+    return { count, leaveCount, warningCount, warningsForToday, ...warning };
   },
 
   /**
@@ -463,13 +484,16 @@ export const attendanceService = {
    * stored — `countApprovedInMonth` and every figure beside it count these rows.
    * Removing them *is* the undo; there is no second place to correct.
    *
-   * Attendance warnings are deliberately **left alone**, and holidays with them.
-   * Warnings are the record of letters already delivered, which no amount of
-   * deleting can unsend, and they double as the claim that stops a second letter
-   * for a day already swept — clearing them would make somebody warned twice for
-   * one day, which is the one outcome the whole claim-before-send design exists
-   * to prevent. A closure is a fact about the office rather than about anybody's
-   * attendance, and outlives both tables here.
+   * `ABSENCES` clears `attendance_warnings` — the only place absence is ever
+   * written down, since the status itself is derived. It cannot make anybody
+   * stop reading as absent, and does not claim to; what goes is the record of
+   * the letters and the streak they counted from. Its risk is the opposite of
+   * every other scope's: not a lost record but a *duplicate letter*, and only
+   * for today's claims, which `warningsForToday` counts separately so the dialog
+   * can name it precisely.
+   *
+   * Holidays survive every scope. A closure is a fact about the office rather
+   * than about anybody's attendance, and outlives all three tables here.
    *
    * The super admin's alone, gated in the route.
    */
@@ -479,6 +503,7 @@ export const attendanceService = {
         return {
           removed: await attendanceRepository.deleteMany(input.date),
           removedLeaves: 0,
+          removedWarnings: 0,
           scope: input.scope,
         };
 
@@ -486,6 +511,7 @@ export const attendanceService = {
         return {
           removed: await attendanceRepository.deleteMany(),
           removedLeaves: 0,
+          removedWarnings: 0,
           scope: input.scope,
         };
 
@@ -493,6 +519,15 @@ export const attendanceService = {
         return {
           removed: 0,
           removedLeaves: await leaveRepository.deleteAll(),
+          removedWarnings: 0,
+          scope: input.scope,
+        };
+
+      case "ABSENCES":
+        return {
+          removed: 0,
+          removedLeaves: 0,
+          removedWarnings: await attendanceWarningRepository.deleteAll(),
           scope: input.scope,
         };
 
@@ -504,12 +539,13 @@ export const attendanceService = {
         // way it is not for the warning sweep: both deletes are unfiltered, so
         // pressing the button again finishes the job rather than doing anything
         // a second time.
-        const [removed, removedLeaves] = await Promise.all([
+        const [removed, removedLeaves, removedWarnings] = await Promise.all([
           attendanceRepository.deleteMany(),
           leaveRepository.deleteAll(),
+          attendanceWarningRepository.deleteAll(),
         ]);
 
-        return { removed, removedLeaves, scope: input.scope };
+        return { removed, removedLeaves, removedWarnings, scope: input.scope };
       }
     }
   },

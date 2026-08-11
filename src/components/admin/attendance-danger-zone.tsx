@@ -22,11 +22,13 @@ import { friendlyTimeLabel } from "@/lib/attendance-policy";
 import { formatDate, toIsoDate, todayUtc } from "@/lib/date";
 import { RESET_CONFIRMATION } from "@/validations/attendance.schema";
 
-type Scope = "DATE" | "ATTENDANCE" | "LEAVES" | "ALL_TIME";
+type Scope = "DATE" | "ATTENDANCE" | "LEAVES" | "ABSENCES" | "ALL_TIME";
 
 type ResetPreview = {
   count: number | null;
   leaveCount: number | null;
+  warningCount: number | null;
+  warningsForToday: number | null;
   mayTriggerWarnings: boolean;
   cutoffMinutes: number;
 };
@@ -48,8 +50,12 @@ const SCOPES: Record<Scope, { title: (date: string) => string; action: string }>
     action: "Delete all check-ins",
   },
   LEAVES: { title: () => "Delete every leave ever booked?", action: "Delete all leaves" },
+  ABSENCES: {
+    title: () => "Clear the record of every absence?",
+    action: "Clear absence records",
+  },
   ALL_TIME: {
-    title: () => "Delete every check-in and leave ever recorded?",
+    title: () => "Delete every check-in, leave and absence record?",
     action: "Delete everything",
   },
 };
@@ -122,23 +128,32 @@ export function AttendanceDangerZone() {
     setWorking(true);
 
     try {
-      const result = await apiClient.post<{ removed: number; removedLeaves: number }>(
-        "/api/admin/attendance/reset",
-        { scope, ...(scope === "DATE" ? { date } : { confirm: typed }) },
-      );
+      const result = await apiClient.post<{
+        removed: number;
+        removedLeaves: number;
+        removedWarnings: number;
+      }>("/api/admin/attendance/reset", {
+        scope,
+        ...(scope === "DATE" ? { date } : { confirm: typed }),
+      });
 
       // Names only the tables this scope touched. Reporting "and 0 leaves" on a
       // check-ins-only reset would read as a failure to delete them.
       const parts: string[] = [];
-      if (scope !== "LEAVES") parts.push(plural(result.removed, "check-in"));
+      if (scope === "DATE" || scope === "ATTENDANCE" || scope === "ALL_TIME") {
+        parts.push(plural(result.removed, "check-in"));
+      }
       if (scope === "LEAVES" || scope === "ALL_TIME") {
         parts.push(plural(result.removedLeaves, "leave"));
       }
+      if (scope === "ABSENCES" || scope === "ALL_TIME") {
+        parts.push(plural(result.removedWarnings, "absence record"));
+      }
 
       toast.success(
-        result.removed + result.removedLeaves === 0
+        result.removed + result.removedLeaves + result.removedWarnings === 0
           ? "There was nothing to remove."
-          : `Removed ${parts.join(" and ")}.`,
+          : `Removed ${parts.join(", ")}.`,
       );
       close();
     } catch (error) {
@@ -155,7 +170,9 @@ export function AttendanceDangerZone() {
   const blocked = needsWord && typed.trim().toUpperCase() !== RESET_CONFIRMATION;
   // Across whichever tables this scope touches — either one alone is something
   // to remove, and a scope that touches neither cannot arise.
-  const total = preview ? (preview.count ?? 0) + (preview.leaveCount ?? 0) : 0;
+  const total = preview
+    ? (preview.count ?? 0) + (preview.leaveCount ?? 0) + (preview.warningCount ?? 0)
+    : 0;
 
   return (
     <>
@@ -214,6 +231,11 @@ export function AttendanceDangerZone() {
                 Reset all leaves
               </Button>
 
+              <Button variant="outline" onClick={() => ask("ABSENCES")} disabled={working}>
+                <Trash2 className="size-4" />
+                Reset all absences
+              </Button>
+
               <Button variant="destructive" onClick={() => ask("ALL_TIME")} disabled={working}>
                 <Trash2 className="size-4" />
                 Reset everything
@@ -225,10 +247,13 @@ export function AttendanceDangerZone() {
                 somebody expecting an empty roster reads a working reset as a
                 broken one. Said next to the buttons, where the expectation forms. */}
             <p className="text-muted-foreground border-muted border-l-2 pl-3 text-sm">
-              None of these empties the attendance screen. Absence is not stored — it is what the
-              screen shows for a person with no check-in — so once everything is cleared, every
-              employee reads as <strong>Absent</strong>. That is the roster with nothing recorded
-              against it, and it is what a successful reset looks like.
+              <strong>Reset all absences</strong> clears the absence <em>record</em> — the warning
+              letters issued and the consecutive-days streak they carry, which is the only place
+              absence is ever written down. It does not, and cannot, make anybody stop reading as
+              absent: that status is not stored, it is what the screen shows for a person with no
+              check-in. So none of these buttons empties the attendance screen. Once everything is
+              cleared every employee reads as <strong>Absent</strong>, and that is what a successful
+              reset looks like.
             </p>
           </div>
         </CardContent>
@@ -260,19 +285,28 @@ export function AttendanceDangerZone() {
                               ? "no leave has been booked"
                               : scope === "ATTENDANCE"
                                 ? "no check-in has been recorded"
-                                : "no check-in or leave has been recorded"
+                                : scope === "ABSENCES"
+                                  ? "no absence has ever been recorded against anybody"
+                                  : "nothing has been recorded"
                           }.`
                         )
                       ) : (
                         <>
                           This permanently deletes{" "}
-                          {preview.count !== null && (
-                            <strong>{plural(preview.count, "check-in")}</strong>
-                          )}
-                          {preview.count !== null && preview.leaveCount !== null && " and "}
-                          {preview.leaveCount !== null && (
-                            <strong>{plural(preview.leaveCount, "booked leave")}</strong>
-                          )}
+                          {[
+                            preview.count !== null && plural(preview.count, "check-in"),
+                            preview.leaveCount !== null &&
+                              plural(preview.leaveCount, "booked leave"),
+                            preview.warningCount !== null &&
+                              plural(preview.warningCount, "absence record"),
+                          ]
+                            .filter((part): part is string => typeof part === "string")
+                            .map((part, index, all) => (
+                              <span key={part}>
+                                <strong>{part}</strong>
+                                {index < all.length - 2 ? ", " : index === all.length - 2 ? " and " : ""}
+                              </span>
+                            ))}
                           . It cannot be undone.
                         </>
                       )}
@@ -283,12 +317,29 @@ export function AttendanceDangerZone() {
                         Everyone keeps their account.{" "}
                         {preview.leaveCount !== null &&
                           "Clearing leave returns each person's monthly allowance in full. "}
+                        {preview.warningCount !== null &&
+                          "Letters already delivered cannot be unsent — what goes is the record of having sent them, and the consecutive-days streak future letters count from. "}
                         Every employee will read as absent afterwards — that is the roster with
                         nothing recorded against it, not a failed reset.
                       </span>
                     )}
 
-                    {preview.mayTriggerWarnings && total > 0 && (
+                    {/* The one real hazard in clearing absences, and it applies
+                        only to today's claims: a past claim is inert, because
+                        the sweep never looks back at it. */}
+                    {preview.warningsForToday !== null &&
+                      preview.warningsForToday > 0 &&
+                      preview.mayTriggerWarnings && (
+                        <span className="text-destructive-ink block">
+                          {plural(preview.warningsForToday, "of these")} {" "}
+                          {preview.warningsForToday === 1 ? "is" : "are"} today&apos;s. Removing a
+                          claim for today lets the next sweep write to somebody it has already
+                          written to, so they would receive a second letter for the same day. Past
+                          days carry no such risk — the sweep never revisits them.
+                        </span>
+                      )}
+
+                    {preview.mayTriggerWarnings && total > 0 && preview.count !== null && (
                       <span className="text-destructive-ink block">
                         Today&apos;s {friendlyTimeLabel(preview.cutoffMinutes)} cutoff has passed, so
                         the next sweep will read everyone cleared as absent and email them a warning
@@ -323,9 +374,11 @@ export function AttendanceDangerZone() {
                   : `Confirmed — the button will now remove ${[
                       preview.count !== null && plural(preview.count, "check-in"),
                       preview.leaveCount !== null && plural(preview.leaveCount, "booked leave"),
+                      preview.warningCount !== null &&
+                        plural(preview.warningCount, "absence record"),
                     ]
                       .filter(Boolean)
-                      .join(" and ")}.`}
+                      .join(", ")}.`}
               </p>
             </div>
           )}
