@@ -36,6 +36,35 @@ export function isSuperAdminRole(role: Role | string): boolean {
 }
 
 /**
+ * The two populations every *report* in this system splits into.
+ *
+ * `SUPER_ADMIN` is not a value here and is deliberately counted **with** the
+ * administrators by `rolesInPopulation`. That is the opposite of what the Staff
+ * screen does, and the difference is what the split is for: a roster lists what
+ * can be acted on, and nobody manages the owner, so they are absent there. A
+ * report measures the organisation, and an account in neither population would
+ * simply vanish from its own figures — its leave counted nowhere, its
+ * attendance in no tile.
+ *
+ * Kept here rather than in either service because two of them now ask the same
+ * question — the admin overview and the attendance roster — and a report that
+ * counted the owner while a filter beside it hid them is precisely the kind of
+ * quiet disagreement this file exists to prevent.
+ */
+export const POPULATION = {
+  EMPLOYEE: ROLE.EMPLOYEE,
+  ADMIN: ROLE.ADMIN,
+} as const;
+
+export type Population = (typeof POPULATION)[keyof typeof POPULATION];
+
+export function rolesInPopulation(population: Population): Role[] {
+  return population === POPULATION.ADMIN
+    ? [ROLE.ADMIN, ROLE.SUPER_ADMIN]
+    : [ROLE.EMPLOYEE];
+}
+
+/**
  * The roles an invitation may grant. SUPER_ADMIN is absent on purpose: that role
  * is seeded, never invited, so no invitation can ever mint another owner.
  */

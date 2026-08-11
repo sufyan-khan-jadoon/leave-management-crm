@@ -3,6 +3,7 @@ import type { Role } from "@prisma/client";
 import { hasCutoffPassed } from "@/lib/attendance-policy";
 import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
 import { isWorkingWeekday } from "@/lib/working-days";
+import { isSuperAdminRole, rolesInPopulation } from "@/lib/enums";
 import { ConflictError, ForbiddenError, ValidationError } from "@/lib/errors";
 import { judgePosition } from "@/lib/geo";
 import {
@@ -107,10 +108,10 @@ const INACCURATE_MESSAGE =
   "Unable to verify your location accurately. Please move to an area with better location accuracy and try again.";
 
 export type ResetPreview = {
-  /** Check-ins the reset would remove — `null` when the scope leaves them alone. */
+  /** Check-ins the reset would remove — `null` when the target leaves them alone. */
   count: number | null;
   /**
-   * Leave rows the reset would remove — `null` when the scope leaves them alone.
+   * Leave rows the reset would remove — `null` when the target leaves them alone.
    *
    * Reported beside the check-in count rather than folded into one total,
    * because the two are not the same loss. A cleared check-in can be recorded
@@ -118,13 +119,13 @@ export type ResetPreview = {
    * and takes a history away. Somebody confirming this should see both numbers
    * rather than their sum.
    *
-   * `null` rather than `0` throughout, so "this scope does not touch that table"
-   * and "that table is already empty" stay different sentences. The dialog says
-   * different things about them.
+   * `null` rather than `0` throughout, so "this target does not touch that
+   * table" and "that table is already empty" stay different sentences. The
+   * dialog says different things about them.
    */
   leaveCount: number | null;
   /**
-   * Warning rows the reset would remove — `null` when the scope leaves them
+   * Warning rows the reset would remove — `null` when the target leaves them
    * alone. This is the only stored trace of absence there is.
    */
   warningCount: number | null;
@@ -135,6 +136,10 @@ export type ResetPreview = {
    * is inert, because the sweep only ever revisits today. Counted separately so
    * the dialog can say "two of these are today's" rather than describing a
    * danger that may not apply to a single row being removed.
+   *
+   * `null` when this reset would not remove a claim for today at all — which is
+   * every single-day reset aimed at a past date, and so the common case now that
+   * each target can be pointed at one day.
    */
   warningsForToday: number | null;
   /**
@@ -147,13 +152,27 @@ export type ResetPreview = {
 };
 
 export type ResetResult = {
+  /** Check-ins removed. */
   removed: number;
-  /** Leave rows removed. Always 0 for a single day, which never touches them. */
   removedLeaves: number;
   /** Warning rows removed — the record of absence, not the absence itself. */
   removedWarnings: number;
-  scope: ResetAttendanceInput["scope"];
+  range: ResetAttendanceInput["range"];
+  target: ResetAttendanceInput["target"];
 };
+
+/** Which tables a target reaches. The one place the grid is spelt out. */
+function tablesFor(target: ResetAttendanceInput["target"]): {
+  attendance: boolean;
+  leaves: boolean;
+  warnings: boolean;
+} {
+  return {
+    attendance: target === "ATTENDANCE" || target === "ALL",
+    leaves: target === "LEAVES" || target === "ALL",
+    warnings: target === "ABSENCES" || target === "ALL",
+  };
+}
 
 /**
  * Whether erasing a day would cause warning letters to be sent about it.
@@ -171,15 +190,16 @@ export type ResetResult = {
  * the mail it avoided. The screen names the risk and points at the off switch,
  * which is on the same panel, and the super admin decides.
  *
- * A **whole** scope now closes the exposure by itself rather than by suppressing
- * anything, and that falls out of `NO_RECORD` rather than being arranged here: a
- * day left holding no check-in and no leave has no absentees on it, and the
- * sweep writes only to people the roster calls `ABSENT`. So the question below
- * is no longer "does this touch today" but "would today still hold anything
- * afterwards" — which leaves the partial resets exposed, and only them.
+ * A target that clears the **whole** of a day closes the exposure by itself
+ * rather than by suppressing anything, and that falls out of `NO_RECORD` rather
+ * than being arranged here: a day left holding no check-in and no leave has no
+ * absentees on it, and the sweep writes only to people the roster calls
+ * `ABSENT`. So the question below is not "does this touch today" but "would
+ * today still hold anything afterwards" — which leaves the partial resets
+ * exposed, and only them.
  */
 async function warningExposure(
-  scope: ResetAttendancePreviewQuery["scope"],
+  tables: ReturnType<typeof tablesFor>,
   date: Date | null,
 ): Promise<{ mayTriggerWarnings: boolean; cutoffMinutes: number }> {
   const policy = await attendancePolicyService.get();
@@ -196,20 +216,20 @@ async function warningExposure(
 
   if (!dayIsChaseable) return { mayTriggerWarnings: false, cutoffMinutes: policy.cutoffMinutes };
 
-  // What today would still hold once this scope had run. A day left holding
-  // nothing reads as `NO_RECORD` for everybody, and the sweep only ever writes
-  // to people the roster calls `ABSENT` — so it would find nobody, and no letter
-  // can go out however many rows were removed. The exposure is therefore real
-  // only for the *partial* resets: clearing check-ins while somebody's leave
-  // stays behind, or clearing leave while somebody's check-in does, leaves a day
-  // the system still considers itself to have been watching.
+  // What today would still hold once this had run. A day left holding nothing
+  // reads as `NO_RECORD` for everybody, so the sweep finds nobody and no letter
+  // can go out however many rows were removed. The exposure is real only for the
+  // *partial* resets: clearing check-ins while somebody's leave stays behind, or
+  // clearing leave while somebody's check-in does, leaves a day the system still
+  // considers itself to have been watching.
+  // Approved leave, not every row on the date — mirroring `buildRoster` exactly,
+  // because this is asking what the roster would say afterwards. `countOnDate`
+  // is the right question for how many rows a delete would take and the wrong
+  // one here: a legacy `PENDING` row is something to remove and nothing that
+  // keeps anybody off the sweep.
   const [checkIns, onLeave] = await Promise.all([
-    scope === "DATE" || scope === "ATTENDANCE" || scope === "ALL_TIME"
-      ? 0
-      : attendanceRepository.countOnDate(today),
-    scope === "LEAVES" || scope === "ALL_TIME"
-      ? 0
-      : leaveRepository.employeeIdsOnApprovedLeave(today).then((ids) => ids.length),
+    tables.attendance ? 0 : attendanceRepository.countOnDate(today),
+    tables.leaves ? 0 : leaveRepository.employeeIdsOnApprovedLeave(today).then((ids) => ids.length),
   ]);
 
   return {
@@ -244,6 +264,37 @@ async function warningExposure(
  */
 function dayHoldsRecord(checkIns: number, onLeave: number): boolean {
   return checkIns > 0 || onLeave > 0;
+}
+
+/**
+ * Who may narrow the roster to one population.
+ *
+ * The super admin alone, mirroring `role=ADMIN` on `/api/admin/employees` and
+ * for the same reason: which of your colleagues is an administrator is not
+ * something this screen tells an ordinary administrator. It cannot today —
+ * `attendanceRosterSelect` carries no role, so the roster names people without
+ * saying what they are — and a filter would hand over exactly that.
+ *
+ * **`EMPLOYEE` is gated too, and that is not an oversight.** Filtering to the
+ * employees looks harmless, but comparing that list against the unfiltered one
+ * names the administrators just as precisely as asking for them. A filter that
+ * leaks by subtraction is still a leak, so the whole control belongs to one
+ * viewer rather than half of it to everybody.
+ *
+ * Asserted here rather than in the route because there are two ways in — the
+ * screen and the CSV export — and a check written twice is a check that will
+ * one day be written once. The routes still guard `requireAdmin`; this decides
+ * the narrower question behind it, the way `assertMayManage` does for accounts.
+ */
+function assertMayViewPopulation(
+  actorRole: Role,
+  population: AttendanceRosterQuery["population"],
+): void {
+  if (population !== "ALL" && !isSuperAdminRole(actorRole)) {
+    throw new ForbiddenError(
+      "Only a super administrator can filter attendance by employees or administrators.",
+    );
+  }
 }
 
 /**
@@ -481,7 +532,10 @@ export const attendanceService = {
    * mean "show me today's absentees" returning a page of whoever happened to
    * sort first, most of whom were present.
    */
-  async roster(query: AttendanceRosterQuery): Promise<{
+  async roster(
+    query: AttendanceRosterQuery,
+    actorRole: Role,
+  ): Promise<{
     date: Date;
     officeClosed: boolean;
     isWorkingDay: boolean;
@@ -489,10 +543,17 @@ export const attendanceService = {
     total: number;
     summary: AttendanceSummary;
   }> {
+    assertMayViewPopulation(actorRole, query.population);
+
     const { date, officeClosed, isWorkingDay, entries } = await buildRoster(query.date ?? todayUtc(), {
       employeeId: query.employeeId,
       department: query.department,
       search: query.search,
+      // Narrowed in the query rather than filtered out of the result, so the
+      // tiles count the population on screen. Switching to Administrators
+      // changes what is being measured, not just which rows are listed — the
+      // same thing the overview's population toggle does.
+      roles: query.population === "ALL" ? undefined : rolesInPopulation(query.population),
     });
 
     const filtered = query.status === "ALL" ? entries : entries.filter((e) => e.status === query.status);
@@ -531,108 +592,88 @@ export const attendanceService = {
    * a check-in landing between the two is ordinary rather than a problem.
    */
   async resetPreview(query: ResetAttendancePreviewQuery): Promise<ResetPreview> {
-    const { scope } = query;
-    const touchesAttendance = scope === "DATE" || scope === "ATTENDANCE" || scope === "ALL_TIME";
-    const touchesLeave = scope === "LEAVES" || scope === "ALL_TIME";
-    const touchesWarnings = scope === "ABSENCES" || scope === "ALL_TIME";
+    const tables = tablesFor(query.target);
+    const date = query.range === "DATE" ? query.date : null;
+
+    // Whether the rows going include a claim held for today. Only then is there
+    // a second letter to warn about, so a single day pointed at any past date
+    // reports `null` and the dialog says nothing about a risk it does not carry.
+    const clearsTodaysClaims =
+      tables.warnings && (date === null || date.getTime() === todayUtc().getTime());
 
     const [count, leaveCount, warningCount, warningsForToday, warning] = await Promise.all([
-      !touchesAttendance
+      !tables.attendance
         ? null
-        : scope === "DATE"
-          ? attendanceRepository.countOnDate(query.date)
+        : date
+          ? attendanceRepository.countOnDate(date)
           : attendanceRepository.countAll(),
-      touchesLeave ? leaveRepository.countAll() : null,
-      touchesWarnings ? attendanceWarningRepository.countAll() : null,
-      touchesWarnings ? attendanceWarningRepository.countOnDate(todayUtc()) : null,
-      warningExposure(scope, scope === "DATE" ? query.date : null),
+      !tables.leaves ? null : date ? leaveRepository.countOnDate(date) : leaveRepository.countAll(),
+      !tables.warnings
+        ? null
+        : date
+          ? attendanceWarningRepository.countOnDate(date)
+          : attendanceWarningRepository.countAll(),
+      clearsTodaysClaims ? attendanceWarningRepository.countOnDate(todayUtc()) : null,
+      warningExposure(tables, date),
     ]);
 
     return { count, leaveCount, warningCount, warningsForToday, ...warning };
   },
 
   /**
-   * Erases the record of a day, and says how much went.
+   * Erases the record, and says how much went.
    *
-   * The two scopes are deliberately not the same act. `DATE` clears **check-ins
-   * only**, which is why it needs no typed confirmation: presence can be
-   * recorded again by walking into the building. `ALL_TIME` also erases every
-   * leave ever booked, and nothing can put those back.
+   * One expression of a grid rather than a branch per combination: `target`
+   * picks the tables and `range` picks how far back, and every pairing is
+   * meaningful. Clearing one day of leave is the same act as clearing all of it,
+   * differing only in how much it costs — so writing them as separate cases
+   * would be five chances to get the same three deletes subtly out of step.
    *
-   * Leave belongs here because a roster is decided by both tables at once —
+   * Leave is one of the tables because a roster is decided by two at once —
    * `describeDay` reads a leave before it reads an absence, so a reset that took
    * only check-ins left people on the screen marked *On leave* and looked to
    * whoever pressed it like a button that had done nothing at all. That is
    * precisely how this came to be reported as broken.
    *
-   * Clearing leave hands every allowance back, since nothing about a balance is
-   * stored — `countApprovedInMonth` and every figure beside it count these rows.
-   * Removing them *is* the undo; there is no second place to correct.
+   * Clearing leave hands the allowance back for those days, since nothing about
+   * a balance is stored — `countApprovedInMonth` and every figure beside it
+   * count these rows. Removing them *is* the undo; there is no second place to
+   * correct. That cuts both ways for a single date, which is the one thing here
+   * an employee cannot recover from: a cleared check-in can be earned again by
+   * walking into the building tomorrow, a cleared booking cannot be un-cleared
+   * by anybody, and the dialog says so.
    *
    * `ABSENCES` clears `attendance_warnings` — the only place absence is ever
    * written down, since the status itself is derived. It cannot make anybody
    * stop reading as absent, and does not claim to; what goes is the record of
    * the letters and the streak they counted from. Its risk is the opposite of
-   * every other scope's: not a lost record but a *duplicate letter*, and only
+   * every other target's: not a lost record but a *duplicate letter*, and only
    * for today's claims, which `warningsForToday` counts separately so the dialog
    * can name it precisely.
    *
-   * Holidays survive every scope. A closure is a fact about the office rather
-   * than about anybody's attendance, and outlives all three tables here.
+   * Holidays survive every combination. A closure is a fact about the office
+   * rather than about anybody's attendance, and outlives all three tables here.
+   *
+   * Three deletes rather than one transaction, because a transaction spanning
+   * the tables would have to be written where `prisma` is in scope and the
+   * layering keeps that in the repositories. The cost is a crash in between
+   * leaving one table cleared, which is safe in a way it is not for the warning
+   * sweep: every delete here is idempotent over the same range, so pressing the
+   * button again finishes the job rather than doing anything a second time.
    *
    * The super admin's alone, gated in the route.
    */
   async reset(input: ResetAttendanceInput): Promise<ResetResult> {
-    switch (input.scope) {
-      case "DATE":
-        return {
-          removed: await attendanceRepository.deleteMany(input.date),
-          removedLeaves: 0,
-          removedWarnings: 0,
-          scope: input.scope,
-        };
+    const tables = tablesFor(input.target);
+    const date = input.range === "DATE" ? input.date : undefined;
 
-      case "ATTENDANCE":
-        return {
-          removed: await attendanceRepository.deleteMany(),
-          removedLeaves: 0,
-          removedWarnings: 0,
-          scope: input.scope,
-        };
+    const [removed, removedLeaves, removedWarnings] = await Promise.all([
+      tables.attendance ? attendanceRepository.deleteMany(date) : 0,
+      tables.leaves ? leaveRepository.deleteMany(date) : 0,
+      tables.warnings ? attendanceWarningRepository.deleteMany(date) : 0,
+    ]);
 
-      case "LEAVES":
-        return {
-          removed: 0,
-          removedLeaves: await leaveRepository.deleteAll(),
-          removedWarnings: 0,
-          scope: input.scope,
-        };
-
-      case "ABSENCES":
-        return {
-          removed: 0,
-          removedLeaves: 0,
-          removedWarnings: await attendanceWarningRepository.deleteAll(),
-          scope: input.scope,
-        };
-
-      case "ALL_TIME": {
-        // Two deletes rather than one transaction, because a transaction
-        // spanning both tables would have to be written where `prisma` is in
-        // scope, and the layering keeps that in the repositories. The cost is a
-        // crash in between leaving one table cleared, which is safe here in a
-        // way it is not for the warning sweep: both deletes are unfiltered, so
-        // pressing the button again finishes the job rather than doing anything
-        // a second time.
-        const [removed, removedLeaves, removedWarnings] = await Promise.all([
-          attendanceRepository.deleteMany(),
-          leaveRepository.deleteAll(),
-          attendanceWarningRepository.deleteAll(),
-        ]);
-
-        return { removed, removedLeaves, removedWarnings, scope: input.scope };
-      }
-    }
+    return { removed, removedLeaves, removedWarnings, range: input.range, target: input.target };
   },
 
   /**

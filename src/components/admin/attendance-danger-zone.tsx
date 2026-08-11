@@ -22,7 +22,9 @@ import { friendlyTimeLabel } from "@/lib/attendance-policy";
 import { formatDate, toIsoDate, todayUtc } from "@/lib/date";
 import { RESET_CONFIRMATION } from "@/validations/attendance.schema";
 
-type Scope = "DATE" | "ATTENDANCE" | "LEAVES" | "ABSENCES" | "ALL_TIME";
+type Range = "DATE" | "ALL_TIME";
+type Target = "ATTENDANCE" | "LEAVES" | "ABSENCES" | "ALL";
+type Ask = { range: Range; target: Target };
 
 type ResetPreview = {
   count: number | null;
@@ -36,66 +38,87 @@ type ResetPreview = {
 const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
 
 /**
- * What each scope is called, and what it warns about.
+ * What each target is called, in the two ranges it can be asked for.
  *
- * Kept as one table rather than as conditionals spread through the markup: the
- * four differ only in wording and in which counts they show, and a reader
- * deciding whether the right thing is about to be deleted should be able to see
- * all four sentences at once.
+ * One table rather than conditionals spread through the markup, and a grid
+ * rather than eight entries: the same four acts are offered for one date and
+ * for all time, and writing them out twice is how the pairs come to disagree
+ * about what they delete. The button label is what somebody scans; `noun` is
+ * what the dialog says when there was nothing there.
  */
-const SCOPES: Record<Scope, { title: (date: string) => string; action: string }> = {
-  DATE: { title: (date) => `Clear check-ins for ${date}?`, action: "Clear the day" },
+const TARGETS: Record<Target, { label: string; action: string; subject: string; nothing: string }> = {
   ATTENDANCE: {
-    title: () => "Delete every check-in ever recorded?",
-    action: "Delete all check-ins",
+    label: "Check-ins",
+    action: "check-ins",
+    subject: "every check-in",
+    nothing: "no check-in has been recorded",
   },
-  LEAVES: { title: () => "Delete every leave ever booked?", action: "Delete all leaves" },
+  LEAVES: {
+    label: "Leave",
+    action: "leave",
+    subject: "every leave booked",
+    nothing: "no leave has been booked",
+  },
   ABSENCES: {
-    title: () => "Clear the record of every absence?",
-    action: "Clear absence records",
+    label: "Absence records",
+    action: "absence records",
+    subject: "the record of every absence",
+    nothing: "no absence has been recorded against anybody",
   },
-  ALL_TIME: {
-    title: () => "Delete every check-in, leave and absence record?",
-    action: "Delete everything",
+  ALL: {
+    label: "Everything",
+    action: "everything",
+    subject: "every check-in, leave and absence record",
+    nothing: "nothing has been recorded",
   },
 };
+
+const ORDER: Target[] = ["ATTENDANCE", "LEAVES", "ABSENCES", "ALL"];
+
+function titleFor(what: Ask, date: string): string {
+  const { subject } = TARGETS[what.target];
+
+  return what.range === "DATE"
+    ? `Clear ${subject} for ${date}?`
+    : `Delete ${subject} ever recorded?`;
+}
 
 /**
  * Erasing the record, kept away from everything that merely reads it.
  *
- * Four acts behind one heading, and they are not equally dangerous. Clearing a
- * single day of check-ins is recoverable in practice — people can mark present
- * again, and only that date moves — so it asks once and says how many rows will
- * go. The three all-time scopes cannot be undone by anything in this
- * application, so each asks for the word to be typed out, and the server demands
- * the same word rather than trusting that this box exists.
+ * A grid of two rows: the same four targets offered for one chosen date and for
+ * all time. They are not equally dangerous, and the row is what says so. A
+ * single date is a correction — a test run, a device that double counted, a
+ * closure declared too late — and it asks once, naming the rows. All time can be
+ * undone by nothing in this application, so it asks for the word to be typed
+ * out, and the server demands the same word rather than trusting that this box
+ * exists.
  *
- * Check-ins and leaves are separable because the two tables answer different
- * questions: clearing a month of trial check-ins should not have to cost
- * everybody the leave they booked. `ALL_TIME` stays a scope of its own rather
- * than two requests fired in sequence, so a half-finished reset is not something
- * this component can produce.
+ * The targets are apart because the tables answer different questions: clearing
+ * a month of trial check-ins should not have to cost everybody the leave they
+ * booked. `ALL` stays a target of its own rather than three requests fired in
+ * sequence, so a half-finished reset is not something this component can
+ * produce.
  *
- * The panel also says, beside the buttons, that none of this empties the
- * attendance screen. Absence is the lack of a check-in rather than a row, so no
- * button here can remove it — and an empty roster is what people expect a reset
- * to produce, which turns a working one into a bug report.
+ * The panel also says, beside the buttons, which button does what people expect
+ * "clear the absences" to do — the answer is a pair, and neither half of it is
+ * the obvious-sounding one on its own.
  *
  * The super admin's alone. The Access screen has already turned everybody else
  * away, and the endpoint checks again.
  */
 export function AttendanceDangerZone() {
   const [date, setDate] = useState(() => toIsoDate(todayUtc()));
-  const [scope, setScope] = useState<Scope | null>(null);
+  const [pending, setPending] = useState<Ask | null>(null);
   const [preview, setPreview] = useState<ResetPreview | null>(null);
   const [typed, setTyped] = useState("");
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
 
-  const open = scope !== null;
+  const open = pending !== null;
 
   const close = useCallback(() => {
-    setScope(null);
+    setPending(null);
     setPreview(null);
     setTyped("");
   }, []);
@@ -103,15 +126,17 @@ export function AttendanceDangerZone() {
   // Counted when the dialog opens rather than kept on screen, so the number
   // being confirmed is the number in the table a moment ago — not one left over
   // from whenever the panel last rendered.
-  async function ask(next: Scope) {
-    setScope(next);
+  async function ask(next: Ask) {
+    setPending(next);
     setPreview(null);
     setTyped("");
     setLoading(true);
 
     try {
       const params = new URLSearchParams(
-        next === "DATE" ? { scope: next, date } : { scope: next },
+        next.range === "DATE"
+          ? { range: next.range, target: next.target, date }
+          : { range: next.range, target: next.target },
       );
 
       setPreview(await apiClient.get<ResetPreview>(`/api/admin/attendance/reset?${params}`));
@@ -124,7 +149,7 @@ export function AttendanceDangerZone() {
   }
 
   async function confirm() {
-    if (!scope || working) return;
+    if (!pending || working) return;
     setWorking(true);
 
     try {
@@ -133,20 +158,21 @@ export function AttendanceDangerZone() {
         removedLeaves: number;
         removedWarnings: number;
       }>("/api/admin/attendance/reset", {
-        scope,
-        ...(scope === "DATE" ? { date } : { confirm: typed }),
+        range: pending.range,
+        target: pending.target,
+        ...(pending.range === "DATE" ? { date } : { confirm: typed }),
       });
 
-      // Names only the tables this scope touched. Reporting "and 0 leaves" on a
+      // Names only the tables this target touched. Reporting "and 0 leaves" on a
       // check-ins-only reset would read as a failure to delete them.
       const parts: string[] = [];
-      if (scope === "DATE" || scope === "ATTENDANCE" || scope === "ALL_TIME") {
+      if (pending.target === "ATTENDANCE" || pending.target === "ALL") {
         parts.push(plural(result.removed, "check-in"));
       }
-      if (scope === "LEAVES" || scope === "ALL_TIME") {
+      if (pending.target === "LEAVES" || pending.target === "ALL") {
         parts.push(plural(result.removedLeaves, "leave"));
       }
-      if (scope === "ABSENCES" || scope === "ALL_TIME") {
+      if (pending.target === "ABSENCES" || pending.target === "ALL") {
         parts.push(plural(result.removedWarnings, "absence record"));
       }
 
@@ -163,13 +189,12 @@ export function AttendanceDangerZone() {
     }
   }
 
-  // Every scope but the single day is irreversible, so every one of them asks
-  // for the word. Case-insensitive, matching the server: somebody who typed it
-  // meant it whichever way the shift key fell.
-  const needsWord = scope !== null && scope !== "DATE";
+  // The word marks all time and nothing else. Case-insensitive, matching the
+  // server: somebody who typed it meant it whichever way the shift key fell.
+  const needsWord = pending?.range === "ALL_TIME";
   const blocked = needsWord && typed.trim().toUpperCase() !== RESET_CONFIRMATION;
-  // Across whichever tables this scope touches — either one alone is something
-  // to remove, and a scope that touches neither cannot arise.
+  // Across whichever tables this target touches — any one alone is something to
+  // remove, and a target that touches none cannot arise.
   const total = preview
     ? (preview.count ?? 0) + (preview.leaveCount ?? 0) + (preview.warningCount ?? 0)
     : 0;
@@ -192,71 +217,86 @@ export function AttendanceDangerZone() {
         </CardHeader>
 
         <CardContent className="grid gap-6">
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="reset-date">Clear check-ins for one day</Label>
-              <Input
-                id="reset-date"
-                type="date"
-                value={date}
-                onChange={(event) => setDate(event.target.value)}
-                disabled={working}
-                className="w-44"
-              />
+          {/* The two groups offer the same four labels, so each is headed by the
+              range it applies to. Without that the rows are indistinguishable
+              at a glance, and the difference between them is a year of history. */}
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-medium">Clear one day</p>
+              <p className="text-muted-foreground text-sm">
+                One date, for everybody. A correction rather than a reckoning, so it asks once and
+                names the rows — but a booking cleared here is gone for the person who made it, and
+                only a check-in can be earned back by turning up tomorrow.
+              </p>
             </div>
 
-            <Button variant="outline" onClick={() => ask("DATE")} disabled={!date || working}>
-              <Trash2 className="size-4" />
-              Reset this day
-            </Button>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="reset-date">Date</Label>
+                <Input
+                  id="reset-date"
+                  type="date"
+                  value={date}
+                  onChange={(event) => setDate(event.target.value)}
+                  disabled={working}
+                  className="w-44"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                {ORDER.map((target) => (
+                  <Button
+                    key={target}
+                    variant={target === "ALL" ? "destructive" : "outline"}
+                    onClick={() => ask({ range: "DATE", target })}
+                    disabled={!date || working}
+                  >
+                    <Trash2 className="size-4" />
+                    {TARGETS[target].label}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="border-destructive/30 space-y-4 border-t pt-5">
             <div>
               <p className="text-sm font-medium">Clear the whole history</p>
               <p className="text-muted-foreground text-sm">
-                Every person, every day, all the way back — past days and today alike. Nothing in
-                this application can undo any of these. Each asks for {RESET_CONFIRMATION} to be
-                typed, and says how many rows it is about to take.
+                The same four, every person and every day all the way back — past days and today
+                alike. Nothing in this application can undo any of these. Each asks for{" "}
+                {RESET_CONFIRMATION} to be typed, and says how many rows it is about to take.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <Button variant="outline" onClick={() => ask("ATTENDANCE")} disabled={working}>
-                <Trash2 className="size-4" />
-                Reset all check-ins
-              </Button>
-
-              <Button variant="outline" onClick={() => ask("LEAVES")} disabled={working}>
-                <Trash2 className="size-4" />
-                Reset all leaves
-              </Button>
-
-              <Button variant="outline" onClick={() => ask("ABSENCES")} disabled={working}>
-                <Trash2 className="size-4" />
-                Reset all absences
-              </Button>
-
-              <Button variant="destructive" onClick={() => ask("ALL_TIME")} disabled={working}>
-                <Trash2 className="size-4" />
-                Reset everything
-              </Button>
+              {ORDER.map((target) => (
+                <Button
+                  key={target}
+                  variant={target === "ALL" ? "destructive" : "outline"}
+                  onClick={() => ask({ range: "ALL_TIME", target })}
+                  disabled={working}
+                >
+                  <Trash2 className="size-4" />
+                  {TARGETS[target].label}
+                </Button>
+              ))}
             </div>
-
-            {/* The question this panel kept being asked: which button makes the
-                absences go away. Answered by naming the two, because they are
-                not the same thing and the obvious-sounding one is the narrower. */}
-            <p className="text-muted-foreground border-muted border-l-2 pl-3 text-sm">
-              <strong>Reset all absences</strong> clears the absence <em>record</em> — the warning
-              letters issued and the consecutive-days streak they carry, which is the only place
-              absence is ever written down. It does not clear the roster, because absence is not
-              stored there: it is what the screen shows for a person with no check-in on a day
-              something was recorded. To clear the days themselves use{" "}
-              <strong>Reset everything</strong>, which leaves every day holding nothing — those read{" "}
-              <strong>No record</strong>, not Absent. The roster still lists everybody either way;
-              it is built from the staff list, and no button here empties it.
-            </p>
           </div>
+
+          {/* The question this panel kept being asked: which button makes the
+              absences go away. Answered by naming the two, because they are not
+              the same thing and the obvious-sounding one is the narrower. Sits
+              below both rows now, since it is true of either. */}
+          <p className="text-muted-foreground border-muted border-l-2 pl-3 text-sm">
+            <strong>Absence records</strong> clears the absence <em>record</em> — the warning letters
+            issued and the consecutive-days streak they carry, which is the only place absence is
+            ever written down. It does not clear the roster, because absence is not stored there: it
+            is what the screen shows for a person with no check-in on a day something was recorded.
+            To clear the days themselves use <strong>Everything</strong>, which leaves them holding
+            nothing — those read <strong>No record</strong>, not Absent. The roster still lists
+            everybody either way; it is built from the staff list, and no button here empties it.
+          </p>
         </CardContent>
       </Card>
 
@@ -264,7 +304,7 @@ export function AttendanceDangerZone() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {scope ? SCOPES[scope].title(formatDate(date)) : ""}
+              {pending ? titleFor(pending, formatDate(date)) : ""}
             </AlertDialogTitle>
 
             <AlertDialogDescription asChild>
@@ -278,18 +318,10 @@ export function AttendanceDangerZone() {
                   <>
                     <span className="block">
                       {total === 0 ? (
-                        scope === "DATE" ? (
-                          "There are no check-ins to remove on that day."
+                        pending?.range === "DATE" ? (
+                          `There is nothing to remove on that day — ${TARGETS[pending.target].nothing} for ${formatDate(date)}.`
                         ) : (
-                          `There is nothing to remove — ${
-                            scope === "LEAVES"
-                              ? "no leave has been booked"
-                              : scope === "ATTENDANCE"
-                                ? "no check-in has been recorded"
-                                : scope === "ABSENCES"
-                                  ? "no absence has ever been recorded against anybody"
-                                  : "nothing has been recorded"
-                          }.`
+                          `There is nothing to remove — ${pending ? TARGETS[pending.target].nothing : "nothing has been recorded"}.`
                         )
                       ) : (
                         <>
@@ -313,11 +345,15 @@ export function AttendanceDangerZone() {
                       )}
                     </span>
 
-                    {needsWord && total > 0 && (
+                    {/* Shown for a single day as well as for all time. The
+                        consequences do not scale down with the range — a cleared
+                        booking is just as gone for the person who made it — and
+                        this is the only screen that will ever mention them. */}
+                    {total > 0 && (
                       <span className="text-muted-foreground block">
                         Everyone keeps their account.{" "}
                         {preview.leaveCount !== null &&
-                          "Clearing leave returns each person's monthly allowance in full. "}
+                          "Clearing leave hands back the allowance for those days, and takes the booking with it — nobody can restore one, and the person who made it will have to book it again. "}
                         {preview.warningCount !== null &&
                           "Letters already delivered cannot be unsent — what goes is the record of having sent them, and the consecutive-days streak future letters count from. "}
                         The roster still lists everybody afterwards. A day left holding no check-in
@@ -399,7 +435,9 @@ export function AttendanceDangerZone() {
               loading={working}
               disabled={loading || !preview || total === 0 || blocked}
             >
-              {scope ? SCOPES[scope].action : ""}
+              {pending
+                ? `${pending.range === "DATE" ? "Clear" : "Delete all"} ${TARGETS[pending.target].action}`
+                : ""}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

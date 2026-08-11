@@ -16,13 +16,17 @@ import { attendanceRosterQuerySchema } from "@/validations/attendance.schema";
  * Read-only. There is deliberately no way to mark somebody present from here:
  * the whole point of the geofence is that presence is proved by being there, and
  * an admin override would be a way around it.
+ *
+ * The `population` filter is the one thing here not open to every administrator,
+ * and the role is handed to the service rather than checked here — see
+ * `assertMayViewPopulation`, which the CSV export reaches through the same call.
  */
 export async function GET(request: Request) {
   return handleRoute(async () => {
-    await requireAdmin();
+    const user = await requireAdmin();
     const query = parseQuery(request, attendanceRosterQuerySchema);
 
-    const roster = await attendanceService.roster(query);
+    const roster = await attendanceService.roster(query, user.role);
 
     return ok({
       date: roster.date.toISOString(),

@@ -45,6 +45,20 @@ const STATUS_FILTERS = [
 ] as const;
 
 /**
+ * The super admin's population filter.
+ *
+ * `Administrators` covers the super admin as well as the administrators, which
+ * is why the field is not called `role` — see `attendanceRosterQuerySchema`.
+ * Between them the two options account for everybody, so nobody falls out of
+ * the organisation's own attendance figures by belonging to neither.
+ */
+const POPULATION_FILTERS = [
+  { value: "ALL", label: "Everyone" },
+  { value: "EMPLOYEE", label: "Employees" },
+  { value: "ADMIN", label: "Administrators" },
+] as const;
+
+/**
  * The organisation-wide attendance view, and it is day-centric on purpose.
  *
  * "Present or absent" is only answerable about one day at a time — absence is
@@ -56,11 +70,21 @@ const STATUS_FILTERS = [
  * proved by standing in the office, so a button here that marked somebody
  * present would be a way around the geofence rather than a convenience.
  */
-export function AttendanceManager() {
+export function AttendanceManager({
+  /**
+   * Whether to offer the population filter. Decided on the server from the
+   * session and passed in, never worked out here — and the endpoint refuses the
+   * filter to anyone else however this renders.
+   */
+  canFilterByPopulation = false,
+}: {
+  canFilterByPopulation?: boolean;
+}) {
   const [date, setDate] = useState(() => toIsoDate(todayUtc()));
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("ALL");
   const [status, setStatus] = useState<(typeof STATUS_FILTERS)[number]["value"]>("ALL");
+  const [population, setPopulation] = useState<(typeof POPULATION_FILTERS)[number]["value"]>("ALL");
   const [page, setPage] = useState(1);
 
   const debouncedSearch = useDebouncedValue(search.trim(), 350);
@@ -71,10 +95,13 @@ export function AttendanceManager() {
       search: debouncedSearch || undefined,
       department: department === "ALL" ? undefined : department,
       status,
+      // Left off entirely unless it is actually narrowing something, so an
+      // ordinary administrator never sends the parameter the server refuses.
+      population: population === "ALL" ? undefined : population,
       page,
       pageSize: 20,
     }),
-    [date, debouncedSearch, department, status, page],
+    [date, debouncedSearch, department, status, population, page],
   );
 
   const { data, loading, error } = useApiResource<AttendanceRosterView>(
@@ -87,7 +114,8 @@ export function AttendanceManager() {
 
   const exportUrl = `/api/admin/attendance/export${toQueryString({ ...query, page: undefined, pageSize: undefined })}`;
 
-  const hasActiveFilters = search !== "" || department !== "ALL" || status !== "ALL";
+  const hasActiveFilters =
+    search !== "" || department !== "ALL" || status !== "ALL" || population !== "ALL";
 
   /** Any filter change resets to page 1 so results aren't hidden on a stale page. */
   function change(apply: () => void) {
@@ -140,6 +168,24 @@ export function AttendanceManager() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {canFilterByPopulation && (
+                <Select
+                  value={population}
+                  onValueChange={(value) => change(() => setPopulation(value as typeof population))}
+                >
+                  <SelectTrigger className="w-40" aria-label="Filter by population">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {POPULATION_FILTERS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
               <Select
                 value={status}
                 onValueChange={(value) => change(() => setStatus(value as typeof status))}
@@ -184,6 +230,7 @@ export function AttendanceManager() {
                       setSearch("");
                       setDepartment("ALL");
                       setStatus("ALL");
+                      setPopulation("ALL");
                     })
                   }
                 >

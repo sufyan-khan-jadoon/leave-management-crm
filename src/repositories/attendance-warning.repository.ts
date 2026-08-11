@@ -67,12 +67,12 @@ export const attendanceWarningRepository = {
   },
 
   /**
-   * Erases the absence record — every warning ever claimed.
+   * Erases the absence record — one day of it, or every warning ever claimed.
    *
    * This is the **only** stored trace of absence in the system. Nothing else
    * records that somebody missed a day: `AttendanceStatus` has one value, and
    * absence is derived from the lack of a check-in. So this is the whole of what
-   * "clear the absences" can mean, and the reason the scope exists at all.
+   * "clear the absences" can mean, and the reason the target exists at all.
    *
    * Permitted by argument rather than forbidden outright, and the argument is
    * the one `warningExposure` already makes. `dispatchAttendanceWarnings` only
@@ -83,12 +83,20 @@ export const attendanceWarningRepository = {
    * already written to. That is reported in the dialog rather than prevented
    * here, exactly as clearing today's check-ins is.
    *
+   * The date filter narrows *which* claims go and changes none of that. If
+   * anything it sharpens it: clearing one past day is provably inert, and the
+   * dialog can say so instead of describing a risk that applies to one row out
+   * of a year's worth.
+   *
    * Delivered mail is untouched, and cannot be otherwise. The letters have been
    * read; what goes is the record of having sent them, and the
    * `consecutiveMissed` streak that later letters would have counted from.
    */
-  async deleteAll(): Promise<number> {
-    const result = await prisma.attendanceWarning.deleteMany();
+  async deleteMany(date?: Date): Promise<number> {
+    const result = await prisma.attendanceWarning.deleteMany({
+      where: date ? { date } : undefined,
+    });
+
     return result.count;
   },
 

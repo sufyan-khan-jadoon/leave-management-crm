@@ -1,6 +1,7 @@
-import { EmployeeStatus, LeaveStatus, Role } from "@prisma/client";
+import { EmployeeStatus, LeaveStatus } from "@prisma/client";
 
 import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
+import { rolesInPopulation, type Population } from "@/lib/enums";
 import { employeeRepository } from "@/repositories/employee.repository";
 import { holidayRepository, type HolidayDto } from "@/repositories/holiday.repository";
 import { leaveRepository, type LeaveWithEmployeeDto } from "@/repositories/leave.repository";
@@ -11,7 +12,7 @@ import { leaveService } from "@/services/leave.service";
  * Which population the overview reports on — the same split the Staff screen
  * makes. `SUPER_ADMIN` is absent because that account is managed nowhere.
  */
-export type OverviewPopulation = typeof Role.EMPLOYEE | typeof Role.ADMIN;
+export type OverviewPopulation = Population;
 
 export type AdminOverview = {
   population: OverviewPopulation;
@@ -28,14 +29,12 @@ export type AdminOverview = {
 /**
  * The roles a population covers.
  *
- * The super admin counts as an administrator here, unlike on the Staff
- * screen, which lists only what can be managed. This is a report rather than a
- * roster: leaving that account out would mean its leave was counted in neither
- * view and simply vanished from the organisation's figures.
+ * Shared with the attendance roster's population filter through `enums.ts`,
+ * which is where the reasoning lives: the super admin counts as an
+ * administrator in a report, unlike on the Staff screen, which lists only what
+ * can be managed.
  */
-function rolesIn(population: OverviewPopulation): Role[] {
-  return population === Role.ADMIN ? [Role.ADMIN, Role.SUPER_ADMIN] : [Role.EMPLOYEE];
-}
+const rolesIn = rolesInPopulation;
 
 export type AdminDashboardData = {
   overview: AdminOverview;

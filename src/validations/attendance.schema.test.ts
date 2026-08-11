@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { RESET_CONFIRMATION, resetAttendanceSchema } from "@/validations/attendance.schema";
+import {
+  RESET_CONFIRMATION,
+  RESET_TARGETS,
+  resetAttendanceSchema,
+} from "@/validations/attendance.schema";
 
 /**
- * The typed confirmation, and the shape of the two resets.
+ * The typed confirmation, and the shape of the reset grid.
  *
  * Pure parsing, no database — the same reason `working-days` and `geo` are
  * tested here and the services around them are not.
@@ -14,7 +18,8 @@ import { RESET_CONFIRMATION, resetAttendanceSchema } from "@/validations/attenda
  * somebody stop and type on purpose; the shift key was never part of it.
  */
 describe("resetAttendanceSchema", () => {
-  const allTime = (confirm: string) => resetAttendanceSchema.safeParse({ scope: "ALL_TIME", confirm });
+  const allTime = (confirm: string) =>
+    resetAttendanceSchema.safeParse({ range: "ALL_TIME", target: "ALL", confirm });
 
   it("accepts the confirmation however it was capitalised", () => {
     for (const word of ["RESET", "reset", "Reset", "rEsEt"]) {
@@ -33,84 +38,110 @@ describe("resetAttendanceSchema", () => {
     }
   });
 
-  it("refuses an all-time reset with no confirmation at all", () => {
-    expect(resetAttendanceSchema.safeParse({ scope: "ALL_TIME" }).success).toBe(false);
-  });
-
   it("normalises the parsed value, so the service never re-trims it", () => {
     const parsed = allTime("  reset ");
-    expect(parsed.success && parsed.data.scope === "ALL_TIME" && parsed.data.confirm).toBe(
+    expect(parsed.success && parsed.data.range === "ALL_TIME" && parsed.data.confirm).toBe(
       RESET_CONFIRMATION,
     );
   });
 
+  /**
+   * The grid itself: every target is offered for one date and for all time, and
+   * the two ranges differ only in the ceremony. Looping rather than writing
+   * eight cases out, because a combination somebody forgot to add is exactly the
+   * failure this is meant to catch.
+   */
+  describe("every target, in both ranges", () => {
+    it("takes a single day with a date and no ceremony", () => {
+      for (const target of RESET_TARGETS) {
+        expect(
+          resetAttendanceSchema.safeParse({ range: "DATE", target, date: "2026-08-11" }).success,
+          target,
+        ).toBe(true);
+      }
+    });
+
+    it("takes all time with the word, in any case", () => {
+      for (const target of RESET_TARGETS) {
+        expect(
+          resetAttendanceSchema.safeParse({ range: "ALL_TIME", target, confirm: "reset" }).success,
+          target,
+        ).toBe(true);
+      }
+    });
+
+    it("refuses all time without the word", () => {
+      for (const target of RESET_TARGETS) {
+        expect(resetAttendanceSchema.safeParse({ range: "ALL_TIME", target }).success, target).toBe(
+          false,
+        );
+        expect(
+          resetAttendanceSchema.safeParse({ range: "ALL_TIME", target, confirm: "yes" }).success,
+          target,
+        ).toBe(false);
+      }
+    });
+
+    it("refuses a single day with no date", () => {
+      for (const target of RESET_TARGETS) {
+        expect(resetAttendanceSchema.safeParse({ range: "DATE", target }).success, target).toBe(
+          false,
+        );
+      }
+    });
+  });
+
+  /**
+   * The two fields cannot be smuggled across. A date on an all-time reset would
+   * silently mean nothing, and a confirmation on a single day would suggest a
+   * ceremony that branch deliberately does not have.
+   */
   it("refuses a date smuggled into an all-time reset", () => {
     expect(
       resetAttendanceSchema.safeParse({
-        scope: "ALL_TIME",
+        range: "ALL_TIME",
+        target: "ALL",
         confirm: RESET_CONFIRMATION,
         date: "2026-08-11",
       }).success,
     ).toBe(false);
-  });
-
-  it("takes a single day without a confirmation, and requires its date", () => {
-    expect(resetAttendanceSchema.safeParse({ scope: "DATE", date: "2026-08-11" }).success).toBe(true);
-    expect(resetAttendanceSchema.safeParse({ scope: "DATE" }).success).toBe(false);
   });
 
   it("refuses a confirmation on the day branch, which has no ceremony", () => {
     expect(
       resetAttendanceSchema.safeParse({
-        scope: "DATE",
+        range: "DATE",
+        target: "ATTENDANCE",
         date: "2026-08-11",
         confirm: RESET_CONFIRMATION,
       }).success,
     ).toBe(false);
   });
 
-  it("refuses a scope it has never heard of", () => {
-    expect(resetAttendanceSchema.safeParse({ scope: "EVERYTHING" }).success).toBe(false);
+  it("refuses a range or a target it has never heard of", () => {
+    expect(resetAttendanceSchema.safeParse({ range: "MONTH", target: "ALL" }).success).toBe(false);
+    expect(
+      resetAttendanceSchema.safeParse({ range: "DATE", target: "EVERYTHING", date: "2026-08-11" })
+        .success,
+    ).toBe(false);
+    expect(resetAttendanceSchema.safeParse({ range: "DATE", date: "2026-08-11" }).success).toBe(
+      false,
+    );
   });
 
   /**
-   * The three single-table scopes. They exist so that clearing a month of trial
-   * check-ins need not cost everybody the leave they booked, which means the
-   * thing worth pinning is that each still demands the word — an irreversible
-   * act is not made routine by being narrower.
-   *
-   * `ABSENCES` is the odd one: it clears `attendance_warnings`, the only place
-   * absence is written down at all. It belongs here rather than in a scope of
-   * its own because the parsing rules are identical; what differs is the risk,
-   * which is a duplicate letter rather than a lost record, and lives in the
-   * service and the dialog.
+   * The shape this replaced. A stale client still sending the flat scope must be
+   * refused outright rather than parsed into some neighbouring meaning — the old
+   * `ALL_TIME` scope and the new `ALL_TIME` range are not the same request, and
+   * one silently read as the other would delete more than was asked for.
    */
-  describe("the single-table scopes", () => {
-    it("takes each with the word, in any case", () => {
-      for (const scope of ["ATTENDANCE", "LEAVES", "ABSENCES"] as const) {
-        expect(resetAttendanceSchema.safeParse({ scope, confirm: "reset" }).success, scope).toBe(
-          true,
-        );
-      }
-    });
-
-    it("refuses each without it", () => {
-      for (const scope of ["ATTENDANCE", "LEAVES", "ABSENCES"] as const) {
-        expect(resetAttendanceSchema.safeParse({ scope }).success, scope).toBe(false);
-        expect(
-          resetAttendanceSchema.safeParse({ scope, confirm: "yes" }).success,
-          scope,
-        ).toBe(false);
-      }
-    });
-
-    it("refuses a date on either, which would silently mean nothing", () => {
-      for (const scope of ["ATTENDANCE", "LEAVES", "ABSENCES"] as const) {
-        expect(
-          resetAttendanceSchema.safeParse({ scope, confirm: "RESET", date: "2026-08-11" }).success,
-          scope,
-        ).toBe(false);
-      }
-    });
+  it("refuses the flat scope the grid replaced", () => {
+    for (const scope of ["DATE", "ATTENDANCE", "LEAVES", "ABSENCES", "ALL_TIME"]) {
+      expect(
+        resetAttendanceSchema.safeParse({ scope, confirm: RESET_CONFIRMATION, date: "2026-08-11" })
+          .success,
+        scope,
+      ).toBe(false);
+    }
   });
 });

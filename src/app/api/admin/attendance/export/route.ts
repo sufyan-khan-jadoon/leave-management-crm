@@ -9,12 +9,16 @@ import { attendanceRosterQuerySchema } from "@/validations/attendance.schema";
 /** Streams the day's roster as CSV, matching whatever is filtered on screen. */
 export async function GET(request: Request) {
   try {
-    await requireAdmin();
+    const user = await requireAdmin();
     const query = parseQuery(request, attendanceRosterQuerySchema);
 
     // Page size is overridden rather than honoured: an export of "page 1 of the
     // roster" is not what anybody means by exporting the roster.
-    const roster = await attendanceService.roster({ ...query, page: 1, pageSize: 10_000 });
+    //
+    // The role goes with it, so `population` is judged here exactly as it is on
+    // screen. An export that took the filter but not the check would be the
+    // easier of the two to reach with a hand-written URL.
+    const roster = await attendanceService.roster({ ...query, page: 1, pageSize: 10_000 }, user.role);
 
     const header = [
       "Date",

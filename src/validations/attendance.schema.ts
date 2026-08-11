@@ -47,6 +47,23 @@ export const attendanceRosterQuerySchema = z.object({
   department: z.string().trim().max(60).optional(),
   search: z.string().trim().max(120).optional(),
   status: z.enum(["ALL", "PRESENT", "ABSENT", "ON_LEAVE", "NO_RECORD"]).default("ALL"),
+  /**
+   * Which population to show — everybody, the employees, or the administrators.
+   *
+   * `population` rather than `role`, unlike `employeeQuerySchema`, because
+   * `ADMIN` here covers two roles: the super admin is counted with the
+   * administrators, as they are in every other report. Calling the field `role`
+   * would promise a filter on one column and deliver a filter on two.
+   *
+   * `SUPER_ADMIN` is not a value, exactly as it is not one there. Narrowing a
+   * screen down to a single named account is not a report on a population, and
+   * the one account it would isolate is the one nothing may act on.
+   *
+   * Accepted from any administrator and refused for most of them in
+   * `attendanceService.roster` — the looser-schema-with-the-real-check-behind-it
+   * split the invitation routes use.
+   */
+  population: z.enum(["ALL", "EMPLOYEE", "ADMIN"]).default("ALL"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
@@ -136,54 +153,66 @@ const resetConfirmation = z
   });
 
 /**
- * Erasing the record — one day, or one table, or everything.
+ * Which tables a reset reaches into.
  *
- * A discriminated union rather than a date and a pair of flags, because these
- * are four different acts and only the first is routine. `date` cannot be left
- * off a `DATE` reset by accident, and cannot be smuggled into one of the others.
- *
- * The three all-time branches each carry `confirm`, checked **here** rather than
- * only in the dialog. A confirmation that lives in the browser is a courtesy to
- * the person clicking; this one is the rule, so a curl at the endpoint has to
- * spell out the same word as the screen does. `DATE` deliberately has no such
- * field — that reset is recoverable by asking people to mark present again, and
- * a ceremony demanded for every ordinary fix is a ceremony that gets automated
- * away.
- *
- * `ATTENDANCE` and `LEAVES` exist because the two tables answer different
- * questions and are worth clearing apart: wiping a month of trial check-ins
- * should not have to cost everybody the leave they booked.
+ * `ATTENDANCE` and `LEAVES` are apart because the two answer different
+ * questions and are worth clearing separately: wiping a month of trial
+ * check-ins should not have to cost everybody the leave they booked.
  *
  * `ABSENCES` clears `attendance_warnings`, which is the only place absence is
- * ever written down — the status itself is derived from the lack of a check-in
- * and cannot be deleted at all. It is a separate scope rather than part of the
- * others because it is the only one whose risk is a *duplicate* letter rather
- * than a lost record.
+ * ever written down — the status itself is derived and cannot be deleted at
+ * all. It is its own target because it is the only one whose risk is a
+ * *duplicate letter* rather than a lost record.
  *
- * `ALL_TIME` is all three, rather than something the caller assembles by firing
- * three requests and hoping each lands.
+ * `ALL` is the three together rather than something a caller assembles by
+ * firing three requests and hoping each of them lands.
  */
-export const resetAttendanceSchema = z.discriminatedUnion("scope", [
+export const RESET_TARGETS = ["ATTENDANCE", "LEAVES", "ABSENCES", "ALL"] as const;
+
+export type ResetTarget = (typeof RESET_TARGETS)[number];
+
+/**
+ * Erasing the record — **what** to clear, and **how far back**.
+ *
+ * Two fields rather than one flat list of scopes, because this is a grid: every
+ * target is worth clearing for a single date as well as for all time, and eight
+ * literals spelling out the combinations is how one of them comes to be spelt
+ * wrong. The union discriminates on `range` so `date` cannot be left off a
+ * single-day reset by accident and cannot be smuggled into an all-time one.
+ *
+ * `ALL_TIME` carries `confirm`, checked **here** rather than only in the dialog.
+ * A confirmation that lives in the browser is a courtesy to the person clicking;
+ * this one is the rule, so a curl at the endpoint has to spell out the same word
+ * as the screen does.
+ *
+ * `DATE` deliberately has no such field, for **any** target. The word marks the
+ * act that nothing can undo and no one can work around: all time. One day is a
+ * correction — the wrong closure declared, a test run, a device that double
+ * counted — and a ceremony demanded for every ordinary fix is a ceremony that
+ * somebody eventually automates away. The dialog still names the exact rows and
+ * still says out loud that a cleared leave cannot be re-booked by the person who
+ * lost it, which is the part of a single day that does not grow back.
+ */
+export const resetAttendanceSchema = z.discriminatedUnion("range", [
   z.strictObject({
-    scope: z.literal("DATE"),
+    range: z.literal("DATE"),
+    target: z.enum(RESET_TARGETS),
     date: calendarDateSchema,
   }),
-  z.strictObject({ scope: z.literal("ATTENDANCE"), confirm: resetConfirmation }),
-  z.strictObject({ scope: z.literal("LEAVES"), confirm: resetConfirmation }),
-  z.strictObject({ scope: z.literal("ABSENCES"), confirm: resetConfirmation }),
-  z.strictObject({ scope: z.literal("ALL_TIME"), confirm: resetConfirmation }),
+  z.strictObject({
+    range: z.literal("ALL_TIME"),
+    target: z.enum(RESET_TARGETS),
+    confirm: resetConfirmation,
+  }),
 ]);
 
 export type ResetAttendanceInput = z.infer<typeof resetAttendanceSchema>;
-export type ResetScope = ResetAttendanceInput["scope"];
+export type ResetRange = ResetAttendanceInput["range"];
 
 /** What the dialog asks before it shows a number: how much would this remove? */
-export const resetAttendancePreviewSchema = z.discriminatedUnion("scope", [
-  z.object({ scope: z.literal("DATE"), date: calendarDateSchema }),
-  z.object({ scope: z.literal("ATTENDANCE") }),
-  z.object({ scope: z.literal("LEAVES") }),
-  z.object({ scope: z.literal("ABSENCES") }),
-  z.object({ scope: z.literal("ALL_TIME") }),
+export const resetAttendancePreviewSchema = z.discriminatedUnion("range", [
+  z.object({ range: z.literal("DATE"), target: z.enum(RESET_TARGETS), date: calendarDateSchema }),
+  z.object({ range: z.literal("ALL_TIME"), target: z.enum(RESET_TARGETS) }),
 ]);
 
 export type ResetAttendancePreviewQuery = z.infer<typeof resetAttendancePreviewSchema>;

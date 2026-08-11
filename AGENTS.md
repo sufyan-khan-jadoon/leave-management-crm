@@ -469,6 +469,39 @@ row is filtered on does not exist in the database to filter by, so paging in SQL
 That is right for a Manage screen and wrong for a personal history, so the admin view lives at its
 own endpoint.
 
+### Filtering the roster by population — the super admin's alone
+
+`population` narrows the roster to `EMPLOYEE` or `ADMIN`, and only the super admin may use it.
+`assertMayViewPopulation` in `attendance.service.ts` is the rule, mirroring `role=ADMIN` on
+`/api/admin/employees`: which of your colleagues is an administrator is not something this screen
+tells an ordinary administrator. It cannot today — `attendanceRosterSelect` carries no `role`, so the
+roster names people without saying what they are — and a filter would hand over precisely that.
+
+**`EMPLOYEE` is gated too, and that is not an oversight.** Filtering to the employees looks harmless,
+but comparing that list against the unfiltered one names the administrators exactly as well as asking
+for them does. A filter that leaks by subtraction is still a leak, so the whole control belongs to
+one viewer rather than half of it to everybody. Don't "relax" the employee half.
+
+**The check lives in the service, not the route**, unlike the employees list — because there are two
+ways in. The screen and the CSV export both call `roster()`, and an export that honoured the filter
+without re-checking it would be the easier of the two to reach with a hand-written URL. Both routes
+still guard `requireAdmin` and hand the role down; `roster()` decides the narrower question behind
+it, the way `assertMayManage` does for accounts.
+
+**It is called `population`, not `role`, because `ADMIN` covers two roles.** `rolesInPopulation` in
+`src/lib/enums.ts` is shared with the admin overview, which has always counted the super admin as an
+administrator — a report measures the organisation, so an account in neither population would vanish
+from its own figures, its leave counted nowhere and its attendance in no tile. That is the opposite
+of the Staff screen, which lists only what can be managed and so leaves the owner out; both are
+right, and the shared function is what stops a tile and the filter beside it disagreeing about who
+was counted. `SUPER_ADMIN` is not an accepted value, exactly as it is not one in
+`employeeQuerySchema`: narrowing a screen to a single named account is not a report on a population.
+
+The tiles narrow with it rather than staying company-wide, because the filter is applied in the query
+and `summarise` counts what came back — switching to Administrators changes what is being measured,
+not merely which rows are listed. Verified: with one super admin, one admin and two employees, the
+roster reports 4 / 2 / 2, and an `ADMIN` caller is refused both narrowings.
+
 ### Missing the day earns a letter
 
 Anyone still absent after the day's cutoff is emailed a warning. The sweep lives in
@@ -574,21 +607,44 @@ verified by rendering it under both.
 people-management; deleting the record that they were is not, and there is nothing left afterwards to
 work out who did it.
 
-**Five scopes, and only the first is routine.** `DATE` clears check-ins for one day and nothing else.
-`ATTENDANCE` clears every check-in ever recorded, `LEAVES` every leave ever booked, `ABSENCES` every
-warning ever issued, and `ALL_TIME` all three. The four all-time scopes each demand the typed word;
-`DATE` deliberately does not.
+**It is a grid, not a list of scopes: `target` × `range`.** `target` picks the tables — `ATTENDANCE`,
+`LEAVES`, `ABSENCES` (the warning rows), or `ALL` for the three together. `range` picks how far back:
+`DATE` for one calendar day across everybody, `ALL_TIME` for every row ever written. Eight
+combinations from two fields, and all eight are meaningful.
 
-The single-table scopes exist because the tables answer different questions — wiping a month of trial
-check-ins should not have to cost everybody the leave they booked. `ALL_TIME` stays a scope of its
-own rather than three requests fired in sequence, so a half-finished reset is not something the
-client can produce by having a later call fail.
+It was five flat scopes first, with only `DATE` — check-ins for one day — offered per date. Asked for
+the same thing for leave and for absences, eight literals would have meant `DATE`, `DATE_LEAVES`,
+`DATE_ABSENCES`, `DATE_ALL`, and a name where `DATE` silently meant check-ins. **Don't add a scope
+literal back**; add a target or a range, and the pairing follows for free. `tablesFor()` in
+`attendance.service.ts` is the only place the grid is spelt out, and `reset()` is three deletes
+driven by it rather than a branch per combination.
 
-**Attendance warnings are the one thing `ALL_TIME` gained rather than kept out.** They were excluded
+The targets are apart because the tables answer different questions — wiping a month of trial
+check-ins should not have to cost everybody the leave they booked. `ALL` stays a target of its own
+rather than three requests fired in sequence, so a half-finished reset is not something the client
+can produce by having a later call fail.
+
+**The typed word marks the range, not the target.** Every `ALL_TIME` demands `RESET`; no `DATE` does,
+for any target. The word is for the act nothing can undo and nobody can work around — one day is a
+correction (a test run, a device that double counted), and a ceremony demanded for every ordinary fix
+is one somebody eventually automates away. This was weighed against making leave the trigger instead,
+since a cleared booking is the one thing here that does not grow back whatever the range: rejected
+because three different rules across eight buttons is a ceremony nobody can predict, and the honest
+version of that concern is wording. So the dialog says it in as many words — clearing leave *takes
+the booking with it, and the person will have to book it again* — and says it for a single date too,
+which is where it actually bites.
+
+**Attendance warnings are the one thing `ALL` gained rather than kept out.** They were excluded
 while there was no way to clear them deliberately; once `ABSENCES` existed, a "reset everything" that
 quietly left a table behind would have been a worse lie than the risk it was avoiding.
 
-**Leave belongs in the all-time reset because a roster is decided by both tables at once.**
+**`leaveRepository.deleteMany` takes a date and must never take an employee.** That limit is the
+whole of why a filter is safe to have at all: narrowing by person would be a way to hand one employee
+their allowance back while every count that polices the policy went on reading everybody else's
+history, with nothing on the row to show it had happened. A date applies to the entire company at
+once, exactly as `attendanceRepository.deleteMany` does, so it cannot be used to favour anybody.
+
+**Leave belongs in the reset because a roster is decided by both tables at once.**
 `describeDay` reads a leave before it reads an absence, so a reset that took only check-ins left
 people on the admin screen still marked *On leave* — and to whoever pressed it, a button that had
 plainly done nothing. That is how it came to be reported as broken: a database with zero check-ins
@@ -600,17 +656,17 @@ Clearing leave hands every allowance back, because no balance is stored anywhere
 and every figure beside it count these rows. Removing them **is** the undo, and there is no second
 place that needs correcting afterwards.
 
-**Holidays survive both scopes.** A closure is a fact declared about the office rather than about
-anybody's attendance, and it outranks leave rather than belonging to it.
+**Holidays survive every combination.** A closure is a fact declared about the office rather than
+about anybody's attendance, and it outranks leave rather than belonging to it.
 
 **A reset that empties a day now says so, rather than blaming everybody for it.** Clearing a date
 used to leave the roster asserting that the whole company had been absent, and clearing all time
 asserted it about every working day in the system's history — which is how "the reset doesn't work,
 the absences are still there" came to be reported. It is `dayHoldsRecord` that answers it, up in the
 attendance section: a working day holding no check-in and no leave for anybody reads `NO_RECORD`, so
-an all-time reset is visibly a reset. The two remain separate acts with separate confirmations
-anyway, because a day is recoverable by asking people to mark present again and all time is
-recoverable by nothing this application can do.
+clearing a day, or all of them, is visibly a reset. The two ranges remain separate acts with
+different ceremonies anyway, because a day is a correction and all time is recoverable by nothing
+this application can do.
 
 **No reset ever empties the admin attendance screen, and three places still say so.** The roster is
 built from the employee list, so after a total wipe every account still appears — now reading
@@ -625,8 +681,10 @@ delete an absence, and `ABSENCES` does not pretend to. What it clears is `attend
 letters issued and the `consecutiveMissed` streak they carry, which is the only place in the system
 absence is ever written down. On its own it changes nothing on the roster, because it removes neither
 a check-in nor a leave; the day goes on holding a record and the rest go on reading `ABSENT`. The
-panel says so and names `ALL_TIME` as the button that clears the days themselves — **that pairing is
-the answer to the question this scope keeps being asked**, and neither half of it works alone.
+panel says so and names `ALL` as the target that clears the days themselves — **that pairing is the
+answer to the question this target keeps being asked**, and neither half of it works alone. Either
+can now be aimed at a single date, which does not change the pairing: `ABSENCES` for one day still
+clears only that day's letters.
 
 This note previously said the scope could not exist and that the answer was wording or a filter.
 That was wrong, and wrong in a specific way worth keeping: it confused the derived status with the
@@ -650,17 +708,19 @@ administrative record of having sent them.
 The status filter on the attendance screen still hides absentees for anyone who only wants them out
 of the way, and remains the right answer to "I don't want to look at these".
 
-`RESET` is typed out for the all-time branch and **checked in `resetAttendanceSchema`**, not only in
+`RESET` is typed out for the all-time range and **checked in `resetAttendanceSchema`**, not only in
 the dialog. A confirmation that lives in the browser is a courtesy to whoever is clicking; this one
 is the rule, so `curl` has to spell the same word. The day branch has no such field on purpose — a
 ceremony demanded for every ordinary fix is a ceremony somebody eventually automates away.
 
-**Attendance warnings are never deleted by anything automatic**, and only ever by `ABSENCES` or
-`ALL_TIME`, deliberately. They record letters already delivered, which no amount of deleting can
+**Attendance warnings are never deleted by anything automatic**, and only ever by the `ABSENCES` or
+`ALL` targets, deliberately. They record letters already delivered, which no amount of deleting can
 unsend, and the row doubles as the claim that stops a second letter for a day already swept —
 clearing today's is precisely how somebody gets warned twice, which is what the claim-before-send
-design exists to prevent. That is why the two scopes that can do it say so, count today's claims
-apart from the rest, and make the super admin type the word. Nothing else in the codebase may remove
+design exists to prevent. That is why the two targets that can do it say so, and count today's
+claims apart from the rest. Note the ceremony no longer follows them: `ABSENCES` for a single date
+takes no typed word, because the range decides that — which is right, and is exactly why
+`warningsForToday` is `null` unless the rows going actually include a claim held for today. Nothing else in the codebase may remove
 one; don't add a cascade or a tidy-up sweep that does.
 
 **The mass-email trap, and what closed most of it.** `dispatchAttendanceWarnings` only ever sweeps
@@ -669,14 +729,20 @@ the sweep will never look there again. The live case was clearing **today** afte
 everyone who had checked in becomes absent, and because they were present they have no claim row to
 stop the next sweep writing to them.
 
-`NO_RECORD` shuts that for any scope clearing the **whole** of today, and shuts it as a consequence
+`NO_RECORD` shuts that for anything clearing the **whole** of today, and shuts it as a consequence
 rather than as a special case: a day left holding no check-in and no leave has no absentees on it,
 and the sweep writes only to people the roster calls `ABSENT`. So `warningExposure` no longer asks
 "does this touch today" but **"would today still hold anything afterwards"** — which leaves exactly
 the partial resets exposed. `ATTENDANCE` with somebody's leave still standing, `LEAVES` with somebody
 else's check-in still standing, `ABSENCES` on a day that holds either: in each the day remains one
-the system considers itself to have been watching, so the rest read `ABSENT` and are written to.
-`ALL_TIME`, and `DATE` on a day with no leave, cannot send anything.
+the system considers itself to have been watching, so the rest read `ABSENT` and are written to. The
+`ALL` target cannot send anything, whichever range it is asked for.
+
+It takes the `tables` a target resolves to rather than the target itself, so a combination added
+later is covered without touching it. It also asks for **approved** leave, mirroring `buildRoster`
+exactly rather than counting every row on the date: this is asking what the roster would say
+afterwards, and a legacy `PENDING` row is something a delete would remove but nothing that keeps
+anybody off the sweep.
 
 That is why the check is a **conjunction over the day rather than over any one person**. Clearing
 leave catches a second population — somebody on approved leave today is kept out of the sweep by
@@ -692,11 +758,11 @@ cleared check-in can be recorded again by walking into the building, a cleared l
 total would hide which of the two somebody was actually about to lose. A check-in landing between the
 preview and the delete is ordinary; the reset reports what it actually removed.
 
-The all-time branch is two `deleteMany` calls rather than one transaction, because a transaction
-spanning both tables would have to be written where `prisma` is in scope and the layering keeps that
+The reset is three `deleteMany` calls rather than one transaction, because a transaction spanning
+the tables would have to be written where `prisma` is in scope and the layering keeps that
 in the repositories. A crash between them leaves one table cleared, which is safe here in a way it is
-not for the warning sweep: both deletes are unfiltered, so pressing the button again finishes the job
-rather than doing anything twice.
+not for the warning sweep: every delete is idempotent over the same range, so pressing the button
+again finishes the job rather than doing anything twice.
 
 ## Administrators take leave too
 
