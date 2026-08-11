@@ -140,9 +140,22 @@ export const resetAttendanceSchema = z.discriminatedUnion("scope", [
   }),
   z.strictObject({
     scope: z.literal("ALL_TIME"),
-    confirm: z.literal(RESET_CONFIRMATION, {
-      message: `Type ${RESET_CONFIRMATION} to confirm erasing every check-in.`,
-    }),
+    /**
+     * Matched case-insensitively, and trimmed.
+     *
+     * The ceremony is meant to make somebody stop and type a word on purpose,
+     * which typing `reset` does just as completely as `RESET` — and an exact
+     * literal turned a lowercase answer into a button that stayed disabled
+     * without saying why, which reads as a broken reset rather than as a
+     * refused one. Deliberately not relaxed any further than case: a prefix or
+     * a "close enough" match would be a ceremony that no longer asks anything.
+     */
+    confirm: z
+      .string()
+      .transform((value) => value.trim().toUpperCase())
+      .refine((value) => value === RESET_CONFIRMATION, {
+        message: `Type ${RESET_CONFIRMATION} to confirm erasing every check-in and leave.`,
+      }),
   }),
 ]);
 

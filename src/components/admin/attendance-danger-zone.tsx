@@ -112,7 +112,9 @@ export function AttendanceDangerZone() {
   }
 
   const isAllTime = scope === "ALL_TIME";
-  const blocked = isAllTime && typed !== RESET_CONFIRMATION;
+  // Case-insensitive, matching the server. Somebody who typed the word meant
+  // it whichever way the shift key fell.
+  const blocked = isAllTime && typed.trim().toUpperCase() !== RESET_CONFIRMATION;
   // Both tables together, because either one alone is something to remove.
   const total = preview ? preview.count + (preview.leaveCount ?? 0) : 0;
 
@@ -243,7 +245,16 @@ export function AttendanceDangerZone() {
                 onChange={(event) => setTyped(event.target.value)}
                 autoComplete="off"
                 disabled={working}
+                aria-describedby="reset-confirm-hint"
               />
+              {/* Says why the button is refusing. Without it, a word that does
+                  not match leaves a disabled button and no explanation, which
+                  reads as a reset that ran and did nothing. */}
+              <p id="reset-confirm-hint" className="text-muted-foreground text-sm">
+                {blocked
+                  ? `Enter ${RESET_CONFIRMATION} to enable the button. Capitals do not matter.`
+                  : `Confirmed — "Delete everything" will now remove ${plural(preview.count, "check-in")} and ${plural(preview.leaveCount ?? 0, "booked leave")}.`}
+              </p>
             </div>
           )}
 
