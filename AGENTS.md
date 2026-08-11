@@ -558,8 +558,14 @@ verified by rendering it under both.
 people-management; deleting the record that they were is not, and there is nothing left afterwards to
 work out who did it.
 
-**The two scopes are different acts, and only one of them touches leave.** `DATE` clears check-ins
-for one day and nothing else. `ALL_TIME` clears every check-in *and every leave ever booked*.
+**Four scopes, and only the first is routine.** `DATE` clears check-ins for one day and nothing else.
+`ATTENDANCE` clears every check-in ever recorded, `LEAVES` every leave ever booked, and `ALL_TIME`
+both. The three all-time scopes each demand the typed word; `DATE` deliberately does not.
+
+The two single-table scopes exist because the tables answer different questions — wiping a month of
+trial check-ins should not have to cost everybody the leave they booked. `ALL_TIME` stays a scope of
+its own rather than two requests fired in sequence, so a half-finished reset is not something the
+client can produce by having the second call fail.
 
 **Leave belongs in the all-time reset because a roster is decided by both tables at once.**
 `describeDay` reads a leave before it reads an absence, so a reset that took only check-ins left
@@ -582,10 +588,19 @@ every working day in the system's history, which is why the two are separate act
 confirmations rather than one button with a checkbox: a day is recoverable by asking people to mark
 present again, and all time is recoverable by nothing this application can do.
 
-**No reset ever empties the admin attendance screen, and the dialog says so.** The roster is built
-from the employee list, so after a total wipe every account still appears, reading `ABSENT`. Somebody
-expecting an empty table reads a working reset as a broken one — which is the same misreading the
-leave rows caused, arriving by a different route.
+**No reset ever empties the admin attendance screen, and three places now say so.** The roster is
+built from the employee list, so after a total wipe every account still appears, reading `ABSENT`.
+Somebody expecting an empty table reads a working reset as a broken one — which is the same
+misreading the leave rows caused, arriving by a different route, and it was reported twice before
+the wording existed. It is said beside the buttons where the expectation forms, in the confirmation
+dialog, and on the attendance screen itself when a working day holds no check-ins and no leave.
+
+**There is no "reset absences", and there cannot be.** `AttendanceStatus` has one value, `PRESENT`;
+absence is computed at render time from the lack of a row. A button for it would issue a delete that
+matched nothing, every time, and leave the screen identical — which is precisely the appearance of
+failure it would have been added to fix. If this is asked for again, the answer is wording or a
+filter, not a fifth scope. The status filter on the attendance screen already hides absentees for
+anyone who wants them out of the way.
 
 `RESET` is typed out for the all-time branch and **checked in `resetAttendanceSchema`**, not only in
 the dialog. A confirmation that lives in the browser is a courtesy to whoever is clicking; this one

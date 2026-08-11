@@ -95,17 +95,20 @@ const INACCURATE_MESSAGE =
   "Unable to verify your location accurately. Please move to an area with better location accuracy and try again.";
 
 export type ResetPreview = {
-  /** How many check-ins the reset would remove, counted now. */
-  count: number;
+  /** Check-ins the reset would remove — `null` when the scope leaves them alone. */
+  count: number | null;
   /**
-   * How many leave rows would go with them — `null` for a single day, which
-   * clears check-ins and nothing else.
+   * Leave rows the reset would remove — `null` when the scope leaves them alone.
    *
    * Reported beside the check-in count rather than folded into one total,
    * because the two are not the same loss. A cleared check-in can be recorded
    * again by walking into the building; a cleared leave hands an allowance back
    * and takes a history away. Somebody confirming this should see both numbers
    * rather than their sum.
+   *
+   * `null` rather than `0` throughout, so "this scope does not touch that table"
+   * and "that table is already empty" stay different sentences. The dialog says
+   * different things about them.
    */
   leaveCount: number | null;
   /**
@@ -426,12 +429,17 @@ export const attendanceService = {
    * a check-in landing between the two is ordinary rather than a problem.
    */
   async resetPreview(query: ResetAttendancePreviewQuery): Promise<ResetPreview> {
-    const allTime = query.scope === "ALL_TIME";
+    const touchesAttendance = query.scope !== "LEAVES";
+    const touchesLeave = query.scope === "LEAVES" || query.scope === "ALL_TIME";
 
     const [count, leaveCount, warning] = await Promise.all([
-      allTime ? attendanceRepository.countAll() : attendanceRepository.countOnDate(query.date),
-      allTime ? leaveRepository.countAll() : Promise.resolve(null),
-      warningExposure(allTime ? null : query.date),
+      !touchesAttendance
+        ? null
+        : query.scope === "DATE"
+          ? attendanceRepository.countOnDate(query.date)
+          : attendanceRepository.countAll(),
+      touchesLeave ? leaveRepository.countAll() : null,
+      warningExposure(query.scope === "DATE" ? query.date : null),
     ]);
 
     return { count, leaveCount, ...warning };
@@ -466,26 +474,44 @@ export const attendanceService = {
    * The super admin's alone, gated in the route.
    */
   async reset(input: ResetAttendanceInput): Promise<ResetResult> {
-    if (input.scope !== "ALL_TIME") {
-      return {
-        removed: await attendanceRepository.deleteMany(input.date),
-        removedLeaves: 0,
-        scope: input.scope,
-      };
+    switch (input.scope) {
+      case "DATE":
+        return {
+          removed: await attendanceRepository.deleteMany(input.date),
+          removedLeaves: 0,
+          scope: input.scope,
+        };
+
+      case "ATTENDANCE":
+        return {
+          removed: await attendanceRepository.deleteMany(),
+          removedLeaves: 0,
+          scope: input.scope,
+        };
+
+      case "LEAVES":
+        return {
+          removed: 0,
+          removedLeaves: await leaveRepository.deleteAll(),
+          scope: input.scope,
+        };
+
+      case "ALL_TIME": {
+        // Two deletes rather than one transaction, because a transaction
+        // spanning both tables would have to be written where `prisma` is in
+        // scope, and the layering keeps that in the repositories. The cost is a
+        // crash in between leaving one table cleared, which is safe here in a
+        // way it is not for the warning sweep: both deletes are unfiltered, so
+        // pressing the button again finishes the job rather than doing anything
+        // a second time.
+        const [removed, removedLeaves] = await Promise.all([
+          attendanceRepository.deleteMany(),
+          leaveRepository.deleteAll(),
+        ]);
+
+        return { removed, removedLeaves, scope: input.scope };
+      }
     }
-
-    // Two deletes rather than one transaction, because a transaction spanning
-    // both tables would have to be written where `prisma` is in scope, and the
-    // layering keeps that in the repositories. The cost is a crash in between
-    // leaving one table cleared, which is safe here in a way it is not for the
-    // warning sweep: both deletes are unfiltered, so pressing the button again
-    // finishes the job rather than doing anything a second time.
-    const [removed, removedLeaves] = await Promise.all([
-      attendanceRepository.deleteMany(),
-      leaveRepository.deleteAll(),
-    ]);
-
-    return { removed, removedLeaves, scope: input.scope };
   },
 
   /**

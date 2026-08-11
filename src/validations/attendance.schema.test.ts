@@ -72,4 +72,39 @@ describe("resetAttendanceSchema", () => {
   it("refuses a scope it has never heard of", () => {
     expect(resetAttendanceSchema.safeParse({ scope: "EVERYTHING" }).success).toBe(false);
   });
+
+  /**
+   * The two single-table scopes. They exist so that clearing a month of trial
+   * check-ins need not cost everybody the leave they booked, which means the
+   * thing worth pinning is that each still demands the word — an irreversible
+   * act is not made routine by being narrower.
+   */
+  describe("the single-table scopes", () => {
+    it("takes each with the word, in any case", () => {
+      for (const scope of ["ATTENDANCE", "LEAVES"] as const) {
+        expect(resetAttendanceSchema.safeParse({ scope, confirm: "reset" }).success, scope).toBe(
+          true,
+        );
+      }
+    });
+
+    it("refuses each without it", () => {
+      for (const scope of ["ATTENDANCE", "LEAVES"] as const) {
+        expect(resetAttendanceSchema.safeParse({ scope }).success, scope).toBe(false);
+        expect(
+          resetAttendanceSchema.safeParse({ scope, confirm: "yes" }).success,
+          scope,
+        ).toBe(false);
+      }
+    });
+
+    it("refuses a date on either, which would silently mean nothing", () => {
+      for (const scope of ["ATTENDANCE", "LEAVES"] as const) {
+        expect(
+          resetAttendanceSchema.safeParse({ scope, confirm: "RESET", date: "2026-08-11" }).success,
+          scope,
+        ).toBe(false);
+      }
+    });
+  });
 });

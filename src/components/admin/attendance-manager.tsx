@@ -214,6 +214,35 @@ export function AttendanceManager() {
             </div>
           )}
 
+          {/*
+            A day with nothing recorded against it, said out loud.
+
+            Everyone reads ABSENT, which is correct and looks exactly like a
+            reset that failed to delete anything — the roster is built from the
+            staff list, so it lists all of them however empty the tables are.
+            Only shown when the day genuinely holds nothing and no filter is
+            narrowing the view, so it cannot be mistaken for a claim about a
+            filtered subset. It deliberately does not hide the rows: "who missed
+            today" is the question this screen exists to answer.
+          */}
+          {data &&
+            !loading &&
+            !error &&
+            !data.officeClosed &&
+            data.isWorkingDay &&
+            !hasActiveFilters &&
+            summary !== undefined &&
+            summary.present === 0 &&
+            summary.onLeave === 0 &&
+            entries.length > 0 && (
+              <div className="glass-inset text-muted-foreground flex items-center gap-2 rounded-xl p-3 text-sm">
+                <XCircle className="size-4 shrink-0" aria-hidden />
+                Nothing is recorded for {formatDate(data.date)} — no check-ins and no leave. Everyone
+                below reads as absent because absence is the lack of a check-in rather than a record
+                of its own, so this is what an empty day looks like.
+              </div>
+            )}
+
           {loading && (
             <div className="space-y-3 py-2">
               {Array.from({ length: 6 }, (_, index) => (

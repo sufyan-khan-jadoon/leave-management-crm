@@ -119,51 +119,61 @@ export type UpdateAttendancePolicyInput = z.infer<typeof updateAttendancePolicyS
 export const RESET_CONFIRMATION = "RESET";
 
 /**
- * Erasing check-ins — one day, or every one ever recorded.
+ * Matched case-insensitively, and trimmed.
  *
- * A discriminated union rather than an optional date, because the two are
- * different acts and only one of them is routine. `date` cannot be left off an
- * `ALL_TIME` reset by accident, and cannot be smuggled into one either.
+ * The ceremony is meant to make somebody stop and type a word on purpose, which
+ * typing `reset` does just as completely as `RESET` — and an exact literal
+ * turned a lowercase answer into a button that stayed disabled without saying
+ * why, which reads as a broken reset rather than as a refused one. Deliberately
+ * not relaxed any further than case: a prefix or a "close enough" match would be
+ * a ceremony that no longer asks anything.
+ */
+const resetConfirmation = z
+  .string()
+  .transform((value) => value.trim().toUpperCase())
+  .refine((value) => value === RESET_CONFIRMATION, {
+    message: `Type ${RESET_CONFIRMATION} to confirm.`,
+  });
+
+/**
+ * Erasing the record — one day, or one table, or everything.
  *
- * `confirm` is required on the all-time branch and checked **here**, not only in
- * the dialog. A confirmation that lives in the browser is a courtesy to the
- * person clicking; this one is the rule, so a curl at the endpoint has to spell
- * out the same word as the screen does. The day branch deliberately has no such
+ * A discriminated union rather than a date and a pair of flags, because these
+ * are four different acts and only the first is routine. `date` cannot be left
+ * off a `DATE` reset by accident, and cannot be smuggled into one of the others.
+ *
+ * The three all-time branches each carry `confirm`, checked **here** rather than
+ * only in the dialog. A confirmation that lives in the browser is a courtesy to
+ * the person clicking; this one is the rule, so a curl at the endpoint has to
+ * spell out the same word as the screen does. `DATE` deliberately has no such
  * field — that reset is recoverable by asking people to mark present again, and
  * a ceremony demanded for every ordinary fix is a ceremony that gets automated
  * away.
+ *
+ * `ATTENDANCE` and `LEAVES` exist because the two tables answer different
+ * questions and are worth clearing apart: wiping a month of trial check-ins
+ * should not have to cost everybody the leave they booked. `ALL_TIME` remains
+ * the pair, rather than something the caller assembles by sending two requests
+ * and hoping both land.
  */
 export const resetAttendanceSchema = z.discriminatedUnion("scope", [
   z.strictObject({
     scope: z.literal("DATE"),
     date: calendarDateSchema,
   }),
-  z.strictObject({
-    scope: z.literal("ALL_TIME"),
-    /**
-     * Matched case-insensitively, and trimmed.
-     *
-     * The ceremony is meant to make somebody stop and type a word on purpose,
-     * which typing `reset` does just as completely as `RESET` — and an exact
-     * literal turned a lowercase answer into a button that stayed disabled
-     * without saying why, which reads as a broken reset rather than as a
-     * refused one. Deliberately not relaxed any further than case: a prefix or
-     * a "close enough" match would be a ceremony that no longer asks anything.
-     */
-    confirm: z
-      .string()
-      .transform((value) => value.trim().toUpperCase())
-      .refine((value) => value === RESET_CONFIRMATION, {
-        message: `Type ${RESET_CONFIRMATION} to confirm erasing every check-in and leave.`,
-      }),
-  }),
+  z.strictObject({ scope: z.literal("ATTENDANCE"), confirm: resetConfirmation }),
+  z.strictObject({ scope: z.literal("LEAVES"), confirm: resetConfirmation }),
+  z.strictObject({ scope: z.literal("ALL_TIME"), confirm: resetConfirmation }),
 ]);
 
 export type ResetAttendanceInput = z.infer<typeof resetAttendanceSchema>;
+export type ResetScope = ResetAttendanceInput["scope"];
 
 /** What the dialog asks before it shows a number: how much would this remove? */
 export const resetAttendancePreviewSchema = z.discriminatedUnion("scope", [
   z.object({ scope: z.literal("DATE"), date: calendarDateSchema }),
+  z.object({ scope: z.literal("ATTENDANCE") }),
+  z.object({ scope: z.literal("LEAVES") }),
   z.object({ scope: z.literal("ALL_TIME") }),
 ]);
 
