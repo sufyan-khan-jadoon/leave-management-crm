@@ -17,7 +17,7 @@ export default function AdminAssistantPage() {
     <>
       <PageHeader
         title="Assistant"
-        description="Ask about attendance and leave in plain English. Every answer is read from the same records as the Attendance screen — closures, non-working days and approved leave are all accounted for."
+        description="Ask about attendance and leave in plain English, or add and remove staff. Answers are read from the same records as the Attendance screen, and anything that changes an account is described in full and carried out only once you approve it."
       />
       <AdminChat />
     </>

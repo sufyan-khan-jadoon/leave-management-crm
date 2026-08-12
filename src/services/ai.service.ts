@@ -317,9 +317,22 @@ Worked examples for today = ${iso}:
  * string over and `admin-chat.service.ts` resolves it to a unique id or asks.
  */
 const adminIntentSchema = z.object({
-  intent: z.enum(["roster", "person", "other"]),
+  intent: z.enum(["roster", "person", "invite", "remove", "other"]),
   view: z.enum(["present", "absent", "leave", "summary", "status", "history"]).nullish(),
   name: z.string().trim().min(1).max(80).nullish(),
+  /**
+   * The mailbox to invite. Echoed back for confirmation before anything is sent,
+   * because a mistyped address is an invitation delivered to a stranger and an
+   * email cannot be recalled — so the administrator approves the literal string,
+   * exactly as they would have typed it into the Staff form.
+   */
+  email: z.string().trim().max(200).nullish(),
+  /**
+   * Which role an invitation would grant. `SUPER_ADMIN` is absent here as it is
+   * absent from `inviteRoleSchema`: no invitation can mint another owner, and a
+   * value the model cannot produce is one the service never has to refuse.
+   */
+  role: z.enum(["EMPLOYEE", "ADMIN"]).nullish(),
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be an ISO calendar date")
@@ -387,9 +400,11 @@ ${buildAdminCalendar(today)}
 
 Reply with a single JSON object and nothing else:
 {
-  "intent": "roster" | "person" | "other",
+  "intent": "roster" | "person" | "invite" | "remove" | "other",
   "view": "present" | "absent" | "leave" | "summary" | "status" | "history" or null,
   "name": "employee name" or null,
+  "email": "an email address" or null,
+  "role": "EMPLOYEE" | "ADMIN" or null,
   "date": "YYYY-MM-DD" or null,
   "endDate": "YYYY-MM-DD" or null,
   "reply": "what to say to the administrator"
@@ -404,7 +419,12 @@ Choose the intent:
 - "person" when they ask about one named individual. Put the name in "name" and set "view":
   - "status"  — where they are, are they in, are they present, are they on leave, are they working.
   - "history" — their attendance over a stretch of days, or when they were last absent or last in.
-- "other" for greetings and anything that is not about attendance or leave.
+- "invite" when they want to add, invite, onboard or hire somebody. Put the address
+  in "email" and the role in "role" — "ADMIN" only if they said administrator or
+  admin, otherwise "EMPLOYEE". Leave "email" null if they gave no address.
+- "remove" when they want to delete, remove, offboard, sack or get rid of somebody.
+  Put who they named in "name".
+- "other" for greetings and anything that is not about attendance, leave or staff.
 
 Dates:
 - Always fill "date" for "roster" and for "person". If they named no day, use ${iso}.
@@ -435,58 +455,81 @@ making up a roster, and it refuses a question that had an answer.
 Never guess which person is meant when a name could match more than one. Just
 put what they typed in "name" — the system finds the matches and asks.
 
-For "roster" and "person", "reply" is ignored: the system answers from the
-company's own records. A brief acknowledgement is enough, with no names, counts,
-dates or statuses in it — nobody will read them.
+"invite" and "remove" do not happen when you classify them. You are writing down
+what was asked; the system finds the person, checks whether this administrator is
+allowed, and puts it to them to approve before anything is sent or deleted. So
+never confirm, never report it done, and never claim somebody has been added or
+removed. Your "reply" is discarded for both. Never invent an email address, and
+never guess one from a name — if they gave no address, leave "email" null and the
+system will ask for it.
+
+For "roster", "person", "invite" and "remove", "reply" is ignored: the system
+answers from the company's own records. A brief acknowledgement is enough, with
+no names, counts, dates or statuses in it — nobody will read them.
 
 Keep "reply" to one or two short sentences, plain and professional.
 
 Worked examples for today = ${iso}:
 
 "who is absent today"
-{"intent":"roster","view":"absent","name":null,"date":"${iso}","endDate":null,"reply":"Checking today's absentees."}
+{"intent":"roster","view":"absent","name":null,"email":null,"role":null,"date":"${iso}","endDate":null,"reply":"Checking today's absentees."}
 
 "who is present today"
-{"intent":"roster","view":"present","name":null,"date":"${iso}","endDate":null,"reply":"Checking who is in."}
+{"intent":"roster","view":"present","name":null,"email":null,"role":null,"date":"${iso}","endDate":null,"reply":"Checking who is in."}
 
 "anyone on leave today?"
-{"intent":"roster","view":"leave","name":null,"date":"${iso}","endDate":null,"reply":"Checking today's leave."}
+{"intent":"roster","view":"leave","name":null,"email":null,"role":null,"date":"${iso}","endDate":null,"reply":"Checking today's leave."}
 
 "who was absent yesterday"
-{"intent":"roster","view":"absent","name":null,"date":"${toIsoDate(addUtcDays(today, -1))}","endDate":null,"reply":"Checking yesterday."}
+{"intent":"roster","view":"absent","name":null,"email":null,"role":null,"date":"${toIsoDate(addUtcDays(today, -1))}","endDate":null,"reply":"Checking yesterday."}
 
 "show me the attendance for ${toIsoDate(addUtcDays(today, -4))}"
-{"intent":"roster","view":"summary","name":null,"date":"${toIsoDate(addUtcDays(today, -4))}","endDate":null,"reply":"Pulling that day's attendance."}
+{"intent":"roster","view":"summary","name":null,"email":null,"role":null,"date":"${toIsoDate(addUtcDays(today, -4))}","endDate":null,"reply":"Pulling that day's attendance."}
 
 "how many people are working today"
-{"intent":"roster","view":"present","name":null,"date":"${iso}","endDate":null,"reply":"Counting who is in."}
+{"intent":"roster","view":"present","name":null,"email":null,"role":null,"date":"${iso}","endDate":null,"reply":"Counting who is in."}
 
 "where is Sufyan"
-{"intent":"person","view":"status","name":"Sufyan","date":"${iso}","endDate":null,"reply":"Looking that up."}
+{"intent":"person","view":"status","name":"Sufyan","email":null,"role":null,"date":"${iso}","endDate":null,"reply":"Looking that up."}
 
 "is Ahmed Khan on leave"
-{"intent":"person","view":"status","name":"Ahmed Khan","date":"${iso}","endDate":null,"reply":"Checking."}
+{"intent":"person","view":"status","name":"Ahmed Khan","email":null,"role":null,"date":"${iso}","endDate":null,"reply":"Checking."}
 
 "was Sufyan present yesterday"
-{"intent":"person","view":"status","name":"Sufyan","date":"${toIsoDate(addUtcDays(today, -1))}","endDate":null,"reply":"Checking yesterday."}
+{"intent":"person","view":"status","name":"Sufyan","email":null,"role":null,"date":"${toIsoDate(addUtcDays(today, -1))}","endDate":null,"reply":"Checking yesterday."}
 
 "show me Sufyan's attendance for this week"
-{"intent":"person","view":"history","name":"Sufyan","date":"${toIsoDate(startOfThisWeek(today))}","endDate":"${iso}","reply":"Pulling that up."}
+{"intent":"person","view":"history","name":"Sufyan","email":null,"role":null,"date":"${toIsoDate(startOfThisWeek(today))}","endDate":"${iso}","reply":"Pulling that up."}
 
 "when was Sufyan last absent"
-{"intent":"person","view":"history","name":"Sufyan","date":"${toIsoDate(addUtcDays(today, -21))}","endDate":"${iso}","reply":"Looking back through the record."}
+{"intent":"person","view":"history","name":"Sufyan","email":null,"role":null,"date":"${toIsoDate(addUtcDays(today, -21))}","endDate":"${iso}","reply":"Looking back through the record."}
 
 "where is System Administrator" (an unfamiliar, title-like name is still a name)
-{"intent":"person","view":"status","name":"System Administrator","date":"${iso}","endDate":null,"reply":"Looking that up."}
+{"intent":"person","view":"status","name":"System Administrator","email":null,"role":null,"date":"${iso}","endDate":null,"reply":"Looking that up."}
 
 "when was System last absent"
-{"intent":"person","view":"history","name":"System","date":"${toIsoDate(addUtcDays(today, -21))}","endDate":"${iso}","reply":"Looking back through the record."}
+{"intent":"person","view":"history","name":"System","email":null,"role":null,"date":"${toIsoDate(addUtcDays(today, -21))}","endDate":"${iso}","reply":"Looking back through the record."}
+
+"add ayesha@example.com as an employee"
+{"intent":"invite","view":null,"name":null,"email":"ayesha@example.com","role":"EMPLOYEE","date":null,"endDate":null,"reply":"Setting that up for you to approve."}
+
+"invite bilal@example.com as an admin"
+{"intent":"invite","view":null,"name":null,"email":"bilal@example.com","role":"ADMIN","date":null,"endDate":null,"reply":"Setting that up for you to approve."}
+
+"I want to add a new staff member" (no address given — do not invent one)
+{"intent":"invite","view":null,"name":null,"email":null,"role":"EMPLOYEE","date":null,"endDate":null,"reply":"I'll need their email address."}
+
+"remove Sufyan from the system"
+{"intent":"remove","view":null,"name":"Sufyan","email":null,"role":null,"date":null,"endDate":null,"reply":"Finding them so you can confirm."}
+
+"delete the account for Ahmed Khan"
+{"intent":"remove","view":null,"name":"Ahmed Khan","email":null,"role":null,"date":null,"endDate":null,"reply":"Finding them so you can confirm."}
 
 "hello"
-{"intent":"other","view":null,"name":null,"date":null,"endDate":null,"reply":"Hello. Ask me who is in, who is absent, or about one person's attendance."}
+{"intent":"other","view":null,"name":null,"email":null,"role":null,"date":null,"endDate":null,"reply":"Hello. Ask me who is in, who is absent, or about one person's attendance."}
 
 "what is the medical allowance"
-{"intent":"other","view":null,"name":null,"date":null,"endDate":null,"reply":"I don't have that — I can answer on attendance and leave."}`;
+{"intent":"other","view":null,"name":null,"email":null,"role":null,"date":null,"endDate":null,"reply":"I don't have that — I can answer on attendance and leave."}`;
 }
 
 /** The most recent Monday, today included. Used only to build a prompt example. */

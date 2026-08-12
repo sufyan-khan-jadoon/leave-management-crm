@@ -31,6 +31,12 @@ export const RATE_LIMITS = {
   // something that books time off. Still a bound, because it is the same paid
   // AI quota behind both.
   aiAdmin: { limit: 40, windowSeconds: 3600 },
+  // Tighter than the questions, and bounding something else entirely: no AI quota
+  // is spent here, but every call deletes an account or mails an invitation. A run
+  // of these in one hour is either somebody working through a reorganisation or
+  // somebody using a session they should not have, and 20 sits comfortably above
+  // the first while capping how far the second gets.
+  adminStaffAction: { limit: 20, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { BotMessageSquare, SendHorizontal, User, Users } from "lucide-react";
+import { BotMessageSquare, SendHorizontal, Trash2, User, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,14 +20,30 @@ type PersonChoice = {
   position: string | null;
 };
 
-type Pending = { view: "status" | "history"; date: string; endDate: string | null };
+type Pending = { view: "status" | "history" | "remove"; date: string; endDate: string | null };
 
-type ChatReply = { reply: string; choices?: PersonChoice[]; pending?: Pending };
+/**
+ * An act the server is asking approval for. Sent back untouched to carry it out.
+ *
+ * Held opaquely on purpose: the client displays the reply it came with and
+ * returns the payload as-is, so what is approved and what is executed cannot
+ * drift apart through anything this component does.
+ */
+type PendingAction =
+  | { kind: "remove"; employeeId: string; name: string; email: string }
+  | { kind: "invite"; email: string; role: "EMPLOYEE" | "ADMIN" };
+
+type ChatReply = {
+  reply: string;
+  choices?: PersonChoice[];
+  pending?: Pending;
+  action?: PendingAction;
+};
 
 const GREETING: Turn = {
   role: "assistant",
   content:
-    "Ask me about attendance or leave — for example, **who is absent today**, **who was present on 10 August**, or **where is Sufyan**.",
+    "Ask me about attendance or leave — **who is absent today**, **where is Sufyan**, **show me yesterday's attendance**.\n\nI can also add or remove staff: **invite sara@example.com as an employee**, or **delete Ahmed's account**. I'll show you exactly what I'm about to do and wait for you to approve it.",
 };
 
 /**
@@ -88,6 +104,7 @@ export function AdminChat({ className }: { className?: string }) {
   const [busy, setBusy] = useState(false);
   const [choices, setChoices] = useState<PersonChoice[] | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [action, setAction] = useState<PendingAction | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const turnsRef = useRef<Turn[]>(turns);
 
@@ -97,6 +114,7 @@ export function AdminChat({ className }: { className?: string }) {
     setTurns((current) => [...current, { role: "assistant", content: result.reply }]);
     setChoices(result.choices ?? null);
     setPending(result.pending ?? null);
+    setAction(result.action ?? null);
   }, []);
 
   const ask = useCallback(
@@ -104,9 +122,11 @@ export function AdminChat({ className }: { className?: string }) {
       const next = [...turnsRef.current, { role: "user" as const, content: message }];
       setTurns(next);
       setDraft("");
-      // A new question supersedes any choice still on screen.
+      // A new question supersedes anything still awaiting an answer — including a
+      // proposal, which must never survive the question that produced it.
       setChoices(null);
       setPending(null);
+      setAction(null);
       setBusy(true);
 
       try {
@@ -135,6 +155,7 @@ export function AdminChat({ className }: { className?: string }) {
       const label = `${choice.name} — ${choice.email}`;
       setTurns((current) => [...current, { role: "user", content: label }]);
       setChoices(null);
+      setAction(null);
       setBusy(true);
 
       try {
@@ -156,9 +177,40 @@ export function AdminChat({ className }: { className?: string }) {
     [addReply, busy, pending],
   );
 
+  /**
+   * Carries out the proposal on screen.
+   *
+   * Posts to the action endpoint rather than the chat one, and sends the payload
+   * exactly as it arrived — so the act performed is the act described in the
+   * message the administrator just read.
+   */
+  const confirm = useCallback(async () => {
+    if (!action || busy) return;
+
+    setTurns((current) => [
+      ...current,
+      { role: "user", content: action.kind === "remove" ? "Yes, delete the account" : "Yes, send the invitation" },
+    ]);
+    // Cleared before the request, not after: a second press must not be able to
+    // send a delete twice while the first is still in flight.
+    setAction(null);
+    setBusy(true);
+
+    try {
+      addReply(await apiClient.post<ChatReply>("/api/admin/chat/action", action));
+    } catch (error) {
+      const text = error instanceof ApiClientError ? error.message : "That could not be completed.";
+
+      setTurns((current) => [...current, { role: "assistant", content: text }]);
+      toast.error(text);
+    } finally {
+      setBusy(false);
+    }
+  }, [action, addReply, busy]);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns, choices]);
+  }, [turns, choices, action]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -236,6 +288,36 @@ export function AdminChat({ className }: { className?: string }) {
                   </span>
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* The approval. Two buttons, both explicit, and the destructive one
+              styled as such — nothing here is the default action, and no Enter
+              press in the composer can reach it. */}
+          {action && !busy && (
+            <div className="animate-in fade-in-0 slide-in-from-bottom-1 ml-9 flex flex-wrap items-center gap-2 duration-300 ease-spring">
+              <Button
+                type="button"
+                size="sm"
+                variant={action.kind === "remove" ? "destructive" : "default"}
+                onClick={confirm}
+              >
+                {action.kind === "remove" ? (
+                  <>
+                    <Trash2 className="size-4" />
+                    Delete {action.name}
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="size-4" />
+                    Send invitation
+                  </>
+                )}
+              </Button>
+
+              <Button type="button" size="sm" variant="outline" onClick={() => setAction(null)}>
+                Cancel
+              </Button>
             </div>
           )}
 

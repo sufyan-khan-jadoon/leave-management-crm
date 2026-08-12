@@ -774,10 +774,12 @@ fetched afterwards.** `interpretAdminChat` is never asked who was in. An invente
 indistinguishable from a real one to somebody about to act on it, and unlike a fabricated leave
 balance — which `planLeave` would refuse to honour — nothing downstream would catch it.
 
-**It is read-only by construction, not by permission.** `admin-chat.service.ts` has no write path
-at all: it cannot mark attendance, book leave, or touch an account, which is why there is no
-proposal to confirm and no `/confirm` endpoint beside it. The leave assistant needs both because it
-writes; this one would have nothing to put in them.
+**`/api/admin/chat` writes nothing, and that is now a fact about the endpoint rather than about the
+service.** It can still only answer: asking to add or remove somebody gets a *proposal* back, and
+carrying it out is a second request to `/api/admin/chat/action` that the administrator has to
+approve — see "Adding and removing staff" below. This note used to say the service had no write path
+at all; that stopped being true when staff acts arrived, and the guarantee it was really making is
+the one kept: **nothing changes as a consequence of the model reading a sentence.**
 
 **Every answer goes through `attendanceService`, never its own queries.** `rosterEntries` and
 `historyFor` are the same code the admin attendance screen and the warning sweep use, so the
@@ -811,6 +813,52 @@ buttons render the same text twice and the disambiguation asks a question it has
 The address is unique on the table, so it can always separate them, and it gives nothing away that
 the Staff screen does not: unlike `role` it never says what somebody *is*. The echoed transcript line
 uses it for the same reason, so the conversation records which of the two was picked.
+
+### Adding and removing staff
+
+Two intents, `invite` and `remove`, and **neither of them does anything**. The model classifies the
+request; `admin-chat.service.ts` finds who was meant, checks whether this administrator may do it,
+and hands back a `PendingAction` describing the act in full. Approving it posts
+`/api/admin/chat/action`, which is **the only route in this feature that can change anything** — a
+separate endpoint on purpose, so "the assistant is read-only except when it isn't" is not a fact you
+have to read the service to establish. It is also where the rate limit differs: `adminStaffAction`
+is 20 an hour, tighter than the 40 questions and bounding something else entirely, since no AI quota
+is spent there and every call deletes an account or mails an invitation.
+
+**No model call happens on the action route at all.** The wording was interpreted when the proposal
+was made, and re-reading it to perform an act already agreed would be a second chance to understand
+it differently — the same reason `resolved` short-circuits the model on the read path, and the same
+shape as the leave assistant confirming against a re-planned proposal rather than a sentence.
+
+**The payload carries inputs, never a decision.** `adminChatActionSchema` is a discriminated union
+of an `employeeId`, or an address and a role — `strictObject` on both, following
+`markAttendanceSchema`. Everything the confirmation *displayed* (the name, the status, the
+department) is re-read from the database when it runs, so a forged payload changes what the
+administrator was shown and nothing about what happens.
+
+**Authority is delegated, never reimplemented.** `execute` calls `employeeService.remove` and
+`invitationService.invite`, so `assertMayManage` and `assertMayInvite` decide exactly as they do for
+the Staff screen, against the row in the database rather than the session. An ordinary administrator
+cannot delete another administrator by asking nicely, one without `canInviteEmployees` cannot
+onboard anybody, and nobody can delete the owner — verified by driving each refusal directly.
+The permission read while *building* the proposal is a courtesy that spares somebody approving
+something that was never going to work, exactly as `canIssue` is on the invitation routes; the check
+that counts runs on confirmation. **Don't add permission logic to the action route** — a second copy
+is how the two come to disagree.
+
+Removal reuses the disambiguation above but not its query. `findManageableByNameLike` takes its
+`roles` as a **required** argument, unlike everywhere else it is optional, because the safety of the
+whole thing is that a candidate the caller may not act on never appears — an account out of reach is
+absent rather than refused, so the assistant cannot be used to discover who the administrators are
+by naming people and reading which refusals come back. `SUPER_ADMIN` is excluded by never being
+passed. It matches **every** status, unlike `findActiveByNameLike`: a suspended account is exactly
+the sort somebody wants rid of, and "I can't find them" would be a lie.
+
+The assistant assigns no job title. `position` is stamped from the invitation's `JobRole`, and
+picking one out of a typed phrase would mean matching a curated list by guesswork; the Staff form
+offers the list. It also never invents an address — the prompt says so in as many words, and a
+request with no address asks for one rather than guessing it from a name, because an invitation is
+delivered the moment it is approved and an email cannot be recalled.
 
 ### Two false refusals, and the lesson landing for the third time
 
@@ -872,8 +920,11 @@ watching a day is a fact about the day, not about them.
 
 Its `reply` is the only wording that reaches the administrator unread by anything else, so the prompt
 forbids stating any company fact it was not given — and, as in the leave prompt, says plainly that
-classifying is not refusing. `roster` and `person` discard `reply` entirely. **When you add a fact
-worth asking about, add an intent, not a paragraph to the prompt.**
+classifying is not refusing. Every other intent discards `reply` entirely — `roster` and `person`
+because the records answer, `invite` and `remove` because the proposal does, and a model that
+narrated a deletion would be confirming something that has not happened. The prompt says that in as
+many words: never confirm, never report it done. **When you add a fact worth asking about, add an
+intent, not a paragraph to the prompt.**
 
 `requestJson` in `ai.service.ts` is generic over the intent shape because there are now two
 assistants that differ only in prompt and schema. A second copy of the fence-tolerant JSON

@@ -19,9 +19,11 @@ import { adminChatSchema } from "@/validations/admin-chat.schema";
  * super admin the way the population filter is, because unlike that filter it
  * never says what anybody's *role* is.
  *
- * Read-only by construction. There is no write path in `adminChatService` at
- * all: it cannot mark attendance, book leave, or edit an account, so nothing
- * here needs a confirmation step the way the leave assistant does.
+ * **This endpoint writes nothing.** Asking to add or remove somebody gets a
+ * proposal back describing the act; carrying it out is `action/route.ts`, which
+ * is a separate request the administrator has to approve. So every answer here
+ * is still a read, and the one route that can change anything is the one named
+ * for it.
  */
 export async function POST(request: Request) {
   return handleRoute(async () => {
@@ -32,7 +34,11 @@ export async function POST(request: Request) {
     enforceRateLimit(rateLimitKey("admin-chat", request, user.id), RATE_LIMITS.aiAdmin);
 
     const { messages, resolved } = await parseBody(request, adminChatSchema);
-    const result = await adminChatService.respond(messages, resolved ?? undefined);
+    const result = await adminChatService.respond(
+      { id: user.id, role: user.role },
+      messages,
+      resolved ?? undefined,
+    );
 
     return ok(result);
   });

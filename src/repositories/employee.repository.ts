@@ -39,6 +39,28 @@ export type AttendanceRosterMember = Prisma.EmployeeGetPayload<{
   select: typeof attendanceRosterSelect;
 }>;
 
+/**
+ * Enough to be sure who is about to be deleted, before it happens.
+ *
+ * Carries `role` and `status`, which `attendanceRosterSelect` deliberately does
+ * not. That is safe only because `findManageableByNameLike` is the one query
+ * that uses it and never returns a row the caller may not already act on — an
+ * ordinary administrator is handed `EMPLOYEE` candidates alone, so the role it
+ * reads back is the only one it could have been. Don't reuse this select for a
+ * search that is not role-scoped first.
+ */
+export const staffCandidateSelect = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  status: true,
+  department: true,
+  position: true,
+} satisfies Prisma.EmployeeSelect;
+
+export type StaffCandidate = Prisma.EmployeeGetPayload<{ select: typeof staffCandidateSelect }>;
+
 /** Just enough to address somebody, and to show who they are without listing them. */
 export const mailRecipientSelect = {
   id: true,
@@ -267,6 +289,43 @@ export const employeeRepository = {
       orderBy: { name: "asc" },
       take,
       select: attendanceRosterSelect,
+    });
+  },
+
+  /**
+   * Candidates for an act on an account, narrowed to roles the caller may touch.
+   *
+   * `roles` is **required**, unlike everywhere else it is optional, because the
+   * whole safety of this query is that it cannot return somebody the caller has
+   * no business acting on. An account outside the list is not refused later — it
+   * never appears, so the assistant cannot be used to find out who the
+   * administrators are by naming people and reading which refusals come back.
+   * `SUPER_ADMIN` is therefore excluded simply by never being passed.
+   *
+   * Every status, unlike `findActiveByNameLike`: a suspended account is exactly
+   * the sort somebody wants rid of, and "I can't find them" would be a lie.
+   */
+  findManageableByNameLike(term: string, roles: Role[], take = 6): Promise<StaffCandidate[]> {
+    return prisma.employee.findMany({
+      where: { role: { in: roles }, name: { contains: term, mode: "insensitive" } },
+      orderBy: { name: "asc" },
+      take,
+      select: staffCandidateSelect,
+    });
+  },
+
+  /**
+   * One account by id, but only if the caller may act on its role.
+   *
+   * The id arrives back through the client after a disambiguation, so it is
+   * re-checked here rather than trusted. Absent from the result reads as *not
+   * found* for a role out of reach, which is how `byIdForActor` phrases the same
+   * refusal — an id is guessable in a way a name is not.
+   */
+  findManageableById(id: string, roles: Role[]): Promise<StaffCandidate | null> {
+    return prisma.employee.findFirst({
+      where: { id, role: { in: roles } },
+      select: staffCandidateSelect,
     });
   },
 
