@@ -25,7 +25,11 @@ type InvitationGateProps = {
 export async function InvitationGate({ token, variant = "employee" }: InvitationGateProps) {
   const isAdminScreen = variant === "admin";
 
-  if (!token) return <InvitationNotice state="invalid" isAdminScreen={isAdminScreen} />;
+  // Arriving with no token at all is a different person from arriving with one
+  // that no longer resolves: the first has never been invited, the second is
+  // holding a link. They were told the same thing, which was wrong for one of
+  // them whichever way it read.
+  if (!token) return <InvitationNotice state="missing" isAdminScreen={isAdminScreen} />;
 
   const invitation = await invitationService.preview(token);
 
@@ -67,7 +71,11 @@ function InvitationNotice({
   state,
   isAdminScreen,
 }: {
-  state: Exclude<InvitationPreview["state"], "valid">;
+  /**
+   * `missing` is the gate's own, not the service's: no token was presented, so
+   * there was nothing to resolve and no preview to ask for.
+   */
+  state: Exclude<InvitationPreview["state"], "valid"> | "missing";
   isAdminScreen: boolean;
 }) {
   const inviter = isAdminScreen ? "your super administrator" : "your administrator";
@@ -81,7 +89,26 @@ function InvitationNotice({
       title: "This invitation has already been used",
       body: "An account was created with it. If that was you, sign in below.",
     },
+    /**
+     * **Resending an invitation replaces its link**, and this is where the old
+     * one lands. `resend` mints a fresh token and overwrites `tokenHash` on the
+     * same row, so the link already sitting in the recipient's inbox stops
+     * matching anything — which is the point, since withdrawing an invitation
+     * has to kill the link that was already sent.
+     *
+     * Only the current hash is stored, so a superseded link is indistinguishable
+     * from a string somebody invented, and this wording deliberately does not
+     * pretend otherwise: it names the likely cause and the way out without
+     * asserting which of the two happened. It used to say "accounts here are
+     * created by invitation only" — flatly wrong for the commonest visitor,
+     * somebody who *was* invited and opened the older of two emails, and who was
+     * being told to go and ask for the thing already in their inbox.
+     */
     invalid: {
+      title: "This invitation link isn't valid",
+      body: `It may have been replaced by a newer one — invitations are reissued each time they're resent, which retires the previous link. Check your email for the most recent invitation from ${inviter}, and open that one. If you've never been invited, ask ${inviter} to invite your email address.`,
+    },
+    missing: {
       title: "You'll need an invitation",
       body: `Accounts here are created by invitation only. Ask ${inviter} to invite your email address, then open the link they send you.`,
     },
