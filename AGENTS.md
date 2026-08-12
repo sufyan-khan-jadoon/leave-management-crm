@@ -832,9 +832,28 @@ shape as the leave assistant confirming against a re-planned proposal rather tha
 
 **The payload carries inputs, never a decision.** `adminChatActionSchema` is a discriminated union
 of an `employeeId`, or an address and a role — `strictObject` on both, following
-`markAttendanceSchema`. Everything the confirmation *displayed* (the name, the status, the
-department) is re-read from the database when it runs, so a forged payload changes what the
-administrator was shown and nothing about what happens.
+`markAttendanceSchema`. Everything the confirmation *displayed* is re-read from the database when it
+runs, so a forged payload changes what the administrator was shown and nothing about what happens.
+
+**The proposal is wider than the request, and `toActionRequest` is the seam.** `AdminChatAction`
+also carries `name`, which labels the confirm button; the request carries the inputs alone. Both are
+declared in `admin-chat.schema.ts` beside the function converting one to the other, because they
+were once declared in three places — a Zod schema, a service type and a hand-written type in the
+component — with nothing comparing them. **This shipped broken.** The client posted the proposal
+back whole, the removal branch carried six display fields, `strictObject` refused all of them, and
+every deletion failed with *"The submitted data is invalid"* while invitations worked, those being
+inputs the whole way through. The fix narrows on the client rather than loosening the schema: the
+strictness is what would refuse a client sending its own verdict, and dropping display fields is the
+client's job precisely because the server re-reads them anyway.
+
+**It shipped broken because the verification never crossed the schema.** Every path was driven
+before release — both permission boundaries, an admin aimed at the owner, a real deletion — but
+against `adminChatService.execute` directly, with a payload written by hand in the shape the schema
+wanted. The route's own `parseBody` was never in the picture, so the one thing actually wrong was
+the one thing not exercised. `admin-chat.schema.test.ts` now pins the round trip, and the rule
+generalises: when a feature spans a client and a server, **verify the wire, not the two ends** — a
+driver that constructs its own request is testing your understanding of the contract rather than the
+contract.
 
 **Authority is delegated, never reimplemented.** `execute` calls `employeeService.remove` and
 `invitationService.invite`, so `assertMayManage` and `assertMayInvite` decide exactly as they do for

@@ -18,7 +18,7 @@ import { interpretAdminChat, type ChatTurn } from "@/services/ai.service";
 import { employeeService, type Actor } from "@/services/employee.service";
 import { invitationService } from "@/services/invitation.service";
 import { emailSchema } from "@/validations/auth.schema";
-import type { AdminChatActionInput } from "@/validations/admin-chat.schema";
+import type { AdminChatAction, AdminChatActionInput } from "@/validations/admin-chat.schema";
 
 /**
  * How far a single question may look back or forward.
@@ -69,25 +69,23 @@ export type PendingPerson = {
  * Something the assistant is asking permission to do, spelled out.
  *
  * **This is a proposal, never a decision.** The model has classified a request;
- * nothing has happened yet. Every field here is echoed to the administrator so
- * they approve a specific act on a specific account rather than agreeing with a
- * sentence — the address that will actually be mailed, the person who will
- * actually be deleted. Approving it posts `/api/admin/chat/action`, which
+ * nothing has happened yet. What the administrator approves is spelled out in the
+ * `reply` beside it — the address that will actually be mailed, the person who
+ * will actually be deleted. Approving it posts `/api/admin/chat/action`, which
  * re-reads the row and re-checks the caller's authority through
  * `employeeService` and `invitationService`; this carries no authority of its own.
+ *
+ * **It holds the inputs, plus `name` for the button, and nothing else.** The
+ * account's status, department and job title are in the `reply` already, and this
+ * is a payload the client posts back — every field on it that the action endpoint
+ * does not accept is one the client has to remember to strip. It did not, and
+ * `strictObject` refused every deletion while invitations went through untouched.
+ * Keep the two in step by giving the client nothing it must drop.
+ *
+ * Declared in `admin-chat.schema.ts` beside `toActionRequest`, which narrows it to
+ * what the endpoint accepts, and the test that holds the two together.
  */
-export type PendingAction =
-  | {
-      kind: "remove";
-      employeeId: string;
-      name: string;
-      email: string;
-      role: Role;
-      status: EmployeeStatus;
-      department: string | null;
-      position: string | null;
-    }
-  | { kind: "invite"; email: string; role: "EMPLOYEE" | "ADMIN" };
+export type PendingAction = AdminChatAction;
 
 export type AdminChatReply = {
   reply: string;
@@ -439,16 +437,7 @@ async function proposeRemoval(actor: Actor, employeeId: string): Promise<AdminCh
       "",
       "Their attendance records and every leave they booked go too, and **nothing in this application can undo it**. If you only want to stop them signing in, suspend them from the Staff screen instead — that keeps the record.",
     ].join("\n"),
-    action: {
-      kind: "remove",
-      employeeId: member.id,
-      name: member.name,
-      email: member.email,
-      role: member.role,
-      status: member.status,
-      department: member.department,
-      position: member.position,
-    },
+    action: { kind: "remove", employeeId: member.id, name: member.name, email: member.email },
   };
 }
 

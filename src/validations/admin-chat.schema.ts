@@ -60,7 +60,9 @@ export type AdminChatInput = z.infer<typeof adminChatSchema>;
  * the Staff screen, and be refused by the same code.
  *
  * `z.strictObject` on both, following `markAttendanceSchema`: a field nobody
- * reads is better refused loudly than quietly ignored.
+ * reads is better refused loudly than quietly ignored. That strictness is right
+ * and it bit — see `toActionRequest` below for what it caught and what now keeps
+ * the two sides in step.
  */
 export const adminChatActionSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -75,3 +77,37 @@ export const adminChatActionSchema = z.discriminatedUnion("kind", [
 ]);
 
 export type AdminChatActionInput = z.infer<typeof adminChatActionSchema>;
+
+/**
+ * What the assistant proposes, as the administrator sees it on screen.
+ *
+ * Wider than the request above, and deliberately so: `name` labels the confirm
+ * button. It lives here rather than in `admin-chat.service.ts` so that the shape
+ * the server sends and the shape the client may post are declared in one file,
+ * beside the function that converts between them.
+ */
+export type AdminChatAction =
+  | { kind: "remove"; employeeId: string; name: string; email: string }
+  | { kind: "invite"; email: string; role: "EMPLOYEE" | "ADMIN" };
+
+/**
+ * The inputs alone, in the shape `adminChatActionSchema` accepts.
+ *
+ * **This exists because the client posted the proposal back whole.** The removal
+ * branch carried the name, address, role, status, department and position for the
+ * confirmation to display, `strictObject` refused all six, and every deletion
+ * failed with *"The submitted data is invalid"* — while invitations worked, since
+ * those happen to be inputs the whole way through. One half of the wire contract
+ * was a Zod schema and the other was a hand-written object literal, and nothing
+ * compared them; the test beside this file now does.
+ *
+ * Narrowing here rather than loosening the schema is the deliberate half. The
+ * strictness is what would refuse a client that tried to send its own verdict, and
+ * dropping display fields is the client's job precisely because the server re-reads
+ * every one of them from the database before acting on the id.
+ */
+export function toActionRequest(action: AdminChatAction): AdminChatActionInput {
+  return action.kind === "remove"
+    ? { kind: "remove", employeeId: action.employeeId }
+    : { kind: "invite", email: action.email, role: action.role };
+}

@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { toActionRequest, type AdminChatAction } from "@/validations/admin-chat.schema";
 
 type Turn = { role: "user" | "assistant"; content: string };
 
@@ -23,15 +24,19 @@ type PersonChoice = {
 type Pending = { view: "status" | "history" | "remove"; date: string; endDate: string | null };
 
 /**
- * An act the server is asking approval for. Sent back untouched to carry it out.
+ * An act the server is asking approval for.
  *
- * Held opaquely on purpose: the client displays the reply it came with and
- * returns the payload as-is, so what is approved and what is executed cannot
- * drift apart through anything this component does.
+ * It carries two different things and they must not be confused: the **inputs**
+ * that identify the act, and `name`, which exists only to label the button.
+ * `toActionRequest` sends the first and drops the second — everything else is
+ * re-read from the database when it runs, so echoing it back would be handing the
+ * server its own display copy to ignore.
+ *
+ * This component posted the whole object once, and every deletion was refused with
+ * "The submitted data is invalid" while invitations worked, since those happen to
+ * be inputs all the way through.
  */
-type PendingAction =
-  | { kind: "remove"; employeeId: string; name: string; email: string }
-  | { kind: "invite"; email: string; role: "EMPLOYEE" | "ADMIN" };
+type PendingAction = AdminChatAction;
 
 type ChatReply = {
   reply: string;
@@ -180,9 +185,10 @@ export function AdminChat({ className }: { className?: string }) {
   /**
    * Carries out the proposal on screen.
    *
-   * Posts to the action endpoint rather than the chat one, and sends the payload
-   * exactly as it arrived — so the act performed is the act described in the
-   * message the administrator just read.
+   * Posts to the action endpoint rather than the chat one, sending the inputs the
+   * proposal was built from. That the act performed is the act described is not
+   * something this component can promise anyway — it is the server re-reading the
+   * row behind the id that makes it true.
    */
   const confirm = useCallback(async () => {
     if (!action || busy) return;
@@ -197,7 +203,7 @@ export function AdminChat({ className }: { className?: string }) {
     setBusy(true);
 
     try {
-      addReply(await apiClient.post<ChatReply>("/api/admin/chat/action", action));
+      addReply(await apiClient.post<ChatReply>("/api/admin/chat/action", toActionRequest(action)));
     } catch (error) {
       const text = error instanceof ApiClientError ? error.message : "That could not be completed.";
 
