@@ -1,7 +1,7 @@
 import type { Role } from "@prisma/client";
 
 import { hasCutoffPassed } from "@/lib/attendance-policy";
-import { addUtcDays, endOfUtcMonth, startOfUtcMonth, toIsoDate, todayUtc } from "@/lib/date";
+import { addUtcDays, endOfUtcMonth, startOfUtcMonth, toIsoDate, todayUtc, type DayScope } from "@/lib/date";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { isSuperAdminRole, rolesInPopulation } from "@/lib/enums";
 import { ConflictError, ForbiddenError, ValidationError } from "@/lib/errors";
@@ -172,6 +172,27 @@ function tablesFor(target: ResetAttendanceInput["target"]): {
     leaves: target === "LEAVES" || target === "ALL",
     warnings: target === "ABSENCES" || target === "ALL",
   };
+}
+
+/**
+ * How far back a range reaches. The companion of `tablesFor`: that decides which
+ * tables, this decides which days, and every pairing of the two is meaningful.
+ *
+ * **`ALL_TIME` stops at today, and that bound is the fix for a real defect.** It
+ * used to pass no filter at all, which deleted the table — and `leaveDate` is
+ * routinely in the *future*, because booking leave is booking a day that has not
+ * happened. So "clear the history" quietly cancelled everybody's upcoming leave
+ * along with the record of their past leave. Nothing announced it and nothing
+ * could undo it: no balance is stored anywhere, so the rows were the booking.
+ *
+ * "All time" now means all of *recorded* time, which is what an administrator
+ * clearing a history means by it. A day still to come has no history to clear.
+ *
+ * `DATE` is deliberately left alone, future or not: naming a single date is an
+ * explicit instruction about that date, not a sweep that happens to reach it.
+ */
+function resetScope(range: ResetAttendanceInput["range"], date: Date | undefined): DayScope {
+  return range === "DATE" && date ? { on: date } : { upTo: todayUtc() };
 }
 
 /**
@@ -658,18 +679,23 @@ export const attendanceService = {
     const clearsTodaysClaims =
       tables.warnings && (date === null || date.getTime() === todayUtc().getTime());
 
+    // Counted through the *same* `resetScope` the delete is driven by, rather than
+    // by rebuilding the bound beside it. The number in this dialog is a promise
+    // about what the next call will remove, and two expressions of one rule is
+    // how the promise comes to be broken — a bounded delete beside an unbounded
+    // count is exactly the shape that offered to clear future leave.
+    const scope = resetScope(query.range, date ?? undefined);
+    const countIn = <T>(on: (d: Date) => T, upTo: (d: Date) => T): T =>
+      "on" in scope ? on(scope.on) : upTo(scope.upTo);
+
     const [count, leaveCount, warningCount, warningsForToday, warning] = await Promise.all([
       !tables.attendance
         ? null
-        : date
-          ? attendanceRepository.countOnDate(date)
-          : attendanceRepository.countAll(),
-      !tables.leaves ? null : date ? leaveRepository.countOnDate(date) : leaveRepository.countAll(),
+        : countIn(attendanceRepository.countOnDate, attendanceRepository.countUpTo),
+      !tables.leaves ? null : countIn(leaveRepository.countOnDate, leaveRepository.countUpTo),
       !tables.warnings
         ? null
-        : date
-          ? attendanceWarningRepository.countOnDate(date)
-          : attendanceWarningRepository.countAll(),
+        : countIn(attendanceWarningRepository.countOnDate, attendanceWarningRepository.countUpTo),
       clearsTodaysClaims ? attendanceWarningRepository.countOnDate(todayUtc()) : null,
       warningExposure(tables, date),
     ]);
@@ -722,12 +748,12 @@ export const attendanceService = {
    */
   async reset(input: ResetAttendanceInput): Promise<ResetResult> {
     const tables = tablesFor(input.target);
-    const date = input.range === "DATE" ? input.date : undefined;
+    const scope = resetScope(input.range, input.range === "DATE" ? input.date : undefined);
 
     const [removed, removedLeaves, removedWarnings] = await Promise.all([
-      tables.attendance ? attendanceRepository.deleteMany(date) : 0,
-      tables.leaves ? leaveRepository.deleteMany(date) : 0,
-      tables.warnings ? attendanceWarningRepository.deleteMany(date) : 0,
+      tables.attendance ? attendanceRepository.deleteMany(scope) : 0,
+      tables.leaves ? leaveRepository.deleteMany(scope) : 0,
+      tables.warnings ? attendanceWarningRepository.deleteMany(scope) : 0,
     ]);
 
     return { removed, removedLeaves, removedWarnings, range: input.range, target: input.target };

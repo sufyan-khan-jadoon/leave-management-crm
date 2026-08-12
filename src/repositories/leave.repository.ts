@@ -1,7 +1,7 @@
 import { LeaveStatus, type Prisma, type Role } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { endOfUtcMonth, startOfUtcMonth } from "@/lib/date";
+import { endOfUtcMonth, startOfUtcMonth, type DayScope } from "@/lib/date";
 
 export const leaveSelect = {
   id: true,
@@ -55,8 +55,16 @@ export const leaveRepository = {
     return prisma.leave.delete({ where: { id }, select: leaveSelect });
   },
 
-  countAll(): Promise<number> {
-    return prisma.leave.count();
+  /**
+   * How many rows a clear would actually take, counted the same way it deletes.
+   *
+   * Replaces a bare `countAll`, and deliberately: the preview and the delete have
+   * to answer the same question or the dialog promises to remove a number it then
+   * does not. Since the delete stops at `upTo`, the count has to as well — future
+   * bookings are neither removed nor counted.
+   */
+  countUpTo(date: Date): Promise<number> {
+    return prisma.leave.count({ where: { leaveDate: { lte: date } } });
   },
 
   /** Leave booked on one calendar day, across everybody. */
@@ -101,16 +109,27 @@ export const leaveRepository = {
    * company at once, exactly as `attendanceRepository.deleteMany` does, so the
    * super admin cannot use it to favour anybody.
    *
-   * `date` omitted means every row ever recorded, spelt as an absent filter
-   * rather than a magic date so the two cases read as what they are.
+   * **`upTo` is inclusive of that day and stops there, which is the point.** This
+   * took no bound at all and deleted the table, and leave is the one table here
+   * that is routinely dated *forward* — booking it is booking a future day. So
+   * "clear the history" destroyed leave that had not happened yet: somebody's
+   * approved week off next month went with the records of last month, and since
+   * no balance is stored anywhere, nothing could put it back or even show it had
+   * gone. Clearing history must reach backwards only.
+   *
+   * The filter is a **date and nothing else**, and that limit is the whole of
+   * why it is safe to have one — see above.
    *
    * Every figure downstream is derived from these rows rather than stored —
    * balance, the monthly limit, the trend and the department chart all count
    * them — so removing them is the whole of the undo. There is nothing else to
    * put back, and nothing else to correct afterwards.
    */
-  async deleteMany(date?: Date): Promise<number> {
-    const result = await prisma.leave.deleteMany({ where: date ? { leaveDate: date } : undefined });
+  async deleteMany(scope: DayScope): Promise<number> {
+    const result = await prisma.leave.deleteMany({
+      where: "on" in scope ? { leaveDate: scope.on } : { leaveDate: { lte: scope.upTo } },
+    });
+
     return result.count;
   },
 

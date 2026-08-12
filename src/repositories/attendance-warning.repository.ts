@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import type { DayScope } from "@/lib/date";
 
 export const attendanceWarningSelect = {
   id: true,
@@ -57,8 +58,9 @@ export const attendanceWarningRepository = {
     return rows.map((row) => row.employeeId);
   },
 
-  countAll(): Promise<number> {
-    return prisma.attendanceWarning.count();
+  /** Counted the same way the clear deletes, so the preview cannot overstate it. */
+  countUpTo(date: Date): Promise<number> {
+    return prisma.attendanceWarning.count({ where: { date: { lte: date } } });
   },
 
   /** Claims held for one date — the rows that would stop a re-sweep writing again. */
@@ -92,9 +94,9 @@ export const attendanceWarningRepository = {
    * read; what goes is the record of having sent them, and the
    * `consecutiveMissed` streak that later letters would have counted from.
    */
-  async deleteMany(date?: Date): Promise<number> {
+  async deleteMany(scope: DayScope): Promise<number> {
     const result = await prisma.attendanceWarning.deleteMany({
-      where: date ? { date } : undefined,
+      where: "on" in scope ? { date: scope.on } : { date: { lte: scope.upTo } },
     });
 
     return result.count;

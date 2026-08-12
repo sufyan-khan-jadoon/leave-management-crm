@@ -185,3 +185,13 @@ export function relativeTime(value: Date | string, now: Date = new Date()): stri
 
   return formatter.format(Math.round(duration), "year");
 }
+
+/**
+ * One calendar day, or every day up to and including one.
+ *
+ * The shape the reset speaks in. It exists so that "how far back" is carried as
+ * a value rather than as an absent filter: `deleteMany(undefined)` meant *every
+ * row in the table*, which read as "all of history" and was in fact all of the
+ * future too. A scope that always names a bound cannot mean that by omission.
+ */
+export type DayScope = { on: Date } | { upTo: Date };

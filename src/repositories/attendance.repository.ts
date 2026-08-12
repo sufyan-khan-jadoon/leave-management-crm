@@ -1,6 +1,7 @@
 import { AttendanceStatus, type Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import type { DayScope } from "@/lib/date";
 
 export const attendanceSelect = {
   id: true,
@@ -108,8 +109,9 @@ export const attendanceRepository = {
     return prisma.attendance.count({ where: { date } });
   },
 
-  countAll(): Promise<number> {
-    return prisma.attendance.count();
+  /** Counted the same way the clear deletes, so the preview cannot overstate it. */
+  countUpTo(date: Date): Promise<number> {
+    return prisma.attendance.count({ where: { date: { lte: date } } });
   },
 
   /**
@@ -137,12 +139,17 @@ export const attendanceRepository = {
    * no soft delete and nothing to inspect afterwards, so a caller that cannot say
    * "47 removed" cannot say anything at all about what it did.
    *
-   * `date` omitted means every row ever recorded. That is spelled as an absent
-   * filter rather than a magic date so the two cases read as what they are, and
-   * the service decides which it is asking for.
+   * `upTo` is inclusive and bounds the clear at that day. A check-in cannot be
+   * dated forward — `markPresent` only ever writes today — so the bound removes
+   * nothing an unbounded delete would have kept. It is here so the three tables
+   * the reset spans are cleared by one rule rather than three, and so a table
+   * that later gained future rows could not quietly start losing them.
    */
-  async deleteMany(date?: Date): Promise<number> {
-    const result = await prisma.attendance.deleteMany({ where: date ? { date } : undefined });
+  async deleteMany(scope: DayScope): Promise<number> {
+    const result = await prisma.attendance.deleteMany({
+      where: "on" in scope ? { date: scope.on } : { date: { lte: scope.upTo } },
+    });
+
     return result.count;
   },
 

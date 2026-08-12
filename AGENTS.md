@@ -609,8 +609,30 @@ work out who did it.
 
 **It is a grid, not a list of scopes: `target` × `range`.** `target` picks the tables — `ATTENDANCE`,
 `LEAVES`, `ABSENCES` (the warning rows), or `ALL` for the three together. `range` picks how far back:
-`DATE` for one calendar day across everybody, `ALL_TIME` for every row ever written. Eight
-combinations from two fields, and all eight are meaningful.
+`DATE` for one calendar day across everybody, `ALL_TIME` for every row **up to and including today**.
+Eight combinations from two fields, and all eight are meaningful.
+
+**`ALL_TIME` stops at today, and that bound is load-bearing.** It passed no filter at all once, which
+deleted the table — and `leaveDate` is routinely in the *future*, because booking leave is booking a
+day that has not happened yet. So "clear the history" silently cancelled everybody's upcoming leave
+along with the record of their past leave. Nothing announced it and nothing could undo it: no balance
+is stored anywhere, so those rows *were* the booking. "All time" now means all of *recorded* time,
+which is what an administrator clearing a history means by it — a day still to come has no history to
+clear. `resetScope` in `attendance.service.ts` is the one place this is decided, and `resetPreview`
+counts through it rather than rebuilding the bound beside it, so the number in the dialog cannot
+promise rows the delete will then leave alone.
+
+`DATE` is deliberately left alone, future or not: naming a single date is an explicit instruction
+about that date, not a sweep that happens to reach it.
+
+**Clearing does not stop the system continuing, and there is no state that would let it.** Nothing
+here keeps a cursor or a "last processed day" — `dispatchAttendanceWarnings` and the roster both
+compute from the date and the policy on every run, so the day after a clear is decided exactly as any
+other day is. Configuration is untouched: the working week, the cutoff, the office hours, holidays and
+every permission live outside these three tables. What a clear does leave behind is `NO_RECORD` on the
+emptied days, which is the point of that status rather than a failure of the reset — it resolves the
+moment anybody checks in or books leave, and the section above explains why it must not be turned back
+into a bare `ABSENT`.
 
 It was five flat scopes first, with only `DATE` — check-ins for one day — offered per date. Asked for
 the same thing for leave and for absences, eight literals would have meant `DATE`, `DATE_LEAVES`,
