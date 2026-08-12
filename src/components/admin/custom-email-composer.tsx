@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Mail, Send, ShieldAlert } from "lucide-react";
+import { Loader2, Mail, Send, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmailAttachmentsField } from "@/components/admin/email-attachments-field";
@@ -90,6 +90,7 @@ export function CustomEmailComposer() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const search = useDebouncedValue(recipientSearch, 300);
 
@@ -129,6 +130,34 @@ export function CustomEmailComposer() {
       .then((result) => setRecipients(result.items))
       .catch(() => setRecipients([]));
   }, [audience, search, capabilities?.canSend]);
+
+  /**
+   * Erases the trail, then reloads rather than emptying the table locally.
+   *
+   * The count in the toast is the server's, not `pagination.total` — the log is
+   * every administrator's and a send may have landed since this page was
+   * loaded, so the number worth reporting is the number of rows actually
+   * removed. Going back to page one matters for the same reason: the page being
+   * viewed no longer exists.
+   */
+  async function clearLog() {
+    setClearing(true);
+
+    try {
+      const { removed } = await apiClient.delete<{ removed: number }>("/api/admin/emails");
+
+      toast.success(
+        removed === 1 ? "Cleared 1 sent message from the log." : `Cleared ${removed} sent messages from the log.`,
+      );
+
+      if (page === 1) await load();
+      else setPage(1);
+    } catch (error) {
+      toast.error(error instanceof ApiClientError ? error.message : "The log could not be cleared.");
+    } finally {
+      setClearing(false);
+    }
+  }
 
   const chosen = useMemo(() => recipients.find((r) => r.id === recipientId), [recipients, recipientId]);
   const bodyHasText = body.replace(/<[^>]*>/g, "").trim().length > 0;
@@ -304,13 +333,36 @@ export function CustomEmailComposer() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Sent messages</CardTitle>
-          <CardDescription>
-            {capabilities.seesAllHistory
-              ? "Every custom email sent from this system."
-              : "Messages you have sent. The message body is never stored."}
-          </CardDescription>
+        <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
+          <div className="space-y-1.5">
+            <CardTitle className="text-base">Sent messages</CardTitle>
+            <CardDescription>
+              {capabilities.seesAllHistory
+                ? "Every custom email sent from this system."
+                : "Messages you have sent. The message body is never stored."}
+            </CardDescription>
+          </div>
+
+          {/* Only the owner may erase the trail, and only when there is one to
+              erase. Rendered from `canClearHistory` rather than the role in the
+              session, so a grant that changes takes the button with it. */}
+          {capabilities.canClearHistory && log.length > 0 && (
+            <ConfirmDialog
+              title="Clear the sent message log?"
+              description={`This removes the record of all ${pagination.total} sent ${
+                pagination.total === 1 ? "message" : "messages"
+              }, across every administrator — who wrote to the organisation, when, and whether it arrived. Delivered mail is untouched and cannot be recalled; what goes is the administrative record of having sent it. Nothing here can undo this.`}
+              confirmLabel="Clear the log"
+              destructive
+              onConfirm={clearLog}
+              trigger={
+                <Button type="button" variant="outline" size="sm" disabled={clearing}>
+                  <Trash2 className="size-4" />
+                  Clear log
+                </Button>
+              }
+            />
+          )}
         </CardHeader>
         <CardContent>
           {log.length === 0 ? (

@@ -148,6 +148,12 @@ export type EmailCapabilitiesView = {
   canSend: boolean;
   audiences: EmailAudienceView[];
   seesAllHistory: boolean;
+  /**
+   * Kept apart from `seesAllHistory` for the reason `EmailCapabilities` gives:
+   * reading the trail and destroying it are different rights, and one flag
+   * standing for both is how a later change to either quietly moves the other.
+   */
+  canClearHistory: boolean;
 };
 
 /** One row of the send log. The message body is deliberately not part of it. */
