@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useSpeech } from "@/hooks/use-speech";
+import { useStickToBottom } from "@/hooks/use-stick-to-bottom";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
@@ -61,7 +62,6 @@ export function LeaveChat({ className, bare = false }: { className?: string; bar
   const [busy, setBusy] = useState(false);
   const [readAloud, setReadAloud] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
 
   // Async speech callbacks fire long after the render that scheduled them, so
   // anything they branch on is mirrored into a ref.
@@ -194,9 +194,8 @@ export function LeaveChat({ className, bare = false }: { className?: string; bar
     void exchange(spoken);
   };
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns, proposal]);
+  // Scrolls the transcript alone. Never the page — see `useStickToBottom`.
+  const listRef = useStickToBottom<HTMLDivElement>([turns, proposal]);
 
   // Turning read-aloud off should silence what is mid-sentence, not just what
   // comes next. Voice mode does its own speaking, so leave it alone there.
@@ -258,7 +257,10 @@ export function LeaveChat({ className, bare = false }: { className?: string; bar
           </div>
         )}
 
-        <div className="scrollbar-thin max-h-[22rem] min-h-[13rem] flex-1 space-y-4 overflow-y-auto px-4 pt-4">
+        <div
+          ref={listRef}
+          className="scrollbar-thin max-h-[22rem] min-h-[13rem] flex-1 space-y-4 overflow-y-auto px-4 pt-4"
+        >
           {turns.map((turn, index) => (
             <div
               key={index}
@@ -294,7 +296,6 @@ export function LeaveChat({ className, bare = false }: { className?: string; bar
             </div>
           )}
 
-          <div ref={endRef} />
         </div>
 
         {proposal && (

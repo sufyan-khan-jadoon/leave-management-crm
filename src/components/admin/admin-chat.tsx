@@ -1,12 +1,13 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import { BotMessageSquare, SendHorizontal, Trash2, User, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useStickToBottom } from "@/hooks/use-stick-to-bottom";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { toActionRequest, type AdminChatAction } from "@/validations/admin-chat.schema";
@@ -110,7 +111,6 @@ export function AdminChat({ className }: { className?: string }) {
   const [choices, setChoices] = useState<PersonChoice[] | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [action, setAction] = useState<PendingAction | null>(null);
-  const endRef = useRef<HTMLDivElement>(null);
   const turnsRef = useRef<Turn[]>(turns);
 
   turnsRef.current = turns;
@@ -214,9 +214,8 @@ export function AdminChat({ className }: { className?: string }) {
     }
   }, [action, addReply, busy]);
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [turns, choices, action]);
+  // Scrolls the transcript alone. Never the page — see `useStickToBottom`.
+  const listRef = useStickToBottom<HTMLDivElement>([turns, choices, action]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -230,7 +229,10 @@ export function AdminChat({ className }: { className?: string }) {
   return (
     <Card className={cn("flex flex-col overflow-hidden", className)}>
       <CardContent className="flex min-h-0 flex-1 flex-col gap-4 p-0">
-        <div className="scrollbar-thin max-h-[30rem] min-h-[18rem] flex-1 space-y-4 overflow-y-auto px-4 pt-4">
+        <div
+          ref={listRef}
+          className="scrollbar-thin max-h-[30rem] min-h-[18rem] flex-1 space-y-4 overflow-y-auto px-4 pt-4"
+        >
           {turns.map((turn, index) => (
             <div
               key={index}
@@ -335,7 +337,6 @@ export function AdminChat({ className }: { className?: string }) {
             </div>
           )}
 
-          <div ref={endRef} />
         </div>
 
         {turns.length === 1 && !busy && (
