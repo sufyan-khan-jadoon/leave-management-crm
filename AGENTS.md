@@ -764,6 +764,126 @@ in the repositories. A crash between them leaves one table cleared, which is saf
 not for the warning sweep: every delete is idempotent over the same range, so pressing the button
 again finishes the job rather than doing anything twice.
 
+## The workforce assistant answers about other people
+
+`/admin/assistant` is the administrator's counterpart to the employee leave chat, and it is the
+second place in this codebase where a model reads a question and the database answers it. The
+bargain is the one the leave chat and `describeHours` already struck, applied to a wider surface:
+**the model classifies and extracts; every name, count, time and status an administrator reads is
+fetched afterwards.** `interpretAdminChat` is never asked who was in. An invented roster is
+indistinguishable from a real one to somebody about to act on it, and unlike a fabricated leave
+balance — which `planLeave` would refuse to honour — nothing downstream would catch it.
+
+**It is read-only by construction, not by permission.** `admin-chat.service.ts` has no write path
+at all: it cannot mark attendance, book leave, or touch an account, which is why there is no
+proposal to confirm and no `/confirm` endpoint beside it. The leave assistant needs both because it
+writes; this one would have nothing to put in them.
+
+**Every answer goes through `attendanceService`, never its own queries.** `rosterEntries` and
+`historyFor` are the same code the admin attendance screen and the warning sweep use, so the
+assistant cannot disagree with the screen — and a closure, a non-working day, approved leave and
+`NO_RECORD` are all honoured here for free rather than re-derived. That is the whole reason the
+service does not read `attendance` rows directly: a second place computing absence is a second
+place to get it wrong, and this one would get it wrong in prose that reads as authoritative.
+
+`requireAdmin` on `/api/admin/chat` is the access control; hiding the nav item is a courtesy. Both
+admin roles, deliberately — an ordinary administrator already sees the whole attendance screen and
+the whole leave screen, so the assistant reads out nothing they could not page through by hand. It
+is *not* narrowed to the super admin the way the population filter is, and the reason is precise:
+that filter leaks who is an administrator, and this never states anybody's **role**. Don't add a
+"who are the admins" intent without moving the guard.
+
+### A name is never an identifier
+
+Two people may share one, so `findActiveByNameLike` returns **every** candidate and the service asks
+rather than picking. Choosing sends the question back with an `employeeId`, and the answer is
+recomputed against the id — the same shape as confirming a leave proposal, and for the same reason:
+the client echoes *inputs*, never an answer. There is nothing to escalate, because an administrator
+who edited the payload could ask about a different colleague by typing their name.
+
+The search is **name only**, deliberately unlike `listAttendanceRoster`, which also matches email,
+department and position. That breadth is right for a search box and wrong here — a term that matched
+a department would confidently answer about somebody not called that at all.
+
+**Each option carries the email, and always shows it.** Name, department and job title can all three
+be identical — this database holds two active accounts both called "sufyan khan" — at which point the
+buttons render the same text twice and the disambiguation asks a question it has made unanswerable.
+The address is unique on the table, so it can always separate them, and it gives nothing away that
+the Staff screen does not: unlike `role` it never says what somebody *is*. The echoed transcript line
+uses it for the same reason, so the conversation records which of the two was picked.
+
+### Two false refusals, and the lesson landing for the third time
+
+Verification against the real model caught the assistant answering *"I'm a workforce assistant, I
+don't have personal attendance records"* to **"when was System last absent"** — a question with a
+real answer, refused. This is exactly the over-correction the `time` intent documents one level up:
+told firmly enough that it knows no company facts, the model starts declining questions the intents
+cover. The admin prompt had inherited the prohibition without the counterweight, so it now carries
+the same **"classifying is not refusing"** paragraph the leave prompt does. When you tighten one of
+these prompts against invention, check in the same change that it has not begun refusing.
+
+The second half is specific to this assistant: **any name is a name.** The model has no roster, so it
+cannot judge whether a name is a real one — and "System" looked implausible enough that it decided
+nobody was being asked about. Deciding somebody is not an employee is the same invention as making up
+a roster, arrived at from the other side, so the prompt says plainly that an odd, single-word or
+title-like name goes in `name` regardless and the search settles it. Both failing questions are
+pinned as worked examples.
+
+### A day still to come is not a day nobody missed
+
+`dayCaveat` ends with a future-date branch, and it is there because the roster calls a future day
+`UPCOMING` rather than `NO_RECORD` — so `isBlankDay` does not catch it, every count comes back zero,
+and "who is absent next Thursday" answered *"nobody is absent, everyone is accounted for"*. True of a
+day nobody could yet have missed, and reading as a report on one. It is judged **below** the closure
+and the working week, because both of those are worth knowing about a day still to come: "the office
+is shut on Monday" answers more than "Monday hasn't happened".
+
+`describeLeave` deliberately takes no caveat at all. Leave is booked ahead, so "who is on leave next
+Thursday" is a real question with a real answer, and it is the one thing about a future day this
+system genuinely knows.
+
+### The calendar reaches backwards
+
+`buildAdminCalendar` runs three weeks back and two forward, where the leave assistant's only runs
+forwards. An employee books ahead of themselves; an administrator asks what already happened
+— "yesterday", "last Monday", "last week" — and without those rows in the prompt every one of them
+becomes arithmetic the model gets wrong. Dates are looked up in the table, never computed by the
+model, exactly as in the leave prompt.
+
+`MAX_RANGE_DAYS` is a bound on one request rather than a policy about history, and a range longer
+than it is clamped to the most recent 31 days **and said so in the reply** rather than refused.
+
+### A day nobody was expected in is not a day of absences
+
+`dayCaveat` is returned *instead of* a list, not alongside one. Reporting "0 absent" for a public
+holiday is true, and reads as though the question was understood when it was not. `isBlankDay` says
+the same thing for `NO_RECORD` — a day holding no check-in and no leave for anybody — which is what
+stops a freshly reset database being described as a company that stopped coming to work.
+
+`historyFor` lists only the days that say something about the person. A fortnight of weekends and
+closures printed in full buries the two days actually missed; the totals underneath count all of it.
+It exists so a question about a week is not `buildRoster` called seven times — four bulk queries
+instead of thirty-odd round trips — and every day is still decided by `describeDay`, so what changed
+is how the facts are fetched and not the rule. `holdsRecord` is still asked **company-wide per day**,
+which is why the two grouped date queries are not scoped to the employee: whether the system was
+watching a day is a fact about the day, not about them.
+
+### `other` is still the branch to watch
+
+Its `reply` is the only wording that reaches the administrator unread by anything else, so the prompt
+forbids stating any company fact it was not given — and, as in the leave prompt, says plainly that
+classifying is not refusing. `roster` and `person` discard `reply` entirely. **When you add a fact
+worth asking about, add an intent, not a paragraph to the prompt.**
+
+`requestJson` in `ai.service.ts` is generic over the intent shape because there are now two
+assistants that differ only in prompt and schema. A second copy of the fence-tolerant JSON
+extraction and the one retry is the last thing this codebase needs.
+
+`RichText` in `admin-chat.tsx` renders `**bold**` and nothing else, deliberately not a markdown
+library. The replies are built by the service, so the syntax in them is known exactly; a parser
+would also mean sanitising its output, and the only thing the model can influence here is its own
+short acknowledgement.
+
 ## Administrators take leave too
 
 An admin is an `Employee` with `role = ADMIN`, and draws the same `MONTHLY_LEAVE_ALLOWANCE`. The

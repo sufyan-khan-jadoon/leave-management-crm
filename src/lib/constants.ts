@@ -179,6 +179,7 @@ export const ROUTES = {
   adminLeaves: "/admin/leaves",
   adminWorkingDays: "/admin/working-days",
   adminAttendance: "/admin/attendance",
+  adminAssistant: "/admin/assistant",
   adminEmails: "/admin/emails",
   adminAccess: "/admin/access",
   attendance: "/attendance",

@@ -1,7 +1,7 @@
 import type { Role } from "@prisma/client";
 
 import { hasCutoffPassed } from "@/lib/attendance-policy";
-import { endOfUtcMonth, startOfUtcMonth, todayUtc } from "@/lib/date";
+import { addUtcDays, endOfUtcMonth, startOfUtcMonth, toIsoDate, todayUtc } from "@/lib/date";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { isSuperAdminRole, rolesInPopulation } from "@/lib/enums";
 import { ConflictError, ForbiddenError, ValidationError } from "@/lib/errors";
@@ -579,8 +579,65 @@ export const attendanceService = {
    * somebody's inbox. Anyone present, on approved leave, or covered by a closure
    * is already excluded by the time it returns.
    */
-  rosterEntries(date: Date, filters: { roles?: Role[] } = {}) {
+  rosterEntries(date: Date, filters: { roles?: Role[]; employeeId?: string } = {}) {
     return buildRoster(date, filters);
+  },
+
+  /**
+   * One person's day-by-day history across a range.
+   *
+   * The stretched form of `rosterEntries`, and it exists so a question about a
+   * week is not `buildRoster` called seven times — that is thirty-odd round
+   * trips to say what four bulk queries can. Every day is still decided by
+   * `describeDay`, so absence is computed in exactly the one place it always
+   * was; what changes is how the facts it needs are fetched, not the rule.
+   *
+   * `holdsRecord` is asked company-wide per day, exactly as the roster asks it,
+   * which is why the two grouped date queries are not scoped to this employee:
+   * whether a day was one the system was watching is a fact about the day.
+   */
+  async historyFor(
+    employeeId: string,
+    from: Date,
+    to: Date,
+  ): Promise<Array<{ date: Date; status: AttendanceDayStatus; attendance: AttendanceDto | null }>> {
+    const today = todayUtc();
+
+    const [checkIns, leaves, closures, recordedDates, leaveDates, policy] = await Promise.all([
+      attendanceRepository.listForEmployeeBetween(employeeId, from, to),
+      leaveRepository.approvedForEmployeeBetween(employeeId, from, to),
+      holidayRepository.closedDatesBetween(from, addUtcDays(to, 1)),
+      attendanceRepository.datesWithCheckInsBetween(from, to),
+      leaveRepository.datesWithApprovedLeaveBetween(from, to),
+      attendancePolicyService.get(),
+    ]);
+
+    const mine = new Map(checkIns.map((row) => [toIsoDate(row.date), row]));
+    const onLeave = new Set(leaves.map((row) => toIsoDate(row.leaveDate)));
+    const closed = new Set(closures.map(toIsoDate));
+    const recorded = new Set([...recordedDates, ...leaveDates].map(toIsoDate));
+
+    const days: Array<{ date: Date; status: AttendanceDayStatus; attendance: AttendanceDto | null }> = [];
+
+    for (let day = from; day.getTime() <= to.getTime(); day = addUtcDays(day, 1)) {
+      const iso = toIsoDate(day);
+      const attendance = mine.get(iso) ?? null;
+
+      days.push({
+        date: day,
+        attendance,
+        status: describeDay({
+          attendance,
+          officeClosed: closed.has(iso),
+          isWorkingDay: isWorkingWeekday(day, policy.workingDays),
+          onLeave: onLeave.has(iso),
+          isFuture: day.getTime() > today.getTime(),
+          holdsRecord: recorded.has(iso),
+        }),
+      });
+    }
+
+    return days;
   },
 
   /**

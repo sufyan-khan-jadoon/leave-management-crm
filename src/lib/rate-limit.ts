@@ -26,6 +26,11 @@ export const RATE_LIMITS = {
   // password from a machine the owner left signed in.
   changePassword: { limit: 5, windowSeconds: 900 },
   aiLeave: { limit: 15, windowSeconds: 3600 },
+  // Looser than the employee's: an administrator working through a morning's
+  // roster asks several questions in a row, and each is a read rather than
+  // something that books time off. Still a bound, because it is the same paid
+  // AI quota behind both.
+  aiAdmin: { limit: 40, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 /**

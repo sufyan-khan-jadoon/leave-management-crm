@@ -65,6 +65,32 @@ export const leaveRepository = {
   },
 
   /**
+   * Every date in the range on which **anybody** holds approved leave.
+   *
+   * The counterpart of `attendanceRepository.datesWithCheckInsBetween`, and
+   * approved-only for the same reason `warningExposure` is: this answers what
+   * the roster would say about the day, and a legacy `PENDING` row keeps nobody
+   * off it.
+   */
+  async datesWithApprovedLeaveBetween(from: Date, to: Date): Promise<Date[]> {
+    const rows = await prisma.leave.groupBy({
+      by: ["leaveDate"],
+      where: { leaveDate: { gte: from, lte: to }, status: LeaveStatus.APPROVED },
+    });
+
+    return rows.map((row) => row.leaveDate);
+  },
+
+  /** One person's approved leave across a range, most recent first. */
+  approvedForEmployeeBetween(employeeId: string, from: Date, to: Date): Promise<LeaveDto[]> {
+    return prisma.leave.findMany({
+      where: { employeeId, status: LeaveStatus.APPROVED, leaveDate: { gte: from, lte: to } },
+      orderBy: { leaveDate: "asc" },
+      select: leaveSelect,
+    });
+  },
+
+  /**
    * Erases leave — one calendar day of it, or every row ever booked.
    *
    * The filter is a **date and nothing else**, and that limit is the whole of

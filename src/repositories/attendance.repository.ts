@@ -89,6 +89,15 @@ export const attendanceRepository = {
     return { items, total };
   },
 
+  /** One person's check-ins across an inclusive range, oldest first. */
+  listForEmployeeBetween(employeeId: string, from: Date, to: Date): Promise<AttendanceDto[]> {
+    return prisma.attendance.findMany({
+      where: { employeeId, date: { gte: from, lte: to } },
+      orderBy: { date: "asc" },
+      select: attendanceSelect,
+    });
+  },
+
   /** How many days this person has been in, within a half-open range. */
   countForEmployeeBetween(employeeId: string, from: Date, to: Date): Promise<number> {
     return prisma.attendance.count({ where: { employeeId, date: { gte: from, lt: to } } });
@@ -101,6 +110,24 @@ export const attendanceRepository = {
 
   countAll(): Promise<number> {
     return prisma.attendance.count();
+  },
+
+  /**
+   * Every date in the range that holds a check-in from **anybody**.
+   *
+   * The bulk form of the count `dayHoldsRecord` asks, for walking a stretch of
+   * days at once: one grouped query instead of one count per day, which is what
+   * makes a month of somebody's history a handful of round trips rather than a
+   * hundred. Distinct dates only — how many people came in is not the question,
+   * only whether the day was one the system was watching.
+   */
+  async datesWithCheckInsBetween(from: Date, to: Date): Promise<Date[]> {
+    const rows = await prisma.attendance.groupBy({
+      by: ["date"],
+      where: { date: { gte: from, lte: to } },
+    });
+
+    return rows.map((row) => row.date);
   },
 
   /**

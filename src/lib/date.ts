@@ -73,11 +73,23 @@ export function appZoneInstant(day: Date, hour: number, minute = 0): Date {
 
 /** Current wall-clock time in the company's timezone, e.g. "3:16 AM". */
 export function currentTimeInAppZone(locale = "en-US"): string {
+  return formatTimeInAppZone(new Date(), locale);
+}
+
+/**
+ * The clock time of an instant, on the company's wall clock — "12:04 PM".
+ *
+ * The time alone, for the places that have already said which day they mean:
+ * a check-in listed under its own date reads worse for repeating it, and a
+ * status card saying "Attendance marked: 12:04 PM" is answering "when did they
+ * get in", not "which day was that".
+ */
+export function formatTimeInAppZone(value: Date | string, locale = "en-US"): string {
   return new Intl.DateTimeFormat(locale, {
     timeZone: APP_TIME_ZONE,
     hour: "numeric",
     minute: "2-digit",
-  }).format(new Date());
+  }).format(typeof value === "string" ? new Date(value) : value);
 }
 
 /** Inclusive start of the calendar month containing `date`. */

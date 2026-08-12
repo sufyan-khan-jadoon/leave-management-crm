@@ -1,4 +1,5 @@
 import {
+  BotMessageSquare,
   CalendarDays,
   CalendarOff,
   Mail,
@@ -49,6 +50,11 @@ export const ADMIN_NAV: NavItem[] = [
   // permission, not a different place to be.
   { href: ROUTES.adminEmployees, label: "Staff", icon: Users, group: "Manage" },
   { href: ROUTES.adminAttendance, label: "Attendance", icon: MapPin, group: "Manage" },
+  // Both admin roles, sitting under Manage rather than Personal: it answers
+  // about the workforce, not about the administrator asking. The employee
+  // assistant under Personal is a different thing entirely — that one books
+  // their own leave and knows nothing about anybody else.
+  { href: ROUTES.adminAssistant, label: "Assistant", icon: BotMessageSquare, group: "Manage" },
   { href: ROUTES.adminLeaves, label: "Leave requests", icon: CalendarDays, group: "Manage" },
   // Shown to every administrator, not only those allowed to change it: which
   // days the organisation works decides what everybody's leave costs, and the

@@ -63,9 +63,22 @@ export async function interpretLeaveChat(turns: ChatTurn[], today: Date): Promis
   throw new AiServiceError("I didn't catch that. Try something like \"I need 3 days off from Monday for a family wedding\".");
 }
 
-type Attempt = { ok: true; value: LeaveChatIntent } | { ok: false; reason: string };
+type Attempt<T> = { ok: true; value: T } | { ok: false; reason: string };
 
-async function requestIntent(system: string, turns: ChatTurn[]): Promise<Attempt> {
+/**
+ * One round trip, parsed and validated against `schema`.
+ *
+ * Generic over the shape because there are now two assistants — the employee's
+ * leave chat and the admin workforce assistant — and they differ only in their
+ * prompt and their intent shape. Everything around that is identical, and a
+ * second copy of the fence-tolerant JSON extraction is the last thing this
+ * codebase needs.
+ */
+async function requestJson<T>(
+  system: string,
+  turns: ChatTurn[],
+  schema: z.ZodType<T>,
+): Promise<Attempt<T>> {
   let raw: string;
 
   try {
@@ -87,16 +100,23 @@ async function requestIntent(system: string, turns: ChatTurn[]): Promise<Attempt
     return { ok: false, reason: `Malformed JSON: ${json.slice(0, 200)}` };
   }
 
-  const result = chatIntentSchema.safeParse(parsed);
+  const result = schema.safeParse(parsed);
   if (!result.success) {
     return { ok: false, reason: result.error.issues.map((issue) => issue.message).join("; ") };
   }
 
-  if (result.data.startDate && Number.isNaN(Date.parse(`${result.data.startDate}T00:00:00.000Z`))) {
-    return { ok: false, reason: `Not a real calendar date: ${result.data.startDate}` };
+  return { ok: true, value: result.data };
+}
+
+async function requestIntent(system: string, turns: ChatTurn[]): Promise<Attempt<LeaveChatIntent>> {
+  const attempt = await requestJson(system, turns, chatIntentSchema);
+  if (!attempt.ok) return attempt;
+
+  if (attempt.value.startDate && Number.isNaN(Date.parse(`${attempt.value.startDate}T00:00:00.000Z`))) {
+    return { ok: false, reason: `Not a real calendar date: ${attempt.value.startDate}` };
   }
 
-  return { ok: true, value: result.data };
+  return attempt;
 }
 
 async function callGroq(system: string, turns: ChatTurn[]): Promise<string> {
@@ -281,6 +301,198 @@ Worked examples for today = ${iso}:
 
 "how much is the medical allowance"
 {"intent":"other","startDate":null,"days":null,"reason":null,"reply":"I don't have that information — your administrator can tell you."}`;
+}
+
+/**
+ * What the assistant decided an administrator is asking about the workforce.
+ *
+ * The same bargain the leave chat strikes, and for the same reason: the model
+ * classifies and extracts, and every name, count and status the administrator
+ * reads is fetched from the database afterwards. It is never asked who was in
+ * — a confidently invented roster is indistinguishable from a real one to
+ * somebody about to act on it.
+ *
+ * `name` is a *search term*, not an answer. The model has no way to know which
+ * of two people called Sufyan Khan is meant, so it does not try: it hands the
+ * string over and `admin-chat.service.ts` resolves it to a unique id or asks.
+ */
+const adminIntentSchema = z.object({
+  intent: z.enum(["roster", "person", "other"]),
+  view: z.enum(["present", "absent", "leave", "summary", "status", "history"]).nullish(),
+  name: z.string().trim().min(1).max(80).nullish(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "date must be an ISO calendar date")
+    .nullish(),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "endDate must be an ISO calendar date")
+    .nullish(),
+  reply: z.string().trim().min(1).max(600),
+});
+
+export type AdminChatIntent = z.infer<typeof adminIntentSchema>;
+
+/** Reads a conversation and reports what the administrator wants to know. */
+export async function interpretAdminChat(turns: ChatTurn[], today: Date): Promise<AdminChatIntent> {
+  const system = buildAdminSystemPrompt(today);
+  const messages: ChatTurn[] = turns.slice(-12);
+
+  const first = await requestJson(system, messages, adminIntentSchema);
+  if (first.ok) return first.value;
+
+  console.warn("[ai] First admin interpretation failed:", first.reason);
+
+  const retry = await requestJson(
+    `${system}\n\nYour previous answer was rejected because: ${first.reason}\nReturn ONLY the JSON object described above.`,
+    messages,
+    adminIntentSchema,
+  );
+  if (retry.ok) return retry.value;
+
+  console.error("[ai] Admin interpretation failed after retry:", retry.reason);
+  throw new AiServiceError(
+    'I didn\'t catch that. Try something like "who is absent today" or "was Sufyan present yesterday".',
+  );
+}
+
+/**
+ * Three weeks back and two forward.
+ *
+ * The leave assistant's calendar only runs forwards, because an employee books
+ * time off ahead of themselves. An administrator asks about what already
+ * happened — "yesterday", "last Monday", "last week" — so the table has to
+ * reach backwards or every one of those becomes arithmetic the model gets
+ * wrong.
+ */
+function buildAdminCalendar(today: Date): string {
+  return Array.from({ length: 36 }, (_, index) => {
+    const offset = index - 21;
+    const day = addUtcDays(today, offset);
+    const marker =
+      offset === 0 ? "  <- today" : offset === -1 ? "  <- yesterday" : offset === 1 ? "  <- tomorrow" : "";
+
+    return `${toIsoDate(day)} = ${utcWeekday(day)}${marker}`;
+  }).join("\n");
+}
+
+function buildAdminSystemPrompt(today: Date): string {
+  const iso = toIsoDate(today);
+
+  return `You are the workforce assistant for an HR system, talking to an administrator.
+Today is ${iso} (${utcWeekday(today)}). The local time is ${currentTimeInAppZone()} in Pakistan.
+
+Calendar reference — use these exact pairings, do not compute dates yourself:
+${buildAdminCalendar(today)}
+
+Reply with a single JSON object and nothing else:
+{
+  "intent": "roster" | "person" | "other",
+  "view": "present" | "absent" | "leave" | "summary" | "status" | "history" or null,
+  "name": "employee name" or null,
+  "date": "YYYY-MM-DD" or null,
+  "endDate": "YYYY-MM-DD" or null,
+  "reply": "what to say to the administrator"
+}
+
+Choose the intent:
+- "roster" when they ask about the workforce as a whole. Set "view":
+  - "present" — who is in, who came, who checked in, how many are working.
+  - "absent"  — who is out, who missed the day, who did not turn up.
+  - "leave"   — who is on leave or on holiday.
+  - "summary" — general attendance for a day, or a mix of the above.
+- "person" when they ask about one named individual. Put the name in "name" and set "view":
+  - "status"  — where they are, are they in, are they present, are they on leave, are they working.
+  - "history" — their attendance over a stretch of days, or when they were last absent or last in.
+- "other" for greetings and anything that is not about attendance or leave.
+
+Dates:
+- Always fill "date" for "roster" and for "person". If they named no day, use ${iso}.
+- Copy the date from the calendar above. Never compute one yourself.
+- For a range — "this week", "last week", "the last 5 days" — put the first day in
+  "date" and the last in "endDate". Otherwise leave "endDate" null.
+- "this week" means the most recent Monday above through today. "last week" means
+  the seven days before that Monday.
+
+NEVER state a fact about this company that you were not given above. You do not
+know who is present, who is absent, who is on leave, how many people work here,
+what anybody's department is, or whether the office was open. If you are asked,
+classify it and let the system look it up. Inventing a plausible answer is the
+worst outcome available to you: to the administrator reading it, an invented
+roster is indistinguishable from a real one, and they will act on it.
+
+Classifying is not refusing. "Where is Sufyan" and "when was he last absent" both
+have answers, and "person" is how you reach them — never reply that you do not
+have attendance records or cannot look up an individual when one of the intents
+above covers the question.
+
+You do not know who works here, so you cannot judge whether a name is a real
+one. **Any name is a name.** However odd or unfamiliar it looks — a single word,
+a job title, a surname on its own — put it in "name" and let the system search.
+Deciding for yourself that somebody is not an employee is the same invention as
+making up a roster, and it refuses a question that had an answer.
+
+Never guess which person is meant when a name could match more than one. Just
+put what they typed in "name" — the system finds the matches and asks.
+
+For "roster" and "person", "reply" is ignored: the system answers from the
+company's own records. A brief acknowledgement is enough, with no names, counts,
+dates or statuses in it — nobody will read them.
+
+Keep "reply" to one or two short sentences, plain and professional.
+
+Worked examples for today = ${iso}:
+
+"who is absent today"
+{"intent":"roster","view":"absent","name":null,"date":"${iso}","endDate":null,"reply":"Checking today's absentees."}
+
+"who is present today"
+{"intent":"roster","view":"present","name":null,"date":"${iso}","endDate":null,"reply":"Checking who is in."}
+
+"anyone on leave today?"
+{"intent":"roster","view":"leave","name":null,"date":"${iso}","endDate":null,"reply":"Checking today's leave."}
+
+"who was absent yesterday"
+{"intent":"roster","view":"absent","name":null,"date":"${toIsoDate(addUtcDays(today, -1))}","endDate":null,"reply":"Checking yesterday."}
+
+"show me the attendance for ${toIsoDate(addUtcDays(today, -4))}"
+{"intent":"roster","view":"summary","name":null,"date":"${toIsoDate(addUtcDays(today, -4))}","endDate":null,"reply":"Pulling that day's attendance."}
+
+"how many people are working today"
+{"intent":"roster","view":"present","name":null,"date":"${iso}","endDate":null,"reply":"Counting who is in."}
+
+"where is Sufyan"
+{"intent":"person","view":"status","name":"Sufyan","date":"${iso}","endDate":null,"reply":"Looking that up."}
+
+"is Ahmed Khan on leave"
+{"intent":"person","view":"status","name":"Ahmed Khan","date":"${iso}","endDate":null,"reply":"Checking."}
+
+"was Sufyan present yesterday"
+{"intent":"person","view":"status","name":"Sufyan","date":"${toIsoDate(addUtcDays(today, -1))}","endDate":null,"reply":"Checking yesterday."}
+
+"show me Sufyan's attendance for this week"
+{"intent":"person","view":"history","name":"Sufyan","date":"${toIsoDate(startOfThisWeek(today))}","endDate":"${iso}","reply":"Pulling that up."}
+
+"when was Sufyan last absent"
+{"intent":"person","view":"history","name":"Sufyan","date":"${toIsoDate(addUtcDays(today, -21))}","endDate":"${iso}","reply":"Looking back through the record."}
+
+"where is System Administrator" (an unfamiliar, title-like name is still a name)
+{"intent":"person","view":"status","name":"System Administrator","date":"${iso}","endDate":null,"reply":"Looking that up."}
+
+"when was System last absent"
+{"intent":"person","view":"history","name":"System","date":"${toIsoDate(addUtcDays(today, -21))}","endDate":"${iso}","reply":"Looking back through the record."}
+
+"hello"
+{"intent":"other","view":null,"name":null,"date":null,"endDate":null,"reply":"Hello. Ask me who is in, who is absent, or about one person's attendance."}
+
+"what is the medical allowance"
+{"intent":"other","view":null,"name":null,"date":null,"endDate":null,"reply":"I don't have that — I can answer on attendance and leave."}`;
+}
+
+/** The most recent Monday, today included. Used only to build a prompt example. */
+function startOfThisWeek(today: Date): Date {
+  const weekday = new Date(today).getUTCDay();
+  return addUtcDays(today, -((weekday + 6) % 7));
 }
 
 /**

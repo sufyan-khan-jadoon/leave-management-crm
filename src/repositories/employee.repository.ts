@@ -245,6 +245,40 @@ export const employeeRepository = {
   },
 
   /**
+   * Active people whose **name** looks like `term`, for the admin assistant.
+   *
+   * Name only, deliberately unlike `listAttendanceRoster`, which also searches
+   * email, department and position. That breadth is right for a search box and
+   * wrong here: the assistant is resolving "is Sufyan in today" to a person, and
+   * a term that matched a department would answer about somebody not called
+   * that at all.
+   *
+   * Returns every candidate rather than a best guess. Picking between them is
+   * not this layer's business and not the assistant's either — see
+   * `answerPerson` in `admin-chat.service.ts`, which asks instead. `take` caps
+   * how many it will offer to choose from.
+   */
+  findActiveByNameLike(term: string, take = 6): Promise<AttendanceRosterMember[]> {
+    return prisma.employee.findMany({
+      where: {
+        status: EmployeeStatus.ACTIVE,
+        name: { contains: term, mode: "insensitive" },
+      },
+      orderBy: { name: "asc" },
+      take,
+      select: attendanceRosterSelect,
+    });
+  },
+
+  /** One person by id, in the shape the roster and the assistant already use. */
+  findRosterMember(id: string): Promise<AttendanceRosterMember | null> {
+    return prisma.employee.findFirst({
+      where: { id, status: EmployeeStatus.ACTIVE },
+      select: attendanceRosterSelect,
+    });
+  },
+
+  /**
    * When these people joined.
    *
    * The warning sweep needs it to stop counting backwards at somebody's first
