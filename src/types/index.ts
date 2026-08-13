@@ -59,11 +59,21 @@ export type AttendanceView = {
   date: string;
   checkInAt: string;
   status: AttendanceStatus;
-  latitude: number;
-  longitude: number;
-  accuracyMeters: number;
+  /**
+   * Null exactly when an administrator recorded this rather than the geofence
+   * proving it — in which case `markedBy` names them. The two are never both set
+   * and never both null, so a surface that shows a distance always has something
+   * honest to show instead of one.
+   */
+  latitude: number | null;
+  longitude: number | null;
+  accuracyMeters: number | null;
   /** How far from the office the server judged them, in metres. */
-  distanceMeters: number;
+  distanceMeters: number | null;
+  /** Who vouched for this day, when, and why — all null on a real check-in. */
+  markedBy: { id: string; name: string } | null;
+  markedAt: string | null;
+  reason: string | null;
   createdAt: string;
 };
 
@@ -133,6 +143,8 @@ export type AttendanceRosterView = {
   items: AttendanceRosterEntry[];
   pagination: Pagination;
   summary: { expected: number; present: number; absent: number; onLeave: number };
+  /** Whether to offer "Mark present". Mirrors the server check, never replaces it. */
+  canMarkAttendance: boolean;
 };
 
 /** Who a custom email went to. Mirrors the Prisma enum. */

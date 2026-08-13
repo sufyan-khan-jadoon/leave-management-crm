@@ -97,11 +97,20 @@ export function EmployeeAttendance() {
                       {formatDate(record.date)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">{formatDateTime(record.checkInAt)}</TableCell>
+                    {/*
+                      A day recorded by an administrator has no position, so
+                      there is nothing to put in either column. Said in words
+                      rather than left blank: this is the employee's own record,
+                      and "how did this day get here when I never checked in"
+                      is exactly the question they would ask.
+                    */}
                     <TableCell className="text-muted-foreground whitespace-nowrap">
-                      {formatDistance(record.distanceMeters)}
+                      {record.distanceMeters !== null
+                        ? formatDistance(record.distanceMeters)
+                        : `Recorded by ${record.markedBy?.name ?? "an administrator"}`}
                     </TableCell>
                     <TableCell className="text-muted-foreground pr-4 whitespace-nowrap sm:pr-6">
-                      ±{formatDistance(record.accuracyMeters)}
+                      {record.accuracyMeters !== null ? `±${formatDistance(record.accuracyMeters)}` : "—"}
                     </TableCell>
                   </TableRow>
                 ))}

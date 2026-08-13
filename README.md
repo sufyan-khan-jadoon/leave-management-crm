@@ -458,6 +458,7 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET` | `/api/leaves/export` | Auth | CSV export honouring current filters |
 | `GET/POST` | `/api/attendance` | Auth | Own history; mark present (always scoped to the session) |
 | `GET` | `/api/admin/attendance` | Admin | Roster for a date — present, absent, on leave, closed |
+| `POST` | `/api/admin/attendance/mark` | Admin + grant | Record an absent person present, overriding the location check |
 | `GET` | `/api/admin/attendance/export` | Admin | CSV of the roster honouring current filters |
 | `GET` | `/api/admin/attendance/policy` | Admin | Read the cutoff and working week |
 | `PATCH` | `/api/admin/attendance/policy` | Super admin | Change the cutoff, working days or off switch |
@@ -473,8 +474,8 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `DELETE` | `/api/admin/job-roles/[id]` | Super admin | Remove a job title from the list |
 | `GET` | `/api/admin/requests` | Super admin | Administrator registrations awaiting a decision |
 | `PATCH` | `/api/admin/requests/[id]` | Super admin | Approve or decline an administrator |
-| `GET` | `/api/admin/administrators` | Super admin | Administrators and their invite permission |
-| `PATCH` | `/api/admin/administrators/[id]` | Super admin | Grant or withdraw `canInviteEmployees` |
+| `GET` | `/api/admin/administrators` | Super admin | Administrators and the rights each one holds |
+| `PATCH` | `/api/admin/administrators/[id]` | Super admin | Grant or withdraw one delegable right |
 | `GET` | `/api/health` | Public | Liveness probe |
 
 The Staff screen lives at `/admin/staff`, while the endpoints behind it keep the

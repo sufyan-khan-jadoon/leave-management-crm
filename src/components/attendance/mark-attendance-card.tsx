@@ -42,7 +42,7 @@ type Props = {
  */
 export function MarkAttendanceCard({ today, onMarked }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
-  const [verified, setVerified] = useState<{ distanceMeters: number } | null>(null);
+  const [verified, setVerified] = useState<{ distanceMeters: number | null } | null>(null);
 
   async function markPresent() {
     if (phase !== "idle") return;
@@ -72,7 +72,11 @@ export function MarkAttendanceCard({ today, onMarked }: Props) {
         },
       );
 
-      setVerified({ distanceMeters: result.attendance.distanceMeters });
+      // Non-null in practice — `/api/attendance` only ever writes a geofenced
+      // row — but the column is nullable because an administrator may record a
+      // day by hand, and a `?? null` here is cheaper than an assertion that
+      // would be wrong the day this card is reused for anything else.
+      setVerified({ distanceMeters: result.attendance.distanceMeters ?? null });
 
       toast.success(
         result.alreadyMarked
@@ -119,14 +123,35 @@ export function MarkAttendanceCard({ today, onMarked }: Props) {
 
         {attendance ? (
           <div className="glass-inset space-y-1.5 rounded-xl p-4 text-sm">
-            <p className="flex items-center gap-2 font-medium">
-              <CheckCircle2 className="text-success-ink size-4" aria-hidden />
-              Location verified ✓
-            </p>
-            <p className="text-muted-foreground">
-              You were {formatDistance(attendance.distanceMeters)} from the office when you checked in, on a
-              fix accurate to {formatDistance(attendance.accuracyMeters)}.
-            </p>
+            {/*
+              "Location verified" is a claim about a measurement, so it is only
+              said when there was one. A day an administrator recorded by hand
+              has no position behind it, and printing the verified wording over
+              it would be the card asserting something the server never checked.
+            */}
+            {attendance.distanceMeters !== null && attendance.accuracyMeters !== null ? (
+              <>
+                <p className="flex items-center gap-2 font-medium">
+                  <CheckCircle2 className="text-success-ink size-4" aria-hidden />
+                  Location verified ✓
+                </p>
+                <p className="text-muted-foreground">
+                  You were {formatDistance(attendance.distanceMeters)} from the office when you checked in, on
+                  a fix accurate to {formatDistance(attendance.accuracyMeters)}.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="flex items-center gap-2 font-medium">
+                  <CheckCircle2 className="text-success-ink size-4" aria-hidden />
+                  Recorded by {attendance.markedBy?.name ?? "an administrator"}
+                </p>
+                <p className="text-muted-foreground">
+                  You are marked present for today. This was recorded without the location check
+                  {attendance.reason ? `: ${attendance.reason}` : "."}
+                </p>
+              </>
+            )}
           </div>
         ) : today.canMark ? (
           <div className="space-y-3">
@@ -135,7 +160,7 @@ export function MarkAttendanceCard({ today, onMarked }: Props) {
               {PHASE_LABEL[phase]}
             </Button>
 
-            {verified && (
+            {verified?.distanceMeters !== null && verified !== null && (
               <p className="text-muted-foreground text-sm">
                 Location verified ✓ — {formatDistance(verified.distanceMeters)} from the office.
               </p>

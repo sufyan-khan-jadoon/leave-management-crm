@@ -2,18 +2,23 @@ import type { Metadata } from "next";
 
 import { AdminDashboard } from "@/components/dashboard/admin-dashboard";
 import { auth } from "@/lib/auth/auth";
-import { isSuperAdminRole } from "@/lib/enums";
+import { populationService } from "@/services/population.service";
 
 export const metadata: Metadata = { title: "Admin overview" };
 
 export default async function AdminDashboardPage() {
   const session = await auth();
-  const firstName = session?.user?.name?.split(" ")[0] ?? "Admin";
+  const user = session?.user;
+  const firstName = user?.name?.split(" ")[0] ?? "Admin";
 
-  // Only the super admin may look at administrators, so only they get the
-  // switch. This decides what is rendered, never what is allowed — the stats
-  // route refuses the administrator population to anyone else regardless.
-  const canViewAdmins = isSuperAdminRole(session?.user?.role ?? "");
+  // The switch needs `canViewAdminRecords`, the same grant the attendance
+  // roster's filter needs, and it is read from the row rather than the session
+  // so withdrawing it takes the switch away on the next load. This decides what
+  // is rendered, never what is allowed — the stats route refuses the
+  // administrator population regardless of what appeared on screen.
+  const canViewAdmins = user
+    ? await populationService.mayViewAdminRecords({ id: user.id, role: user.role })
+    : false;
 
   return <AdminDashboard firstName={firstName} canViewAdmins={canViewAdmins} />;
 }

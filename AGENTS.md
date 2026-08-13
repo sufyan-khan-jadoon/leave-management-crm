@@ -472,9 +472,11 @@ error: "you are already marked present, at 9:12" is the answer to what was asked
 The admin screen is day-centric because "present or absent" is only answerable one day at a time —
 there are no absent rows to page through, so moving the date is how history is read. It is
 **read-only**: presence is proved by being in the building, so a button that marked somebody present
-from a desk would be a way around the geofence rather than a convenience. Unlike office days off,
-attendance is not delegated per-administrator — seeing who is in is ordinary people-management, not
-an organisation-wide act. The roster is fetched whole and paged in memory on purpose: the status a
+from a desk would be a way around the geofence rather than a convenience — **except** for one
+deliberate, delegated exception, which is the section immediately below. *Reading* the roster is not
+delegated per-administrator — seeing who is in is ordinary people-management, not an
+organisation-wide act — but splitting it by population is, and so is correcting a day. The roster is
+fetched whole and paged in memory on purpose: the status a
 row is filtered on does not exist in the database to filter by, so paging in SQL first would make
 "today's absentees" return a page of whoever sorted first.
 
@@ -483,24 +485,122 @@ row is filtered on does not exist in the database to filter by, so paging in SQL
 That is right for a Manage screen and wrong for a personal history, so the admin view lives at its
 own endpoint.
 
-### Filtering the roster by population — the super admin's alone
+### Correcting a day — the one write on this screen
 
-`population` narrows the roster to `EMPLOYEE` or `ADMIN`, and only the super admin may use it.
-`assertMayViewPopulation` in `attendance.service.ts` is the rule, mirroring `role=ADMIN` on
-`/api/admin/employees`: which of your colleagues is an administrator is not something this screen
-tells an ordinary administrator. It cannot today — `attendanceRosterSelect` carries no `role`, so the
-roster names people without saying what they are — and a filter would hand over precisely that.
+Somebody who genuinely came in can still fail to check in: a flat battery, a phone left at home, a
+fix too vague to place them. Until `canMarkAttendance` there was no way to correct that at all, so
+the record was permanently wrong and the person was chased for it. `POST /api/admin/attendance/mark`
+is the fix, and it is the **only** write on a screen that is otherwise read-only.
 
-**`EMPLOYEE` is gated too, and that is not an oversight.** Filtering to the employees looks harmless,
-but comparing that list against the unfiltered one names the administrators exactly as well as asking
-for them does. A filter that leaks by subtraction is still a leak, so the whole control belongs to
-one viewer rather than half of it to everybody. Don't "relax" the employee half.
+**This is a deliberate hole in the geofence, and the rest of the design is what keeps it small.**
 
-**The check lives in the service, not the route**, unlike the employees list — because there are two
-ways in. The screen and the CSV export both call `roster()`, and an export that honoured the filter
-without re-checking it would be the easier of the two to reach with a hand-written URL. Both routes
-still guard `requireAdmin` and hand the role down; `roster()` decides the narrower question behind
-it, the way `assertMayManage` does for accounts.
+- **It can only ever turn `ABSENT` into `PRESENT`.** Every other status is refused, in the roster's
+  own words. It cannot weaken, amend or overwrite a real check-in — a row already there wins,
+  because it is the stronger evidence of the two, and the attempt reports `alreadyMarked`.
+- **It judges the day by calling `buildRoster`, never by asking its own questions.** The closure
+  rules, the working week, approved leave, the future and `NO_RECORD` are all settled by
+  `describeDay` for every other surface, so asking it once more costs four queries and guarantees
+  this screen cannot disagree with the one beside it. A hand-written "is it a working day and not a
+  holiday" check here would be a second opinion, and the second opinion is the one that rots. Don't
+  add one.
+- **It creates a row; it does not amend one.** An absent person has *no record* — absence is the
+  lack of one, which is the whole of the section above. So "update the existing row rather than
+  duplicating it" is answered by `@@unique([employeeId, date])`: a duplicate is refused by the
+  database, and the service reports the row already there.
+
+**`NO_RECORD` is refused, and it is the interesting refusal.** On a day holding no check-in and no
+leave for anybody, the whole company reads `NO_RECORD` and nobody is accused. Writing one row would
+make the day *held*, flipping every other person to `ABSENT` in a single act — and if that day is
+today and the cutoff has passed, the next warning sweep would write to all of them. One correction
+would become a letter to the entire organisation. That is the same mass-email trap the reset
+documents, arriving by a new route, and it is closed the same way: by asking what the day would hold
+afterwards rather than by suppressing the mail.
+
+**The row stays permanently distinguishable from a proved one.** `latitude`, `longitude`,
+`accuracyMeters` and `distanceMeters` became nullable and are null exactly when `markedById`,
+`markedAt` and `reason` are set. They are **not** defaulted to the office's own coordinates, which
+was the convenient option: a row claiming somebody stood 0m from the door is indistinguishable from
+one where they did, and the distinction is the only thing left of the geofence once the button
+exists. Every surface showing a distance shows who vouched for it instead — the roster, the
+employee's own history, the check-in card and the CSV, which gained `Recorded by` and `Reason`
+columns because an export is what gets archived and mailed around.
+
+The audit trail lives on the row rather than in a log table, because the unique index means there is
+only ever one row per person per day to describe, and nothing amends a check-in once it exists.
+`onDelete: SetNull` on `markedBy`: deleting the administrator who made a correction must not delete
+the attendance of the person it was about.
+
+**It is its own grant, deliberately not folded into `canViewAdminRecords`.** That one is a read —
+who may report on administrators as a group. This is a write that overrides a physical check, and an
+HR administrator given the reporting view must not silently acquire the ability to record attendance
+for anybody. It is also its own route rather than a `PATCH` on the roster endpoint, so "the
+attendance screen is read-only except when it isn't" is not something you have to read the service to
+establish — the same split `/api/admin/chat/action` makes.
+
+`checkInAt` defaults to now, meaning the moment the day was recorded. It is **not** backdated to the
+chosen date: nobody knows what time this person arrived, which is the entire reason the row is being
+written by hand, and a plausible-looking time would be a precise lie. `markEmployeePresentSchema` is
+a `strictObject` for the reason `markAttendanceSchema` is, and the reason is stronger here — that one
+refuses a client's verdict about a position, this one refuses a client's verdict about everything.
+There is no field for a status, because the only status it can produce is `PRESENT`.
+
+Verified end to end against the real database, crossing the Zod schema rather than calling the
+service directly: the blank-day refusal, the ungranted admin, the write and its audit fields, the
+tiles moving 1→2 present and 7→6 absent, persistence across a re-read, double submission producing
+one row, the future/weekend/closure/unknown-person refusals, and a geofenced check-in surviving an
+attempt to overwrite it.
+
+### Filtering by population — the fourth delegable right
+
+`population` narrows a report to `EMPLOYEE` or `ADMIN`, and it needs **`canViewAdminRecords`**: the
+super admin always, an administrator once granted it. `population.service.ts` is the rule, and the
+grant is read from the row on every call, never from the session — the same discipline
+`canInviteEmployees`, `canManageHolidays` and `canSendEmails` follow, so withdrawing it bites on the
+next request rather than when a week-old token expires.
+
+**It exists for the HR administrator**, who has to chase attendance and count leave across everybody
+without being handed the owner's account to do it with. It was the super admin's alone first, and
+that was too tight for one real job rather than wrong in principle: which of your colleagues is an
+administrator still is not something these screens tell an ordinary admin, and
+`attendanceRosterSelect` still carries no `role`, so the roster names people without saying what
+they are.
+
+**Note what was already true, because it is the part most likely to be misread as the defect.**
+Every administrator has always *seen* administrators' attendance — `roster()` applies no role filter
+at all when `population` is `ALL`, so the unfiltered screen lists every active account. What the
+grant unlocks is **separating them out**, which is the same thing as being told who they are. "HR
+cannot see admin attendance" was never true; "HR cannot report on them as a group" was.
+
+**`EMPLOYEE` is gated too on the roster, and that is not an oversight.** Filtering to the employees
+looks harmless, but comparing that list against the unfiltered one names the administrators exactly
+as well as asking for them does. A filter that leaks by subtraction is still a leak, so the whole
+control moves together rather than half of it being open to everybody. Don't "relax" the employee
+half.
+
+**The overview is deliberately asymmetric with that**, which is why `population.service.ts` has two
+asserts rather than one. `/api/admin/stats` reports on exactly one population and never both at
+once, so it has no unfiltered figure to subtract from, and the employee view stays open to every
+administrator exactly as it always was. `assertMayFilter` guards a surface that also offers `ALL`;
+`assertMayReportOn` guards one that always names a population. Leak-by-subtraction is an argument
+about a surface offering both, and applying it where it does not hold would have taken the dashboard
+away from every ordinary admin.
+
+**It never widens to Staff.** `role=ADMIN` on `/api/admin/employees` stays the super admin's, gated
+in that route as before, because that roster is the route to *acting* on those accounts rather than
+a report about them — and `assertMayManage` would refuse every write anyway, so granting it would
+list administrators and do nothing to them.
+
+**The check lives in a service of its own, not in a route and not in `attendance.service.ts`** —
+because there are now three ways in. The attendance screen and its CSV export both call `roster()`,
+so an export that honoured the filter without re-checking it would be the easier of the two to reach
+with a hand-written URL. The overview is a different feature entirely, which is why the rule lives
+with neither: it is the one delegable right no single feature owns. Every route still guards
+`requireAdmin` and now hands the **whole caller** down rather than just `user.role`, since a grant
+read from a row needs the id.
+
+Both server pages resolve the grant from the database as well, rather than from the session role, so
+a withdrawn grant takes the control off the screen on the next load. That is rendering and never
+permission: the endpoints refuse the filter regardless of what was drawn.
 
 **It is called `population`, not `role`, because `ADMIN` covers two roles.** `rolesInPopulation` in
 `src/lib/enums.ts` is shared with the admin overview, which has always counted the super admin as an

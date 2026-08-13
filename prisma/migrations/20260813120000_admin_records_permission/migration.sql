@@ -1,0 +1,11 @@
+-- Per-administrator permission to report on the administrators as a population.
+--
+-- Unlocks the `population` filter on the attendance roster and the admin
+-- overview, which is what an HR administrator needs to chase attendance and
+-- count leave across everybody rather than only across the employees.
+--
+-- Defaults to false, including for administrators who already exist: knowing
+-- which of your colleagues is an administrator is granted deliberately by the
+-- super admin, so nobody acquires it simply by having been an admin before this
+-- migration ran.
+ALTER TABLE "public"."employees" ADD COLUMN "canViewAdminRecords" BOOLEAN NOT NULL DEFAULT false;

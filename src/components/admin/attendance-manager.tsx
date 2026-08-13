@@ -11,9 +11,11 @@ import {
   MapPin,
   Search,
   SlidersHorizontal,
+  UserCheck,
   Users,
   XCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { AttendanceStatusBadge } from "@/components/shared/attendance-status-badge";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -27,9 +29,19 @@ import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useApiResource } from "@/hooks/use-api-resource";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { toQueryString } from "@/lib/api-client";
+import { ApiClientError, apiClient, toQueryString } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
 import { formatDate, formatDateTime, toIsoDate, todayUtc } from "@/lib/date";
 import { formatDistance } from "@/lib/geo";
@@ -66,9 +78,12 @@ const POPULATION_FILTERS = [
  * to page through. Moving the date is therefore how history is read, and it is
  * the first control on the screen for that reason.
  *
- * Read-only, like the leave screen and for the same kind of reason: presence is
- * proved by standing in the office, so a button here that marked somebody
- * present would be a way around the geofence rather than a convenience.
+ * Read-only but for one act, and the exception is deliberately narrow: an
+ * administrator holding `canMarkAttendance` may turn an **absent** day into a
+ * present one. Presence is still proved by standing in the office — this exists
+ * for the case that rule cannot serve, where somebody came in and their phone
+ * did not cooperate. The button appears on no other status, and the server
+ * refuses every other status regardless of what renders here.
  */
 export function AttendanceManager({
   /**
@@ -104,9 +119,55 @@ export function AttendanceManager({
     [date, debouncedSearch, department, status, population, page],
   );
 
-  const { data, loading, error } = useApiResource<AttendanceRosterView>(
+  const { data, loading, error, refresh } = useApiResource<AttendanceRosterView>(
     `/api/admin/attendance${toQueryString(query)}`,
   );
+
+  /** The person about to be recorded present, and the note going with it. */
+  const [pending, setPending] = useState<{ id: string; name: string } | null>(null);
+  const [reason, setReason] = useState("");
+  const [working, setWorking] = useState(false);
+
+  async function markPresent() {
+    if (!pending) return;
+    setWorking(true);
+
+    try {
+      // `date` is the day on screen, not today — correcting a day that has
+      // already gone wrong is the entire purpose, so the selected date travels
+      // with the request and the server judges that day rather than this one.
+      const result = await apiClient.post<{ alreadyMarked: boolean }>(
+        "/api/admin/attendance/mark",
+        { employeeId: pending.id, date, reason: reason.trim() || undefined },
+      );
+
+      // A row that was already there is not a correction anybody just made.
+      // Saying so is the difference between "done" and "somebody beat you to it".
+      toast.success(
+        result.alreadyMarked
+          ? `${pending.name} was already marked present for ${formatDate(date)}.`
+          : "Employee marked as Present successfully.",
+      );
+
+      setPending(null);
+      setReason("");
+      // The roster is re-fetched rather than patched in place, so the status,
+      // the tiles above it and the totals all come from the server that just
+      // decided them — and a refresh of the page shows exactly the same thing.
+      await refresh();
+    } catch (submitError) {
+      // The original status is untouched: nothing was written, and the row on
+      // screen is still whatever the last fetch said. The dialog stays open so
+      // the reason typed into it is not thrown away with the error.
+      toast.error(
+        submitError instanceof ApiClientError
+          ? submitError.message
+          : "Couldn't record that attendance. The status is unchanged.",
+      );
+    } finally {
+      setWorking(false);
+    }
+  }
 
   // Borrowed purely for its department list, the way the leave screen does.
   const { data: employeeData } = useApiResource<PaginatedEmployees>("/api/admin/employees?pageSize=1");
@@ -363,21 +424,61 @@ export function AttendanceManager({
                         {entry.attendance ? formatDateTime(entry.attendance.checkInAt) : "—"}
                       </TableCell>
 
+                      {/*
+                        A distance, or who vouched for the day when there is no
+                        distance to show. The two are mutually exclusive by
+                        construction, so this column never has to invent a
+                        number — a recorded-by-hand row would otherwise read as
+                        "0 m", which is a claim that somebody stood at the door.
+                      */}
                       <TableCell className="text-muted-foreground whitespace-nowrap">
-                        {entry.attendance ? formatDistance(entry.attendance.distanceMeters) : "—"}
+                        {!entry.attendance ? (
+                          "—"
+                        ) : entry.attendance.distanceMeters !== null ? (
+                          formatDistance(entry.attendance.distanceMeters)
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1.5"
+                            title={entry.attendance.reason ?? undefined}
+                          >
+                            <UserCheck className="size-3.5 shrink-0" aria-hidden />
+                            Marked by {entry.attendance.markedBy?.name ?? "an administrator"}
+                          </span>
+                        )}
                       </TableCell>
 
                       <TableCell className="pr-4 text-right sm:pr-6">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          asChild
-                          aria-label={`View ${entry.employee.name}'s profile`}
-                        >
-                          <Link href={`${ROUTES.adminStaff}/${entry.employee.id}`}>
-                            <Eye className="size-4" />
-                          </Link>
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {/*
+                            Offered on ABSENT alone. Never on NO_RECORD: a day
+                            holding nothing for anybody has no absentees on it,
+                            and writing one row would flip every colleague to
+                            absent at once — see the service, which refuses it.
+                          */}
+                          {data?.canMarkAttendance && entry.status === "ABSENT" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setPending({ id: entry.employee.id, name: entry.employee.name })
+                              }
+                            >
+                              <UserCheck className="size-4" />
+                              Mark present
+                            </Button>
+                          )}
+
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            asChild
+                            aria-label={`View ${entry.employee.name}'s profile`}
+                          >
+                            <Link href={`${ROUTES.adminStaff}/${entry.employee.id}`}>
+                              <Eye className="size-4" />
+                            </Link>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -391,6 +492,65 @@ export function AttendanceManager({
           )}
         </CardContent>
       </Card>
+
+      {/*
+        Controlled rather than trigger-based, because the trigger lives in a row
+        that re-renders on every refresh — and not `ConfirmDialog`, which takes a
+        plain description and has nowhere for the reason box to go.
+      */}
+      <AlertDialog
+        open={pending !== null}
+        onOpenChange={(next) => {
+          if (!next && !working) {
+            setPending(null);
+            setReason("");
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark {pending?.name} as present?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  Are you sure you want to mark this employee as Present for{" "}
+                  <strong>{formatDate(date)}</strong>?
+                </p>
+                {/*
+                  Said plainly, because it is the whole difference between this
+                  and a check-in. Somebody pressing it is asserting attendance on
+                  their own authority, and the record will say so with their name
+                  against it for as long as it exists.
+                */}
+                <p>
+                  This records attendance <strong>without the location check</strong>. It will be
+                  saved against your name, and will show as recorded by you everywhere the day
+                  appears.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="mark-present-reason">Reason (optional)</Label>
+            <Textarea
+              id="mark-present-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="e.g. came in but phone battery died"
+              maxLength={280}
+              rows={2}
+            />
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
+            <Button onClick={markPresent} loading={working}>
+              Mark present
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

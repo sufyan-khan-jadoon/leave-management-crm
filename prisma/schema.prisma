@@ -196,6 +196,46 @@ model Employee {
   /// admin — see `EmailAudience`.
   canSendEmails Boolean @default(false)
 
+  /// Whether this administrator may report on the administrators as a population.
+  ///
+  /// The fourth delegable right, and it follows the same rule as the other three:
+  /// off by default, granted per administrator, read from the database on every
+  /// request. It is the grant an HR administrator needs — the one person who has
+  /// to chase attendance and count leave across everybody, administrators
+  /// included, without being handed the super admin's account to do it with.
+  ///
+  /// What it actually unlocks is the `population` filter: the attendance roster
+  /// (and so absences, which are derived from it) and the admin overview's
+  /// headcount, leave figures and trend. Every administrator can already *see*
+  /// administrators' attendance — the unfiltered roster lists every active
+  /// account — so what this hands over is the ability to **separate** them out,
+  /// which is the same thing as being told who they are.
+  ///
+  /// It grants the `EMPLOYEE` narrowing too, and that is not sloppiness: a filter
+  /// that returned only the employees names the administrators just as precisely
+  /// by subtraction from the unfiltered list.
+  ///
+  /// It never widens to the Staff screen. `role=ADMIN` on `/api/admin/employees`
+  /// stays the super admin's, because that roster is the route to acting on those
+  /// accounts rather than a report about them — see `assertMayManage`.
+  canViewAdminRecords Boolean @default(false)
+
+  /// Whether this administrator may record somebody present without the geofence.
+  ///
+  /// The fifth delegable right, and the only one that can write a fact the
+  /// building would not have proved. It exists because somebody who genuinely
+  /// came in can still fail to check in — a flat battery, a phone left at home,
+  /// a fix too vague to place them — and until this there was no way to correct
+  /// the record at all.
+  ///
+  /// Deliberately **not** folded into `canViewAdminRecords`. That one is a read:
+  /// it decides who may report on administrators as a group. This is a write
+  /// that overrides a physical check, and an HR administrator given the first
+  /// should not silently acquire the second.
+  ///
+  /// Read from the database on every attempt, like the other four.
+  canMarkAttendance Boolean @default(false)
+
   /// Consecutive failed sign-ins since the last time the password was proven.
   /// Reset by a correct password, by verifying the address, or by a reset.
   failedLoginAttempts Int @default(0)
@@ -219,6 +259,7 @@ model Employee {
 
   leaves             Leave[]
   attendance         Attendance[]
+  attendanceMarked   Attendance[]        @relation("AttendanceMarkedBy")
   attendanceWarnings AttendanceWarning[]
   policiesUpdated    AttendancePolicy[]  @relation("AttendancePolicyAuthor")
   otpCodes           OtpCode[]
@@ -489,14 +530,41 @@ model Attendance {
 
   /// What the device reported, and what the server made of it. Written only
   /// after the server has decided; the client's own verdict is never read.
-  latitude       Float
-  longitude      Float
-  accuracyMeters Float
-  distanceMeters Float
+  ///
+  /// **Null exactly when an administrator recorded this rather than the geofence
+  /// proving it.** They are not defaulted to the office's own coordinates, which
+  /// would be the convenient thing and would forge a reading nobody took: a row
+  /// claiming somebody stood 0m from the door is indistinguishable from one where
+  /// they did. Nullable is the honest shape — the server knows nothing about
+  /// where this person was, and says so.
+  latitude       Float?
+  longitude      Float?
+  accuracyMeters Float?
+  distanceMeters Float?
+
+  /// Who asserted this, when, and why — set together with the nulls above, and
+  /// null together with them. A row either was proved by the building or was
+  /// vouched for by a named administrator, and it says which for as long as it
+  /// exists.
+  ///
+  /// This is the audit trail, and it lives on the row rather than in a log table
+  /// because `@@unique([employeeId, date])` means there is only ever one row per
+  /// person per day to describe. Nothing amends a check-in: an administrator may
+  /// create the row where none existed, and that is the whole of what can happen
+  /// to it short of the reset deleting it.
+  ///
+  /// `onDelete: SetNull` rather than Cascade — deleting the administrator who
+  /// made the correction must not delete the attendance of the person it was
+  /// about. The row survives having lost the name of who vouched for it, which
+  /// is a worse record than before and a far better one than none.
+  markedById String?
+  markedAt   DateTime?
+  reason     String?
 
   createdAt DateTime @default(now())
 
-  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  markedBy Employee? @relation("AttendanceMarkedBy", fields: [markedById], references: [id], onDelete: SetNull)
 
   /// One check-in per person per day, settled by the database rather than only
   /// by the service that looked a moment earlier — two taps racing on a flaky

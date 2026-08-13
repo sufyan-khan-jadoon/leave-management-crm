@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   RESET_CONFIRMATION,
   RESET_TARGETS,
+  markEmployeePresentSchema,
   resetAttendanceSchema,
 } from "@/validations/attendance.schema";
 
@@ -143,5 +144,74 @@ describe("resetAttendanceSchema", () => {
         scope,
       ).toBe(false);
     }
+  });
+});
+
+/**
+ * The body behind "Mark present".
+ *
+ * The wire, not the two ends — the lesson `admin-chat.schema.test.ts` records,
+ * where a client posting its display fields at a `strictObject` failed in
+ * production because every check had been driven against the service directly.
+ * This schema is strict for the same reason `markAttendanceSchema` is, and the
+ * reason is stronger here: that one refuses a client's verdict about a position,
+ * and this one refuses a client's verdict about everything.
+ */
+describe("markEmployeePresentSchema", () => {
+  const valid = { employeeId: "cmsjdvtj50002ky04grbvudgv", date: "2026-08-11" };
+
+  it("accepts what the dialog actually sends", () => {
+    const parsed = markEmployeePresentSchema.parse({ ...valid, reason: "phone battery died" });
+
+    expect(parsed.employeeId).toBe(valid.employeeId);
+    expect(parsed.reason).toBe("phone battery died");
+    // Normalised to UTC midnight like every other calendar date here.
+    expect(parsed.date.toISOString()).toBe("2026-08-11T00:00:00.000Z");
+  });
+
+  it("accepts an omitted reason, as null", () => {
+    expect(markEmployeePresentSchema.parse(valid).reason).toBeNull();
+  });
+
+  // A blank or whitespace reason is the same as none. Storing "   " would read
+  // as a reason having been given.
+  it("treats a blank reason as none", () => {
+    for (const reason of ["", "   "]) {
+      expect(markEmployeePresentSchema.parse({ ...valid, reason }).reason).toBeNull();
+    }
+  });
+
+  it("requires the date, rather than defaulting to today", () => {
+    expect(markEmployeePresentSchema.safeParse({ employeeId: valid.employeeId }).success).toBe(false);
+  });
+
+  it("requires somebody to mark", () => {
+    expect(markEmployeePresentSchema.safeParse({ date: valid.date }).success).toBe(false);
+    expect(markEmployeePresentSchema.safeParse({ ...valid, employeeId: "  " }).success).toBe(false);
+  });
+
+  /**
+   * The strictness earning its keep. None of these is a field the client may
+   * decide: a status other than PRESENT cannot be produced, a check-in time is
+   * not known for a day somebody failed to check in, and a position is the one
+   * thing this whole path exists because nobody has.
+   */
+  it("refuses a client trying to supply its own verdict", () => {
+    for (const extra of [
+      { status: "ABSENT" },
+      { status: "PRESENT" },
+      { checkInAt: "2026-08-11T09:00:00.000Z" },
+      { latitude: 33.6, longitude: 73.0 },
+      { distanceMeters: 0 },
+      { markedById: "cmsjdvtj50002ky04grbvudgv" },
+    ]) {
+      expect(markEmployeePresentSchema.safeParse({ ...valid, ...extra }).success, JSON.stringify(extra)).toBe(
+        false,
+      );
+    }
+  });
+
+  it("refuses a reason longer than the column expects", () => {
+    expect(markEmployeePresentSchema.safeParse({ ...valid, reason: "x".repeat(281) }).success).toBe(false);
   });
 });

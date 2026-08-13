@@ -1,8 +1,10 @@
 import { handleRoute, ok, parseBody } from "@/lib/api";
 import { requireSuperAdmin } from "@/lib/auth/guards";
+import { attendanceService } from "@/services/attendance.service";
 import { customEmailService } from "@/services/custom-email.service";
 import { holidayService } from "@/services/holiday.service";
 import { invitationService } from "@/services/invitation.service";
+import { populationService } from "@/services/population.service";
 import { adminPermissionsSchema } from "@/validations/invitation.schema";
 
 /**
@@ -32,6 +34,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     if (permissions.canSendEmails !== undefined) {
       updated = await customEmailService.setPermission(id, permissions.canSendEmails);
+    }
+
+    if (permissions.canViewAdminRecords !== undefined) {
+      updated = await populationService.setPermission(id, permissions.canViewAdminRecords);
+    }
+
+    if (permissions.canMarkAttendance !== undefined) {
+      updated = await attendanceService.setMarkPermission(id, permissions.canMarkAttendance);
     }
 
     return ok(updated);

@@ -71,6 +71,42 @@ export const attendanceRosterQuerySchema = z.object({
 export type AttendanceRosterQuery = z.infer<typeof attendanceRosterQuerySchema>;
 
 /**
+ * An administrator recording somebody present for a past or current day.
+ *
+ * `strictObject` for the same reason `markAttendanceSchema` is one, and the
+ * reason matters more here rather than less: that schema refuses a client's
+ * verdict about a *position*, and this one refuses a client's verdict about
+ * everything. There is no field for a status, because the only status this can
+ * produce is `PRESENT`, and no field for a time, because nobody knows what time
+ * somebody arrived on a day they failed to check in — inventing one would put a
+ * precise-looking lie in the record.
+ *
+ * `date` is required rather than defaulting to today: the whole point is
+ * correcting a day that has already gone wrong, and a default would make the
+ * common case the one you get by forgetting to say which day you meant.
+ */
+export const markEmployeePresentSchema = z.strictObject({
+  employeeId: z.string().trim().min(1, "Choose somebody").max(40),
+  date: calendarDateSchema,
+  /**
+   * Optional, and trimmed to null when blank.
+   *
+   * Not required, because a correction refused for want of a sentence is a
+   * correction somebody makes by typing "n/a" — which is worse than an empty
+   * column, since it reads as though a reason was given. The name and timestamp
+   * are the audit trail; this is the part only a person can add.
+   */
+  reason: z
+    .string()
+    .trim()
+    .max(280, "Keep the reason under 280 characters")
+    .optional()
+    .transform((value) => value || null),
+});
+
+export type MarkEmployeePresentInput = z.infer<typeof markEmployeePresentSchema>;
+
+/**
  * The super admin's attendance policy.
  *
  * Every time arrives as "HH:MM" because that is what a time input produces, and

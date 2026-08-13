@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarOff, Mail, ShieldCheck, UserPlus } from "lucide-react";
+import { CalendarOff, Mail, MapPinCheck, ShieldCheck, UserPlus, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,11 +17,18 @@ export type Administrator = {
   canInviteEmployees: boolean;
   canManageHolidays: boolean;
   canSendEmails: boolean;
+  canViewAdminRecords: boolean;
+  canMarkAttendance: boolean;
 };
 
 /** One delegable right, described once and rendered for every administrator. */
 type Grant = {
-  key: "canInviteEmployees" | "canManageHolidays" | "canSendEmails";
+  key:
+    | "canInviteEmployees"
+    | "canManageHolidays"
+    | "canSendEmails"
+    | "canViewAdminRecords"
+    | "canMarkAttendance";
   icon: LucideIcon;
   label: string;
   on: string;
@@ -59,6 +66,31 @@ const GRANTS: Grant[] = [
     off: "Cannot send email",
     granted: "can now email individuals and employees",
     revoked: "can no longer send email",
+  },
+  {
+    key: "canViewAdminRecords",
+    icon: Users,
+    // Named for what it hands over rather than for the control it enables. The
+    // switch is a filter; what somebody gains by it is being told which of their
+    // colleagues is an administrator.
+    label: "Report on administrators",
+    on: "Can separate administrators from employees",
+    off: "Sees everyone together, unlabelled",
+    granted: "can now report on administrators separately",
+    revoked: "can no longer report on administrators separately",
+  },
+  {
+    key: "canMarkAttendance",
+    icon: MapPinCheck,
+    label: "Record attendance by hand",
+    // Says out loud that this one overrides the geofence. It is the only grant
+    // here that lets somebody write a fact the building did not prove, and an
+    // administrator deciding whether to hand it over should not have to infer
+    // that from the word "attendance".
+    on: "Can mark an absent person present, overriding the location check",
+    off: "Cannot change attendance",
+    granted: "can now record attendance by hand",
+    revoked: "can no longer record attendance by hand",
   },
 ];
 
@@ -104,9 +136,10 @@ export function AdminPermissions({
           What administrators may do
         </CardTitle>
         <CardDescription>
-          Administrators cannot onboard anyone, close the office or send email until you allow it.
-          Inviting other administrators stays with you either way, as does emailing every
-          administrator or the whole organisation at once.
+          Administrators cannot onboard anyone, close the office, send email or report on
+          administrators as a group until you allow it. Inviting other administrators stays with you
+          either way, as does emailing every administrator or the whole organisation at once, and
+          managing administrator accounts on Staff.
         </CardDescription>
       </CardHeader>
       <CardContent>

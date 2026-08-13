@@ -13,25 +13,36 @@ import { attendanceRosterQuerySchema } from "@/validations/attendance.schema";
  * seeing who is in the office is the ordinary business of managing people
  * rather than an organisation-wide act like closing it.
  *
- * Read-only. There is deliberately no way to mark somebody present from here:
- * the whole point of the geofence is that presence is proved by being there, and
- * an admin override would be a way around it.
+ * Read-only, and this endpoint stays that way — correcting a day is a `POST` to
+ * `/api/admin/attendance/mark`, behind its own grant. Keeping the write on its
+ * own path is the point: reading the roster is ordinary people-management, and
+ * overriding the geofence is not, so the two do not share a door.
  *
  * The `population` filter is the one thing here not open to every administrator,
- * and the role is handed to the service rather than checked here — see
- * `assertMayViewPopulation`, which the CSV export reaches through the same call.
+ * and the caller is handed to the service rather than checked here — see
+ * `populationService.assertMayFilter`, which the CSV export reaches through the
+ * same call. It is a delegable grant read from the row, not a role, so the whole
+ * user goes down rather than just `user.role`.
  */
 export async function GET(request: Request) {
   return handleRoute(async () => {
     const user = await requireAdmin();
     const query = parseQuery(request, attendanceRosterQuerySchema);
 
-    const roster = await attendanceService.roster(query, user.role);
+    const [roster, canMarkAttendance] = await Promise.all([
+      attendanceService.roster(query, user),
+      attendanceService.mayMarkAttendance(user),
+    ]);
 
     return ok({
       date: roster.date.toISOString(),
       officeClosed: roster.officeClosed,
       isWorkingDay: roster.isWorkingDay,
+      // Purely so the screen can hide a button it may not press. It mirrors the
+      // real check and never replaces it — `markPresentFor` asks again, against
+      // the row — exactly as `canIssue` and `canManage` do on the invitation and
+      // holiday routes.
+      canMarkAttendance,
       summary: roster.summary,
       items: roster.items.map((entry) => ({
         employee: entry.employee,

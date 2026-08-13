@@ -15,11 +15,17 @@ export async function GET(request: Request) {
     // Page size is overridden rather than honoured: an export of "page 1 of the
     // roster" is not what anybody means by exporting the roster.
     //
-    // The role goes with it, so `population` is judged here exactly as it is on
-    // screen. An export that took the filter but not the check would be the
+    // The caller goes with it, so `population` is judged here exactly as it is
+    // on screen. An export that took the filter but not the check would be the
     // easier of the two to reach with a hand-written URL.
-    const roster = await attendanceService.roster({ ...query, page: 1, pageSize: 10_000 }, user.role);
+    const roster = await attendanceService.roster({ ...query, page: 1, pageSize: 10_000 }, user);
 
+    // `Recorded by` and `Reason` carry the distinction into the spreadsheet,
+    // where it matters most: an export is what gets mailed around and archived,
+    // and a manually recorded day that looked identical to a geofenced one would
+    // erase the difference exactly where nobody can check it against the screen.
+    // A proved check-in leaves both blank, so the columns read as the exception
+    // they are.
     const header = [
       "Date",
       "Employee",
@@ -30,19 +36,30 @@ export async function GET(request: Request) {
       "Check-in",
       "Distance",
       "GPS accuracy",
+      "Recorded by",
+      "Reason",
     ];
 
-    const rows = roster.items.map((entry) => [
-      toIsoDate(roster.date),
-      entry.employee.name,
-      entry.employee.email,
-      entry.employee.department ?? "",
-      entry.employee.position ?? "",
-      entry.status,
-      entry.attendance ? entry.attendance.checkInAt.toISOString() : "",
-      entry.attendance ? formatDistance(entry.attendance.distanceMeters) : "",
-      entry.attendance ? formatDistance(entry.attendance.accuracyMeters) : "",
-    ]);
+    const rows = roster.items.map((entry) => {
+      const record = entry.attendance;
+      // Null distance means nobody measured one — the day was vouched for rather
+      // than proved. `formatDistance` is never handed a fabricated zero.
+      const geo = record && record.distanceMeters !== null && record.accuracyMeters !== null;
+
+      return [
+        toIsoDate(roster.date),
+        entry.employee.name,
+        entry.employee.email,
+        entry.employee.department ?? "",
+        entry.employee.position ?? "",
+        entry.status,
+        record ? record.checkInAt.toISOString() : "",
+        geo ? formatDistance(record.distanceMeters!) : "",
+        geo ? formatDistance(record.accuracyMeters!) : "",
+        record?.markedBy?.name ?? "",
+        record?.reason ?? "",
+      ];
+    });
 
     const csv = [header, ...rows].map((row) => row.map(escapeCsvCell).join(",")).join("\r\n");
     const filename = `attendance-${toIsoDate(roster.date)}.csv`;

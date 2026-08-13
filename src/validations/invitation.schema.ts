@@ -41,12 +41,11 @@ export const adminPermissionsSchema = z
     canInviteEmployees: z.boolean().optional(),
     canManageHolidays: z.boolean().optional(),
     canSendEmails: z.boolean().optional(),
+    canViewAdminRecords: z.boolean().optional(),
+    canMarkAttendance: z.boolean().optional(),
   })
   .refine(
-    (value) =>
-      value.canInviteEmployees !== undefined ||
-      value.canManageHolidays !== undefined ||
-      value.canSendEmails !== undefined,
+    (value) => Object.values(value).some((granted) => granted !== undefined),
     "Name a permission to change.",
   );
 

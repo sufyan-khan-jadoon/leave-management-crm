@@ -4,7 +4,7 @@ import { hasCutoffPassed } from "@/lib/attendance-policy";
 import { addUtcDays, endOfUtcMonth, startOfUtcMonth, toIsoDate, todayUtc, type DayScope } from "@/lib/date";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { isSuperAdminRole, rolesInPopulation } from "@/lib/enums";
-import { ConflictError, ForbiddenError, ValidationError } from "@/lib/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
 import { judgePosition } from "@/lib/geo";
 import {
   attendanceRepository,
@@ -18,8 +18,10 @@ import { attendanceWarningRepository } from "@/repositories/attendance-warning.r
 import { holidayRepository } from "@/repositories/holiday.repository";
 import { leaveRepository } from "@/repositories/leave.repository";
 import { attendancePolicyService } from "@/services/attendance-policy.service";
+import { populationService, type PopulationActor } from "@/services/population.service";
 import type {
   MarkAttendanceInput,
+  MarkEmployeePresentInput,
   AttendanceRosterQuery,
   ResetAttendanceInput,
   ResetAttendancePreviewQuery,
@@ -288,33 +290,65 @@ function dayHoldsRecord(checkIns: number, onLeave: number): boolean {
 }
 
 /**
- * Who may narrow the roster to one population.
+ * Whether this account may record somebody present without the geofence.
  *
- * The super admin alone, mirroring `role=ADMIN` on `/api/admin/employees` and
- * for the same reason: which of your colleagues is an administrator is not
- * something this screen tells an ordinary administrator. It cannot today —
- * `attendanceRosterSelect` carries no role, so the roster names people without
- * saying what they are — and a filter would hand over exactly that.
+ * The super admin always; an administrator once granted `canMarkAttendance`,
+ * read from the row on every attempt like every other delegable right.
  *
- * **`EMPLOYEE` is gated too, and that is not an oversight.** Filtering to the
- * employees looks harmless, but comparing that list against the unfiltered one
- * names the administrators just as precisely as asking for them. A filter that
- * leaks by subtraction is still a leak, so the whole control belongs to one
- * viewer rather than half of it to everybody.
- *
- * Asserted here rather than in the route because there are two ways in — the
- * screen and the CSV export — and a check written twice is a check that will
- * one day be written once. The routes still guard `requireAdmin`; this decides
- * the narrower question behind it, the way `assertMayManage` does for accounts.
+ * Kept apart from `canViewAdminRecords` on purpose. That grant decides who may
+ * *report* on administrators as a group; this one decides who may write a fact
+ * the building never proved. Folding the two together would mean an HR
+ * administrator given the reporting view silently acquired the ability to record
+ * attendance for anybody, which is the one thing on this screen that cannot be
+ * undone by looking again.
  */
-function assertMayViewPopulation(
-  actorRole: Role,
-  population: AttendanceRosterQuery["population"],
-): void {
-  if (population !== "ALL" && !isSuperAdminRole(actorRole)) {
-    throw new ForbiddenError(
-      "Only a super administrator can filter attendance by employees or administrators.",
-    );
+async function mayMarkAttendance(actor: PopulationActor): Promise<boolean> {
+  if (isSuperAdminRole(actor.role)) return true;
+  if (actor.role !== "ADMIN") return false;
+
+  const employee = await employeeRepository.findById(actor.id);
+  return Boolean(employee?.canMarkAttendance);
+}
+
+/**
+ * Why a day cannot be corrected, in the words the administrator sees.
+ *
+ * Every branch is a status `describeDay` already decided, which is the whole
+ * point of judging this against the roster rather than re-deriving it: the
+ * closure rules, the working week, approved leave and `NO_RECORD` all reach
+ * here having been settled in the one place they are settled everywhere else.
+ * A second opinion about what a day meant is exactly what this screen must not
+ * introduce.
+ */
+function refusalFor(status: AttendanceDayStatus, date: Date): string | null {
+  switch (status) {
+    case "ABSENT":
+      return null;
+
+    case "CLOSED":
+      return `The office was closed on ${toIsoDate(date)}, so there is no attendance to record. The day costs nobody a leave.`;
+
+    case "NON_WORKING":
+      return `${toIsoDate(date)} is not a working day, so nobody was expected in and nobody is marked absent.`;
+
+    case "ON_LEAVE":
+      return "This person was on approved leave that day. Recording them present would take a day back off their allowance without their asking — cancel the leave first if they actually came in.";
+
+    case "UPCOMING":
+      return "That day has not happened yet, so there is nothing to correct.";
+
+    // The interesting refusal, and the reason it is a refusal rather than a
+    // convenience. On a day holding no check-in and no leave for *anybody*, the
+    // whole company reads NO_RECORD — the system was not watching, so nobody is
+    // accused. Writing one row would make the day "held", flipping every other
+    // person from NO_RECORD to ABSENT in one act; and if that day is today and
+    // the cutoff has passed, the next warning sweep would write to all of them.
+    // One correction would become a letter to the entire organisation.
+    case "NO_RECORD":
+      return `Nothing at all is recorded for ${toIsoDate(date)} — no check-ins and no leave for anybody — so nobody is marked absent for it and nobody will be chased about it. Recording one person present would make every one of their colleagues read as absent for that day.`;
+
+    case "PRESENT":
+      return null;
   }
 }
 
@@ -478,6 +512,90 @@ export const attendanceService = {
     return { attendance, alreadyMarked: false };
   },
 
+  mayMarkAttendance,
+
+  /**
+   * Grants or withdraws the right to record attendance by hand. The super
+   * admin's alone, gated in the route that calls it.
+   */
+  setMarkPermission(adminId: string, allowed: boolean) {
+    return employeeRepository.setMarkAttendancePermission(adminId, allowed);
+  },
+
+  /**
+   * Records somebody present on an administrator's word, for a day already gone.
+   *
+   * The exception to "presence is proved by standing there", and it is narrow by
+   * construction: it can only ever turn `ABSENT` into `PRESENT`, on a date the
+   * roster already calls absent, for somebody active. Everything else is
+   * refused, and refused in the roster's own words.
+   *
+   * **It judges the day by building the roster rather than by asking its own
+   * questions.** That is the load-bearing decision here. The closure rules, the
+   * working week, approved leave, the future and `NO_RECORD` are all settled by
+   * `describeDay` for every other surface, so asking it once more costs four
+   * queries and guarantees this screen can never disagree with the one beside
+   * it. A hand-written "is it a working day and not a holiday" check here would
+   * be a second opinion, and the second opinion is always the one that rots.
+   *
+   * **It creates a row; it does not amend one.** An absent person has no record
+   * to update — absence is the lack of one. The unique index is what makes that
+   * safe: a row already there means somebody checked in between the roster read
+   * and this write, and that check-in wins, because it is the stronger evidence
+   * of the two. Nothing here can overwrite or weaken a geofenced check-in.
+   *
+   * The written row is permanently distinguishable from a proved one, carrying
+   * who vouched for it and when. Every count downstream — the tiles, the
+   * dashboard, the monthly figures, the CSV — reads rows, so this reaches all of
+   * them without a single one of them being touched.
+   */
+  async markPresentFor(actor: PopulationActor, input: MarkEmployeePresentInput): Promise<MarkResult> {
+    if (!(await mayMarkAttendance(actor))) {
+      throw new ForbiddenError(
+        actor.role === "ADMIN"
+          ? "You do not have permission to record attendance. Ask your super administrator to enable it."
+          : "Only administrators can record attendance for somebody else.",
+      );
+    }
+
+    // The whole judgement, from the one place that makes it. `buildRoster`
+    // filters to active accounts, so an unknown or suspended id simply is not
+    // here — reported as not found, matching how the account endpoints phrase a
+    // refusal they do not want used to probe for ids.
+    const { entries } = await buildRoster(input.date, { employeeId: input.employeeId });
+    const entry = entries[0];
+
+    if (!entry) throw new NotFoundError("That person is not on the roster.");
+
+    // Already present, by whichever route. Answered idempotently with the row
+    // that is there, exactly as a second tap on `markPresent` is: "they are
+    // already marked present" is the answer to what was asked, not a failure.
+    if (entry.status === "PRESENT" && entry.attendance) {
+      return { attendance: entry.attendance, alreadyMarked: true };
+    }
+
+    const refusal = refusalFor(entry.status, input.date);
+    if (refusal) throw new ConflictError(refusal);
+
+    const attendance = await attendanceRepository.createManual({
+      employeeId: input.employeeId,
+      date: input.date,
+      markedById: actor.id,
+      reason: input.reason,
+    });
+
+    // Null means the unique index refused it: a real check-in landed between the
+    // roster read and this write. That row wins — it is proof, and this is not.
+    if (!attendance) {
+      const winner = await attendanceRepository.findByEmployeeAndDate(input.employeeId, input.date);
+      if (winner) return { attendance: winner, alreadyMarked: true };
+
+      throw new ConflictError("Couldn't record that attendance. Please try again.");
+    }
+
+    return { attendance, alreadyMarked: false };
+  },
+
   /** Where one person stands today — what the attendance screen opens on. */
   async todayFor(employeeId: string): Promise<TodayState> {
     const date = todayUtc();
@@ -555,7 +673,7 @@ export const attendanceService = {
    */
   async roster(
     query: AttendanceRosterQuery,
-    actorRole: Role,
+    actor: PopulationActor,
   ): Promise<{
     date: Date;
     officeClosed: boolean;
@@ -564,7 +682,11 @@ export const attendanceService = {
     total: number;
     summary: AttendanceSummary;
   }> {
-    assertMayViewPopulation(actorRole, query.population);
+    // The whole actor rather than its role: the population filter is a delegable
+    // grant read from the row, so the id is what settles it. See
+    // `populationService.assertMayFilter` — the CSV export reaches it through
+    // this same call, which is why it is not asserted in either route.
+    await populationService.assertMayFilter(actor, query.population);
 
     const { date, officeClosed, isWorkingDay, entries } = await buildRoster(query.date ?? todayUtc(), {
       employeeId: query.employeeId,

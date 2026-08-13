@@ -44,6 +44,7 @@ export function serializeAttendance(attendance: AttendanceDto): AttendanceView {
     ...attendance,
     date: attendance.date.toISOString(),
     checkInAt: attendance.checkInAt.toISOString(),
+    markedAt: attendance.markedAt?.toISOString() ?? null,
     createdAt: attendance.createdAt.toISOString(),
   };
 }

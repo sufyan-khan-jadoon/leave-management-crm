@@ -13,6 +13,13 @@ export const attendanceSelect = {
   longitude: true,
   accuracyMeters: true,
   distanceMeters: true,
+  markedAt: true,
+  reason: true,
+  // The name travels with every read of a check-in, because every surface that
+  // shows a distance has to show this instead when there is no distance to show.
+  // Selecting it here rather than in a second, wider select is what stops the
+  // roster and the CSV disagreeing about whether a row was proved or vouched for.
+  markedBy: { select: { id: true, name: true } },
   createdAt: true,
 } satisfies Prisma.AttendanceSelect;
 
@@ -55,6 +62,49 @@ export const attendanceRepository = {
     try {
       return await prisma.attendance.create({
         data: { ...data, status: AttendanceStatus.PRESENT },
+        select: attendanceSelect,
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) return null;
+      throw error;
+    }
+  },
+
+  /**
+   * Records somebody present on an administrator's word rather than the
+   * geofence's.
+   *
+   * Deliberately a **create**, not an update, and that is not a shortcut: an
+   * absent person has no row to amend, because absence is the lack of one. The
+   * same unique index that stops two taps racing is what stops this producing a
+   * duplicate — a null return means a row for that person and day already
+   * existed, and the service reports what is already there rather than replacing
+   * it. Nothing here can overwrite a real check-in.
+   *
+   * No coordinates are written. See the model: forging the office's own
+   * position would make this indistinguishable from somebody who actually stood
+   * there.
+   */
+  async createManual(data: {
+    employeeId: string;
+    date: Date;
+    markedById: string;
+    reason: string | null;
+  }): Promise<AttendanceDto | null> {
+    try {
+      return await prisma.attendance.create({
+        data: {
+          employeeId: data.employeeId,
+          date: data.date,
+          status: AttendanceStatus.PRESENT,
+          markedById: data.markedById,
+          markedAt: new Date(),
+          reason: data.reason,
+          // `checkInAt` defaults to now, which is the honest reading of it: the
+          // moment the day was recorded. It is not backdated to the chosen date,
+          // because nobody knows what time this person arrived — that is the
+          // whole reason the row is being written by hand.
+        },
         select: attendanceSelect,
       });
     } catch (error) {

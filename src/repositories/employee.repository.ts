@@ -13,6 +13,8 @@ export const employeeSelect = {
   canInviteEmployees: true,
   canManageHolidays: true,
   canSendEmails: true,
+  canViewAdminRecords: true,
+  canMarkAttendance: true,
   lockedAt: true,
   phone: true,
   department: true,
@@ -168,6 +170,22 @@ export const employeeRepository = {
     return prisma.employee.update({
       where: { id },
       data: { canSendEmails },
+      select: employeeSelect,
+    });
+  },
+
+  setAdminRecordsPermission(id: string, canViewAdminRecords: boolean): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { canViewAdminRecords },
+      select: employeeSelect,
+    });
+  },
+
+  setMarkAttendancePermission(id: string, canMarkAttendance: boolean): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { canMarkAttendance },
       select: employeeSelect,
     });
   },
