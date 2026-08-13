@@ -17,6 +17,7 @@ import {
   describeOfficeHours,
   friendlyTimeLabel,
   hasCutoffPassed,
+  isAfterClosing,
   isTimeOfDay,
   MINUTES_IN_DAY,
   minutesToTimeLabel,
@@ -68,6 +69,64 @@ describe("hasCutoffPassed", () => {
     // 07:00 UTC is midday in Karachi — nowhere near the cutoff. A rule reading
     // the server's clock would already have fired.
     expect(hasCutoffPassed(day("2026-08-10"), FIVE_PM, new Date("2026-08-10T07:00:00.000Z"))).toBe(false);
+  });
+});
+
+/**
+ * The far edge of an arrival an administrator may record by hand.
+ *
+ * Asked only of a typed time, never of a geofenced check-in — the building
+ * reporting somebody at 21:00 is proof, and the schema is explicit that nothing
+ * judges a real check-in by the clock. A typed 21:00 is a claim about a time the
+ * office was shut, and that is the one kind there is no reason to accept.
+ */
+describe("isAfterClosing", () => {
+  const SEVEN_PM = 19 * 60;
+
+  it("accepts anything up to and including the closing minute", () => {
+    for (const minutes of [0, 9 * 60, 13 * 60, 18 * 60 + 59, SEVEN_PM]) {
+      expect(isAfterClosing(minutes, SEVEN_PM), String(minutes)).toBe(false);
+    }
+  });
+
+  it("refuses the minute after, and everything past it", () => {
+    expect(isAfterClosing(SEVEN_PM + 1, SEVEN_PM)).toBe(true);
+    expect(isAfterClosing(20 * 60 + 30, SEVEN_PM)).toBe(true);
+    expect(isAfterClosing(23 * 60 + 59, SEVEN_PM)).toBe(true);
+  });
+
+  /**
+   * Nothing is refused for being early. Arriving before the doors officially
+   * open is ordinary, and the opening time is a published courtesy this file is
+   * careful elsewhere not to turn into a verdict.
+   */
+  it("never refuses an early arrival", () => {
+    expect(isAfterClosing(0, SEVEN_PM)).toBe(false);
+    expect(isAfterClosing(6 * 60, SEVEN_PM)).toBe(false);
+  });
+
+  /**
+   * The configuration worth knowing about: when the deadline to appear and the
+   * closing time are the same minute — which is what the shipped defaults say —
+   * every late arrival is also after closing, so none can be recorded by hand.
+   * That is coherent rather than broken, but it is surprising enough to pin.
+   */
+  it("leaves no recordable window when the cutoff equals closing", () => {
+    const both = 17 * 60;
+
+    // On time, so recordable.
+    expect(isAfterClosing(both, both)).toBe(false);
+    // Any lateness at all is now also past closing.
+    expect(isAfterClosing(both + 1, both)).toBe(true);
+  });
+
+  it("leaves a window whenever the office closes after the deadline", () => {
+    const cutoff = 13 * 60;
+    const closing = 19 * 60;
+
+    expect(isAfterClosing(cutoff + 15, closing)).toBe(false);
+    expect(isAfterClosing(closing, closing)).toBe(false);
+    expect(isAfterClosing(closing + 1, closing)).toBe(true);
   });
 });
 

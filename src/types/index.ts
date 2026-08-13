@@ -155,6 +155,8 @@ export type AttendanceRosterView = {
   canMarkAttendance: boolean;
   /** The deadline lateness is judged against, for the mark dialog's preview. */
   cutoffMinutes: number;
+  /** The latest arrival that may be recorded by hand. */
+  closingMinutes: number;
 };
 
 /** Who a custom email went to. Mirrors the Prisma enum. */

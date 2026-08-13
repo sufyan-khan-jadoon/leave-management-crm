@@ -44,7 +44,7 @@ import { useApiResource } from "@/hooks/use-api-resource";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { ApiClientError, apiClient, toQueryString } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
-import { friendlyTimeLabel, timeLabelToMinutes } from "@/lib/attendance-policy";
+import { friendlyTimeLabel, isAfterClosing, timeLabelToMinutes } from "@/lib/attendance-policy";
 import { currentAppZoneTimeInput, formatDate, formatDateTime, toIsoDate, todayUtc } from "@/lib/date";
 import { formatDistance } from "@/lib/geo";
 import { describeLateness, minutesLate } from "@/lib/lateness";
@@ -136,24 +136,33 @@ export function AttendanceManager({
   const [working, setWorking] = useState(false);
 
   const cutoffMinutes = data?.cutoffMinutes ?? null;
+  const closingMinutes = data?.closingMinutes ?? null;
 
   /**
    * What the typed arrival time would come to, shown while it is being typed.
    *
-   * A courtesy only — the figure that lands is computed on the server from the
-   * basis frozen onto the row, exactly as `EmailAttachmentsField` warns about a
-   * file the service judges again. It exists because "17:15" and "15 min late"
-   * are not the same thought, and the person typing the first is deciding the
-   * second.
+   * A courtesy only — every one of these is judged again on the server, exactly
+   * as `EmailAttachmentsField` warns about a file the service re-judges. It
+   * exists because "17:15" and "15 min late" are not the same thought, and the
+   * person typing the first is deciding the second.
    */
-  const latePreview = useMemo(() => {
-    if (cutoffMinutes === null) return null;
+  const arrivalVerdict = useMemo(() => {
+    if (cutoffMinutes === null || closingMinutes === null) return null;
 
     const minutes = timeLabelToMinutes(arrivalTime);
     if (minutes === null) return null;
 
-    return describeLateness(minutesLate(minutes, cutoffMinutes)) ?? "On time";
-  }, [arrivalTime, cutoffMinutes]);
+    // Refused before it can be submitted. The server refuses it too; this is so
+    // the answer arrives while the field is still in front of somebody.
+    if (isAfterClosing(minutes, closingMinutes)) {
+      return {
+        blocked: true,
+        text: `The office closes at ${friendlyTimeLabel(closingMinutes)} — nobody can have arrived then.`,
+      };
+    }
+
+    return { blocked: false, text: describeLateness(minutesLate(minutes, cutoffMinutes)) ?? "On time" };
+  }, [arrivalTime, cutoffMinutes, closingMinutes]);
 
   function openMarkDialog(employee: { id: string; name: string }) {
     setPending(employee);
@@ -612,25 +621,29 @@ export function AttendanceManager({
                   className="w-36"
                   required
                 />
-                {latePreview && (
+                {arrivalVerdict && (
                   <span
                     className={
-                      latePreview === "On time"
-                        ? "text-muted-foreground text-sm"
-                        : "text-warning-ink text-sm font-medium"
+                      arrivalVerdict.blocked
+                        ? "text-destructive-ink text-sm font-medium"
+                        : arrivalVerdict.text === "On time"
+                          ? "text-muted-foreground text-sm"
+                          : "text-warning-ink text-sm font-medium"
                     }
                   >
-                    {latePreview}
+                    {arrivalVerdict.text}
                   </span>
                 )}
               </div>
               {/*
                 Says which time is being asked for, because the obvious reading
-                is "now" and the whole point of the field is that it is not.
+                is "now" and the whole point of the field is that it is not —
+                and names both edges, so the refusal above is never a surprise.
               */}
               <p className="text-muted-foreground text-xs">
                 When they actually arrived — not when you are recording it.
-                {cutoffMinutes !== null && ` Lateness is measured from ${friendlyTimeLabel(cutoffMinutes)}.`}
+                {cutoffMinutes !== null && ` Late after ${friendlyTimeLabel(cutoffMinutes)}.`}
+                {closingMinutes !== null && ` Cannot be later than ${friendlyTimeLabel(closingMinutes)}, when the office closes.`}
               </p>
             </div>
 
@@ -649,7 +662,11 @@ export function AttendanceManager({
 
           <AlertDialogFooter>
             <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
-            <Button onClick={markPresent} loading={working} disabled={!arrivalTime}>
+            <Button
+              onClick={markPresent}
+              loading={working}
+              disabled={!arrivalTime || arrivalVerdict?.blocked === true}
+            >
               Mark present
             </Button>
           </AlertDialogFooter>

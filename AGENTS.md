@@ -557,6 +557,29 @@ correct is a different thing from a default they never knew was applied. It arri
 is paired with the chosen date through `appZoneInstant`, so a browser in another timezone cannot
 shift the day. An arrival still in the future is refused.
 
+**An arrival after the office closed is refused too**, and the asymmetry with a real check-in is the
+argument rather than an oversight. `isAfterClosing` in `attendance-policy.ts` is the rule, asked
+**only** of a time somebody typed. A geofenced check-in at 21:00 is the building reporting that
+somebody was standing in it at 21:00 — proof, and the schema is explicit that nothing judges a real
+check-in by the clock, so that path is untouched and still records the day exactly as before. An
+administrator entering 21:00 is making a claim with nothing behind it, and a claim about a time the
+office was not open is the one kind there is no reason to accept. The closing minute itself is
+*inside*: somebody walking in as the doors are locked did arrive, and refusing the boundary would
+make the published closing time mean a minute earlier than it says. Nothing is refused for being too
+*early* — the opening time is a published courtesy, and this file is careful elsewhere not to turn it
+into a verdict.
+
+**Note what happens when the cutoff and the closing time are the same minute**, which is what the
+shipped defaults say (both 1020). Late means past the cutoff, and past the cutoff is then also past
+closing, so **no late arrival can be recorded by hand at all** — every one of them is refused. That
+is coherent rather than broken: if the office shuts at the moment somebody stops being expected,
+there is no window in which a late arrival is possible. It is surprising enough that
+`attendance-policy.test.ts` pins it, and the refusal names both times so an administrator who meets
+it can see which setting to change. It is deliberately **not** prevented by validating the policy:
+`cutoffMinutes` and `closingMinutes` are written through one endpoint that accepts partial updates,
+so a cross-field rule would have to compare against a stored value the sender never saw — the same
+problem the `updateAttendancePolicySchema` comment already describes for opening and closing.
+
 ### How late is late
 
 `src/lib/lateness.ts` holds the whole rule, free of Prisma so it can be read and tested alone exactly

@@ -1,6 +1,6 @@
 import type { Role } from "@prisma/client";
 
-import { hasCutoffPassed } from "@/lib/attendance-policy";
+import { friendlyTimeLabel, hasCutoffPassed, isAfterClosing } from "@/lib/attendance-policy";
 import {
   addUtcDays,
   appZoneInstant,
@@ -619,6 +619,7 @@ export const attendanceService = {
     // never on the server's — a UTC server would otherwise read "17:15" as an
     // instant five hours off, and every lateness figure downstream with it.
     const [hour, minute] = input.arrivalTime.split(":").map(Number);
+    const arrivalMinutes = hour * 60 + minute;
     const checkInAt = appZoneInstant(input.date, hour, minute);
 
     // An arrival still in the future is not a correction of anything. It is the
@@ -632,6 +633,20 @@ export const attendanceService = {
     }
 
     const policy = await attendancePolicyService.get();
+
+    // Nobody can have arrived at an office that had shut. Applied to a typed
+    // time and never to a geofenced check-in — see `isAfterClosing` for why the
+    // two are treated differently. Both times are named in the message, because
+    // the two ways to be here are a mistyped arrival and office hours that have
+    // moved, and the administrator is the only one who can tell which.
+    if (isAfterClosing(arrivalMinutes, policy.closingMinutes)) {
+      throw new ValidationError(
+        `The office closes at ${friendlyTimeLabel(policy.closingMinutes)}, so nobody can have arrived at ${friendlyTimeLabel(arrivalMinutes)}.`,
+        {
+          arrivalTime: `Enter a time at or before ${friendlyTimeLabel(policy.closingMinutes)}, or update the office hours if they have changed.`,
+        },
+      );
+    }
 
     const attendance = await attendanceRepository.createManual({
       employeeId: input.employeeId,

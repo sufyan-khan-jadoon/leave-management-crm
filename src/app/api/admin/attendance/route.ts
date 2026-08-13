@@ -50,6 +50,9 @@ export async function GET(request: Request) {
       // preview is a courtesy; the figure that lands is computed on the server
       // from the basis frozen onto the row.
       cutoffMinutes: policy.cutoffMinutes,
+      // The far edge of what may be recorded, so the dialog can refuse an
+      // impossible arrival before it is submitted rather than after.
+      closingMinutes: policy.closingMinutes,
       summary: roster.summary,
       items: roster.items.map((entry) => ({
         employee: entry.employee,

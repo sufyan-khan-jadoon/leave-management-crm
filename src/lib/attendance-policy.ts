@@ -80,6 +80,30 @@ export function hasCutoffPassed(day: Date, cutoffMinutes: number, now: Date = ne
 }
 
 /**
+ * Whether an arrival falls after the office shut for the day.
+ *
+ * Asked **only** of a time an administrator has typed, never of a geofenced
+ * check-in, and that asymmetry is the argument rather than an oversight. A
+ * check-in at 21:00 is the building reporting that somebody was standing in it
+ * at 21:00 — proof, and the schema says in as many words that nothing judges a
+ * real check-in by the clock. An administrator entering 21:00 is making a claim
+ * with nothing behind it, and a claim about a time the office was not open is
+ * the one kind there is no reason to accept.
+ *
+ * The closing minute itself is inside. Somebody walking in as the doors are
+ * locked did arrive at the office, and refusing the boundary would make the
+ * published closing time mean one minute earlier than it says.
+ *
+ * **Nothing is refused for being too early.** Only the closing edge is checked,
+ * because arriving before the doors officially open is ordinary and is not what
+ * was asked about — and because the opening time is a published courtesy, which
+ * this file is careful elsewhere not to turn into a verdict.
+ */
+export function isAfterClosing(minutesOfDay: number, closingMinutes: number): boolean {
+  return minutesOfDay > closingMinutes;
+}
+
+/**
  * What one past day says about somebody, for the purpose of counting a run.
  *
  * `skip` is the interesting one: a day the office was shut, or that they had
