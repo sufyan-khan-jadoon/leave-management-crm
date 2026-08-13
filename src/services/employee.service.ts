@@ -9,6 +9,7 @@ import {
   type EmployeeDto,
   type EmployeeListFilters,
 } from "@/repositories/employee.repository";
+import { isProfileComplete } from "@/services/auth.service";
 import { emailService } from "@/services/email/email.service";
 import { populationService } from "@/services/population.service";
 import type { AdminEmployeeUpdateInput, ProfileSetupInput, ProfileUpdateInput } from "@/validations/employee.schema";
@@ -121,6 +122,25 @@ export const employeeService = {
 
     const owner = isSuperAdminRole(employee.role);
 
+    // The lock, enforced here rather than only in the form. `ProfileForm`
+    // renders read-only when it sees one, but that is a courtesy exactly as the
+    // read-only job title is — this is the rule, so a hand-made request cannot
+    // edit around a frozen profile. Checked before anything else is judged: a
+    // locked account has no business reaching the email or job-title questions
+    // below, and refusing for the real reason beats refusing for a later one.
+    //
+    // The owner is exempt because nothing can lock them in the first place —
+    // `assertMayManage` refuses a SUPER_ADMIN target — so this can never be the
+    // thing that puts the one account with nobody to appeal to out of its own
+    // reach.
+    if (employee.profileLockedAt && !owner) {
+      throw new ForbiddenError(
+        employee.profileLockReason
+          ? `Your profile is locked by an administrator: ${employee.profileLockReason}`
+          : "Your profile is locked by an administrator and cannot be edited until they unlock it.",
+      );
+    }
+
     const email = input.email !== undefined ? normalizeEmail(input.email) : undefined;
     const changingEmail = email !== undefined && email !== employee.email;
 
@@ -204,6 +224,56 @@ export const employeeService = {
     }
 
     return updated;
+  },
+
+  /**
+   * Freezes somebody's own profile edits, or releases them.
+   *
+   * **Seniority is `assertMayManage`, unchanged**, which settles four questions
+   * at once and for free: an ordinary administrator reaches employees only,
+   * administrator accounts answer to the super admin, the owner is untouchable,
+   * and nobody locks themselves. A second rule here would be a second place for
+   * those to drift.
+   *
+   * **It is not a status, and it stops nothing else.** The account signs in,
+   * marks attendance, books leave and is counted in every figure exactly as
+   * before — the details are frozen, the person is not. Suspending is the other
+   * thing, and it already exists.
+   *
+   * **An incomplete profile cannot be locked**, and that refusal is what stops a
+   * trap rather than tidiness: `middleware.ts` sends anybody without a finished
+   * profile to `/profile/setup` and keeps them there, so freezing one before it
+   * is written would leave them unable to finish and unable to go anywhere else.
+   * There is also nothing to freeze.
+   */
+  async setProfileLock(
+    employeeId: string,
+    locked: boolean,
+    actor: Actor,
+    reason: string | null = null,
+  ): Promise<EmployeeDto> {
+    const employee = await employeeRepository.findById(employeeId);
+    if (!employee) throw new NotFoundError("Employee not found.");
+
+    assertMayManage(actor, employee);
+
+    if (locked && !isProfileComplete(employee)) {
+      throw new ConflictError(
+        "That profile has not been completed yet. Locking it now would leave them unable to finish it and unable to use anything else.",
+      );
+    }
+
+    const alreadyLocked = employee.profileLockedAt !== null;
+    if (alreadyLocked === locked) {
+      throw new ConflictError(
+        locked ? "That profile is already locked." : "That profile is not locked.",
+      );
+    }
+
+    return employeeRepository.setProfileLock(
+      employeeId,
+      locked ? { by: actor.id, reason } : null,
+    );
   },
 
   async setStatus(employeeId: string, status: EmployeeStatus, actor: Actor): Promise<EmployeeDto> {

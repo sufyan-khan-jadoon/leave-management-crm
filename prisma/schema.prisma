@@ -254,8 +254,37 @@ model Employee {
   profilePhoto String?
   joiningDate  DateTime?
 
+  /// When an administrator froze this person's own profile edits, and who did.
+  ///
+  /// **Deliberately not a kind of `EmployeeStatus`.** Suspending stops somebody
+  /// signing in at all; this stops nothing but their own editing. A locked
+  /// employee signs in, marks attendance, books leave and is counted in every
+  /// figure exactly as before — the account is working, the details are frozen.
+  /// Folding the two into one column would make "locked" and "suspended" a
+  /// single ladder, and they are not even the same axis.
+  ///
+  /// Null means unlocked; the timestamp is the lock. Stored as a moment rather
+  /// than a boolean so the screens can say *when*, which is the first thing
+  /// somebody asks when they find they cannot change their phone number.
+  ///
+  /// It never blocks a password change. Locking somebody's details out of their
+  /// reach is people-management; locking them out of their own credentials is a
+  /// security regression, and `/api/profile/password` is deliberately untouched.
+  ///
+  /// `onDelete: SetNull` on the administrator, for the reason the attendance
+  /// audit uses it: removing whoever set a lock must not remove the lock, or the
+  /// person it was about.
+  profileLockedAt   DateTime?
+  profileLockedById String?
+  /// Shown to the employee, so a frozen form explains itself rather than
+  /// sending them to find an administrator to ask.
+  profileLockReason String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  profileLockedBy   Employee?  @relation("ProfileLockedBy", fields: [profileLockedById], references: [id], onDelete: SetNull)
+  profilesLocked    Employee[] @relation("ProfileLockedBy")
 
   leaves             Leave[]
   attendance         Attendance[]

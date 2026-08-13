@@ -7,6 +7,8 @@ import {
   Ban,
   CircleCheck,
   Eye,
+  Lock,
+  LockOpen,
   MoreHorizontal,
   Pencil,
   Search,
@@ -116,11 +118,28 @@ export function EmployeeManager({
   // children on select, which would tear down a nested dialog before it opens.
   const [confirming, setConfirming] = useState<{
     employee: EmployeeView;
-    action: "status" | "delete";
+    action: "status" | "delete" | "profileLock";
   } | null>(null);
 
   const employees = data?.items ?? [];
   const confirmingSuspended = confirming?.employee.status === EMPLOYEE_STATUS.SUSPENDED;
+  const confirmingUnlock = confirming?.employee.profileLockedAt !== null;
+
+  async function setProfileLock(employee: EmployeeView, locked: boolean) {
+    try {
+      await apiClient.patch(`/api/admin/employees/${employee.id}/profile-lock`, { locked });
+
+      toast.success(
+        locked
+          ? `${employee.name} can no longer edit their profile.`
+          : `${employee.name} can edit their profile again.`,
+      );
+
+      await refresh();
+    } catch (caught) {
+      toast.error(caught instanceof ApiClientError ? caught.message : "Could not update the profile lock.");
+    }
+  }
 
   async function setStatus(employee: EmployeeView, status: "ACTIVE" | "SUSPENDED") {
     try {
@@ -343,6 +362,19 @@ export function EmployeeManager({
                                     Edit details
                                   </DropdownMenuItem>
 
+                                  {/* Freezing their own edits — not a status,
+                                      and nothing to do with signing in. */}
+                                  <DropdownMenuItem
+                                    onClick={() => setConfirming({ employee, action: "profileLock" })}
+                                  >
+                                    {employee.profileLockedAt ? (
+                                      <LockOpen className="size-4" />
+                                    ) : (
+                                      <Lock className="size-4" />
+                                    )}
+                                    {employee.profileLockedAt ? "Unlock profile" : "Lock profile"}
+                                  </DropdownMenuItem>
+
                                   <DropdownMenuSeparator />
 
                                   {/* Hidden for accounts still in approval — the
@@ -407,6 +439,27 @@ export function EmployeeManager({
           destructive={!confirmingSuspended}
           onConfirm={async () => {
             await setStatus(confirming.employee, confirmingSuspended ? "ACTIVE" : "SUSPENDED");
+            setConfirming(null);
+          }}
+        />
+      )}
+
+      {confirming?.action === "profileLock" && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => !open && setConfirming(null)}
+          title={confirmingUnlock ? "Unlock this profile?" : "Lock this profile?"}
+          // Says what the lock does *not* do, because the obvious reading of
+          // "lock" is that somebody is being shut out, and this shuts them out
+          // of nothing but their own details.
+          description={
+            confirmingUnlock
+              ? `${confirming.employee.name} will be able to edit their own profile details again.`
+              : `${confirming.employee.name} will not be able to change their own name, phone, department, photo or joining date until you unlock it. They can still sign in, mark attendance and book leave as normal.`
+          }
+          confirmLabel={confirmingUnlock ? "Unlock profile" : "Lock profile"}
+          onConfirm={async () => {
+            await setProfileLock(confirming.employee, !confirmingUnlock);
             setConfirming(null);
           }}
         />

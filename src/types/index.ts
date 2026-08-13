@@ -20,6 +20,16 @@ export type EmployeeView = {
   position: string | null;
   profilePhoto: string | null;
   joiningDate: string | null;
+  /**
+   * Set while an administrator has frozen this person's own profile edits.
+   *
+   * Nothing to do with `lockedAt` above, which shuts an account out of signing
+   * in after failed passwords. This one stops editing and nothing else: the
+   * account signs in, marks attendance and books leave exactly as before.
+   */
+  profileLockedAt: string | null;
+  profileLockReason: string | null;
+  profileLockedBy: { id: string; name: string } | null;
   createdAt: string;
   updatedAt: string;
 };

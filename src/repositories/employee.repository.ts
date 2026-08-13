@@ -21,6 +21,11 @@ export const employeeSelect = {
   position: true,
   profilePhoto: true,
   joiningDate: true,
+  profileLockedAt: true,
+  profileLockReason: true,
+  // The name travels with the lock, so a frozen form can say who froze it
+  // rather than sending somebody off to find out.
+  profileLockedBy: { select: { id: true, name: true } },
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.EmployeeSelect;
@@ -178,6 +183,26 @@ export const employeeRepository = {
     return prisma.employee.update({
       where: { id },
       data: { canViewAdminRecords },
+      select: employeeSelect,
+    });
+  },
+
+  /**
+   * Freezes or releases somebody's own profile edits.
+   *
+   * All three columns move together — a lock without its author and moment is a
+   * refusal nobody can explain, and a release must clear them rather than leave
+   * a stale name behind on an unlocked account.
+   */
+  setProfileLock(
+    id: string,
+    lock: { by: string; reason: string | null } | null,
+  ): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: lock
+        ? { profileLockedAt: new Date(), profileLockedById: lock.by, profileLockReason: lock.reason }
+        : { profileLockedAt: null, profileLockedById: null, profileLockReason: null },
       select: employeeSelect,
     });
   },

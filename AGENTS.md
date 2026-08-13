@@ -236,6 +236,41 @@ anything else later would need every visitor's cache to expire first.
 `PENDING_APPROVAL` or `REJECTED` belongs to the approval flow, which also checks the address was
 verified — a status toggle would route around that.
 
+### Locking a profile is not suspending an account
+
+`profileLockedAt` freezes somebody's **own editing** and nothing else. A locked employee signs in,
+marks attendance, books leave and is counted in every figure exactly as before; what they cannot do
+is change their own name, phone, department, photo or joining date until an administrator releases
+it. Suspending is the other thing, it already existed, and it stops sign-in outright.
+
+**It is deliberately not an `EmployeeStatus`.** The two are not points on one ladder — one decides
+whether the account works at all, the other who may edit its details — so a single column would
+leave every later reader guessing which "locked" meant. `setProfileLock` never touches `status`,
+verified.
+
+**Seniority is `assertMayManage`, reused rather than restated**, which settles four questions for
+free: an ordinary administrator reaches employees only, administrator accounts answer to the super
+admin, the owner is untouchable, and nobody locks themselves. All four verified, along with the
+super admin being able to lock an administrator.
+
+**An incomplete profile cannot be locked**, and that refusal prevents a trap rather than tidying:
+`middleware.ts` sends anybody without a finished profile to `/profile/setup` and keeps them there, so
+freezing one before it is written would leave them unable to finish and unable to go anywhere else.
+
+**It never blocks a password change.** `/api/profile/password` is untouched — freezing somebody's
+details out of their reach is people-management; locking them out of their own credentials is a
+security regression.
+
+The rule lives in `updateOwnProfile`, not in the form. `ProfileForm` shows the notice and disables
+the button, and that is a courtesy exactly as the read-only job title is — a hand-made request is
+refused by the service. The refusal quotes `profileLockReason` when there is one, which is why the
+reason is stored at all: a frozen form that cannot say why sends somebody hunting for an
+administrator to ask. All three columns move together, so releasing a lock never leaves a stale
+author behind.
+
+`profileLockedById` is `onDelete: SetNull`, for the reason the attendance audit uses it — removing
+the administrator who set a lock must not remove the lock, nor the person it was about.
+
 ## Passwords are changed by their owner alone
 
 `PUT /api/profile/password` is the self-service change, on the `/profile` screen every role

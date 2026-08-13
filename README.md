@@ -466,6 +466,7 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET` | `/api/admin/stats` | Admin | Overview, charts, recent activity |
 | `GET` | `/api/admin/employees` | Admin | Paginated employee list |
 | `GET/PATCH/DELETE` | `/api/admin/employees/[id]` | Admin | Read, edit or delete an employee |
+| `PATCH` | `/api/admin/employees/[id]/profile-lock` | Admin | Freeze or release their own profile editing |
 | `PATCH` | `/api/admin/employees/[id]/status` | Admin | Suspend or reactivate |
 | `GET/POST` | `/api/admin/invitations` | Admin | List invitations in scope; invite an address |
 | `DELETE` | `/api/admin/invitations/[id]` | Admin | Withdraw an unaccepted invitation |

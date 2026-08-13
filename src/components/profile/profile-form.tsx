@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, type Resolver } from "react-hook-form";
 import { useSession } from "next-auth/react";
-import { Save } from "lucide-react";
+import { Lock, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { AvatarUpload } from "@/components/profile/avatar-upload";
@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ApiClientError, apiClient } from "@/lib/api-client";
+import { formatDate } from "@/lib/date";
 import { DEPARTMENTS, ROUTES } from "@/lib/constants";
 import { isSuperAdminRole } from "@/lib/enums";
 import {
@@ -119,9 +120,41 @@ export function ProfileForm({ employee, mode, onSaved }: ProfileFormProps) {
     ? [employee.department, ...DEPARTMENTS]
     : [...DEPARTMENTS];
 
+  /**
+   * A frozen profile is rendered whole and unsubmittable rather than hidden.
+   *
+   * The fields still show what they hold — somebody locked out of editing their
+   * details still needs to read them — and the notice says who froze it and why,
+   * so the refusal explains itself instead of sending them to find out. Never in
+   * `setup` mode: an unfinished profile cannot be locked, and the service refuses
+   * to lock one for exactly that reason.
+   *
+   * A courtesy, as ever. `updateOwnProfile` refuses a locked account outright, so
+   * a hand-made request cannot edit around this.
+   */
+  const profileLocked = mode !== "setup" && employee.profileLockedAt !== null;
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" noValidate>
+        {profileLocked && (
+          <div className="border-warning-ink/30 bg-warning/10 flex items-start gap-3 rounded-xl border p-4 text-sm">
+            <Lock className="text-warning-ink mt-0.5 size-4 shrink-0" aria-hidden />
+            <div className="space-y-1">
+              <p className="font-medium">Your profile is locked</p>
+              <p className="text-muted-foreground">
+                {employee.profileLockedBy
+                  ? `${employee.profileLockedBy.name} locked your profile on ${formatDate(employee.profileLockedAt!)}.`
+                  : `An administrator locked your profile on ${formatDate(employee.profileLockedAt!)}.`}{" "}
+                {employee.profileLockReason
+                  ? employee.profileLockReason
+                  : "Ask them to unlock it if something needs changing."}{" "}
+                You can still sign in, mark attendance and book leave as normal.
+              </p>
+            </div>
+          </div>
+        )}
+
         <FormField
           control={form.control}
           name="profilePhoto"
@@ -247,7 +280,13 @@ export function ProfileForm({ employee, mode, onSaved }: ProfileFormProps) {
           />
         </div>
 
-        <Button type="submit" size="lg" loading={form.formState.isSubmitting} className="w-full sm:w-auto">
+        <Button
+          type="submit"
+          size="lg"
+          loading={form.formState.isSubmitting}
+          disabled={profileLocked}
+          className="w-full sm:w-auto"
+        >
           {!form.formState.isSubmitting && <Save className="size-4" />}
           {mode === "setup" ? "Complete profile" : "Save changes"}
         </Button>
