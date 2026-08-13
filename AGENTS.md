@@ -534,6 +534,37 @@ only ever one row per person per day to describe, and nothing amends a check-in 
 `onDelete: SetNull` on `markedBy`: deleting the administrator who made a correction must not delete
 the attendance of the person it was about.
 
+### Whose day may be corrected
+
+`assertMayCorrect` is the seniority rule, and it is deliberately **not** `assertMayManage`. That one
+governs acts on an *account* — editing an address, suspending, deleting — and reserves administrator
+accounts for the super admin, because changing an admin's email is the first half of taking it over.
+Correcting a day is not that: it writes one attendance row, touches nothing about the account, and an
+administrator who came in and whose phone failed has exactly the problem an employee does. So the
+tiers differ by one rung — a granted administrator may correct **`EMPLOYEE` and `ADMIN` alike**,
+where `assertMayManage` would allow only the first.
+
+Two refusals remain, and both were holes when this shipped:
+
+- **Nobody corrects their own day.** The grant is a narrow exception to "presence is proved by
+  standing there"; aimed at yourself it is just a way to mark yourself present from home, every day,
+  without ever going in — the geofence defeated rather than excepted. Somebody else with the grant
+  does it for you, the same shape as `assertMayManage` sending you to `/profile` for your own
+  account.
+- **Nobody corrects the super admin**, itself included, mirroring `assertMayManage` exactly. An
+  administrator able to write attendance for the account that granted them the right would be the
+  boundary running backwards.
+
+Both were verified *allowed* before the rule existed, which is how they were found — the grant had
+been checked and seniority never had. The target's role is read from the row, because
+`attendanceRosterSelect` deliberately carries none.
+
+**Viewing is not narrowed to match.** The super admin still appears on the roster and in leave
+figures for anyone who can see them, because `rolesInPopulation` counts the owner as an
+administrator in every *report* — an account in neither population would vanish from its own
+organisation's numbers. The line drawn here is between reading a record and writing one, which is
+the distinction the requirement asked for and the one this codebase already makes everywhere else.
+
 **It is its own grant, deliberately not folded into `canViewAdminRecords`.** That one is a read —
 who may report on administrators as a group. This is a write that overrides a physical check, and an
 HR administrator given the reporting view must not silently acquire the ability to record attendance
@@ -659,6 +690,15 @@ away from every ordinary admin.
 in that route as before, because that roster is the route to *acting* on those accounts rather than
 a report about them — and `assertMayManage` would refuse every write anyway, so granting it would
 list administrators and do nothing to them.
+
+**The leave list carries the same filter, through the same service.** `/api/leaves` and its CSV
+export both accept `population` and both call `assertMayFilter`, so the two screens cannot come to
+disagree about who may separate the groups. An employee never reaches the check — their own id
+replaces the query first, and a population could only ever make their own history vanish. The
+unfiltered list still returns every role exactly as it always has: this widens what may be *asked
+for*, never what comes back by default. `leaveWithEmployeeSelect` still deliberately carries no
+`role`, for the reason `attendanceRosterSelect` does not — the filter is how somebody narrows to a
+population, not a column that labels every row with what its owner is.
 
 **The check lives in a service of its own, not in a route and not in `attendance.service.ts`** —
 because there are now three ways in. The attendance screen and its CSV export both call `roster()`,

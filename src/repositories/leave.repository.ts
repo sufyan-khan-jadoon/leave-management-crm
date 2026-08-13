@@ -28,6 +28,13 @@ export type LeaveListFilters = {
   employeeId?: string;
   status?: LeaveStatus;
   department?: string;
+  /**
+   * Narrows to one population, exactly as the attendance roster's filter does.
+   * Absent means every role — which is what an administrator has always been
+   * shown here, so this widens what may be *asked for* and never changes what
+   * comes back by default.
+   */
+  roles?: Role[];
   search?: string;
   from?: Date;
   to?: Date;
@@ -423,7 +430,14 @@ function buildLeaveWhere(
 
   if (filters.employeeId) where.employeeId = filters.employeeId;
   if (filters.status) where.status = filters.status;
-  if (filters.department) where.employee = { department: filters.department };
+
+  // Department and population both narrow the *employee*, so they are merged
+  // into one clause rather than assigned in turn — writing `where.employee`
+  // twice would silently drop whichever came first.
+  const employee: Prisma.EmployeeWhereInput = {};
+  if (filters.department) employee.department = filters.department;
+  if (filters.roles) employee.role = { in: filters.roles };
+  if (Object.keys(employee).length > 0) where.employee = employee;
 
   if (filters.from || filters.to) {
     where.leaveDate = {

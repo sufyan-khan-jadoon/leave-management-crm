@@ -327,6 +327,49 @@ async function mayMarkAttendance(actor: PopulationActor): Promise<boolean> {
 }
 
 /**
+ * Whose attendance this account may correct.
+ *
+ * Deliberately **not** `assertMayManage`, and the difference is the whole point.
+ * That rule governs acts on an *account* — editing an address, suspending,
+ * deleting — and reserves administrator accounts for the super admin, because
+ * changing an admin's email is the first half of taking it over. Correcting a
+ * day somebody was in the office is not that. It writes one attendance row, it
+ * touches nothing about the account, and an administrator who came in and whose
+ * phone failed has exactly the same problem an employee does.
+ *
+ * So the tiers differ by one rung: a granted administrator may correct
+ * `EMPLOYEE` **and** `ADMIN`, where `assertMayManage` would allow only the
+ * former.
+ *
+ * Two things it still refuses, both load-bearing:
+ *
+ * - **Nobody corrects their own day.** The grant is a narrow exception to
+ *   "presence is proved by standing there"; aimed at yourself it is simply a way
+ *   to mark yourself present from home, every day, without ever going in. That
+ *   is the geofence defeated rather than excepted. Somebody else with the grant,
+ *   or the super admin, does it for you — the same shape as `assertMayManage`
+ *   sending you to `/profile` for your own account.
+ * - **Nobody corrects the super admin**, itself included, mirroring
+ *   `assertMayManage` exactly. The owner is unmanageable from the dashboard, and
+ *   an HR administrator able to write attendance for the account that granted
+ *   them the right would be the boundary running backwards.
+ *
+ * The role is read from the row rather than from the roster, which deliberately
+ * carries no `role` — see `attendanceRosterSelect`.
+ */
+function assertMayCorrect(actor: PopulationActor, target: { id: string; role: Role }): void {
+  if (target.id === actor.id) {
+    throw new ForbiddenError(
+      "You cannot record your own attendance here. Marking yourself present is what the office check-in is for; ask another administrator to correct the day.",
+    );
+  }
+
+  if (target.role === "SUPER_ADMIN") {
+    throw new ForbiddenError("The super administrator's attendance cannot be recorded by hand.");
+  }
+}
+
+/**
  * Why a day cannot be corrected, in the words the administrator sees.
  *
  * Every branch is a status `describeDay` already decided, which is the whole
@@ -600,10 +643,22 @@ export const attendanceService = {
     // filters to active accounts, so an unknown or suspended id simply is not
     // here — reported as not found, matching how the account endpoints phrase a
     // refusal they do not want used to probe for ids.
-    const { entries } = await buildRoster(input.date, { employeeId: input.employeeId });
+    //
+    // The account is read alongside it purely for its `role`, which the roster
+    // deliberately does not carry.
+    const [{ entries }, target] = await Promise.all([
+      buildRoster(input.date, { employeeId: input.employeeId }),
+      employeeRepository.findById(input.employeeId),
+    ]);
+
     const entry = entries[0];
 
-    if (!entry) throw new NotFoundError("That person is not on the roster.");
+    if (!entry || !target) throw new NotFoundError("That person is not on the roster.");
+
+    // Seniority before anything about the day. Whether this administrator may
+    // act on this person at all is a question about the two of them, and does
+    // not depend on what the calendar says.
+    assertMayCorrect(actor, target);
 
     // Already present, by whichever route. Answered idempotently with the row
     // that is there, exactly as a second tap on `markPresent` is: "they are

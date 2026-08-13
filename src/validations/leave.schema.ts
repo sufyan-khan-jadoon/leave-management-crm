@@ -36,6 +36,20 @@ export const leaveQuerySchema = z.object({
   status: z.nativeEnum(LeaveStatus).optional(),
   department: z.string().trim().max(60).optional(),
   employeeId: z.string().trim().max(40).optional(),
+  /**
+   * Which population to list — everybody, the employees, or the administrators.
+   *
+   * The same field name, spelling and reasoning as
+   * `attendanceRosterQuerySchema`: `ADMIN` covers two roles because the super
+   * admin is counted with the administrators in every report, and `SUPER_ADMIN`
+   * is not an accepted value.
+   *
+   * Accepted from anybody here and refused for most of them in the route, behind
+   * `canViewAdminRecords` — the looser-schema-with-the-real-check-behind-it
+   * split used throughout. An employee never reaches it: their list is pinned to
+   * their own id before this is read.
+   */
+  population: z.enum(["ALL", "EMPLOYEE", "ADMIN"]).default("ALL"),
   from: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)

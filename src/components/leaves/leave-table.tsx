@@ -30,10 +30,33 @@ type LeaveTableProps = {
   /** Admin view adds the employee column, department filter and row actions. */
   showEmployee?: boolean;
   departments?: string[];
+  /**
+   * Whether to offer the population filter. Decided on the server from
+   * `canViewAdminRecords` and passed in, never worked out here — and both
+   * `/api/leaves` and its CSV export refuse the filter to anyone else however
+   * this renders.
+   */
+  canFilterByPopulation?: boolean;
   renderActions?: (leave: LeaveWithEmployeeView) => React.ReactNode;
 };
 
-export function LeaveTable({ table, showEmployee = false, departments = [], renderActions }: LeaveTableProps) {
+/**
+ * Employees, administrators, or everybody — the same three options, wording and
+ * reasoning as the attendance roster's filter, so the two screens read alike.
+ */
+const POPULATION_FILTERS = [
+  { value: "ALL", label: "Everyone" },
+  { value: "EMPLOYEE", label: "Employees" },
+  { value: "ADMIN", label: "Administrators" },
+] as const;
+
+export function LeaveTable({
+  table,
+  showEmployee = false,
+  departments = [],
+  canFilterByPopulation = false,
+  renderActions,
+}: LeaveTableProps) {
   const { filters, update, toggleSort, reset, hasActiveFilters, exportUrl, data, loading, error } = table;
   const leaves = data?.items ?? [];
 
@@ -66,6 +89,24 @@ export function LeaveTable({ table, showEmployee = false, departments = [], rend
                 ))}
               </SelectContent>
             </Select>
+
+            {showEmployee && canFilterByPopulation && (
+              <Select
+                value={filters.population}
+                onValueChange={(value) => update({ population: value as never })}
+              >
+                <SelectTrigger className="w-40" aria-label="Filter by population">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {POPULATION_FILTERS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
             {showEmployee && departments.length > 0 && (
               <Select

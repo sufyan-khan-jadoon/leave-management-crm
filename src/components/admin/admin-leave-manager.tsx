@@ -17,7 +17,16 @@ import type { PaginatedEmployees } from "@/types";
  * there is nothing here to approve or decline. What is left is looking things
  * up — searching, filtering, exporting, and opening the person behind a row.
  */
-export function AdminLeaveManager() {
+export function AdminLeaveManager({
+  /**
+   * Whether to offer the population filter. Resolved on the server from
+   * `canViewAdminRecords`, never from the session role — and the endpoint
+   * refuses the filter regardless of what renders here.
+   */
+  canFilterByPopulation = false,
+}: {
+  canFilterByPopulation?: boolean;
+}) {
   const table = useLeaveTable(10);
 
   // Reuse the employee endpoint purely for its department list, which powers
@@ -28,6 +37,7 @@ export function AdminLeaveManager() {
     <LeaveTable
       table={table}
       showEmployee
+      canFilterByPopulation={canFilterByPopulation}
       departments={employeeData?.departments ?? []}
       renderActions={(leave) => (
         <div className="flex items-center justify-end gap-1">

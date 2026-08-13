@@ -12,6 +12,8 @@ export type LeaveFilters = {
   search: string;
   status: LeaveStatus | "ALL";
   department: string | "ALL";
+  /** Employees, administrators, or everybody. Offered only where the grant allows. */
+  population: "ALL" | "EMPLOYEE" | "ADMIN";
   sortBy: "leaveDate" | "createdAt" | "status";
   sortDir: "asc" | "desc";
   page: number;
@@ -21,6 +23,7 @@ const INITIAL: LeaveFilters = {
   search: "",
   status: "ALL",
   department: "ALL",
+  population: "ALL",
   sortBy: "leaveDate",
   sortDir: "desc",
   page: 1,
@@ -44,6 +47,9 @@ export function useLeaveTable(pageSize = 10, employeeId?: string) {
       search: debouncedSearch || undefined,
       status: filters.status === "ALL" ? undefined : filters.status,
       department: filters.department === "ALL" ? undefined : filters.department,
+      // Left off entirely unless it is narrowing something, so an administrator
+      // without the grant never sends a parameter the server would refuse.
+      population: filters.population === "ALL" ? undefined : filters.population,
       employeeId,
       sortBy: filters.sortBy,
       sortDir: filters.sortDir,
@@ -54,6 +60,7 @@ export function useLeaveTable(pageSize = 10, employeeId?: string) {
       debouncedSearch,
       filters.status,
       filters.department,
+      filters.population,
       filters.sortBy,
       filters.sortDir,
       filters.page,
@@ -86,7 +93,10 @@ export function useLeaveTable(pageSize = 10, employeeId?: string) {
   const reset = useCallback(() => setFilters(INITIAL), []);
 
   const hasActiveFilters =
-    filters.search !== "" || filters.status !== "ALL" || filters.department !== "ALL";
+    filters.search !== "" ||
+    filters.status !== "ALL" ||
+    filters.department !== "ALL" ||
+    filters.population !== "ALL";
 
   return { filters, update, toggleSort, reset, hasActiveFilters, exportUrl, ...resource };
 }
