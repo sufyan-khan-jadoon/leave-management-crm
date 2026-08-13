@@ -15,6 +15,7 @@ import { toQueryString } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { formatDistance } from "@/lib/geo";
+import { describeLateness } from "@/lib/lateness";
 import type { PaginatedAttendance } from "@/types";
 
 /**
@@ -96,7 +97,14 @@ export function EmployeeAttendance() {
                     <TableCell className="pl-4 font-medium whitespace-nowrap sm:pl-6">
                       {formatDate(record.date)}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap">{formatDateTime(record.checkInAt)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDateTime(record.checkInAt)}
+                      {record.lateMinutes > 0 && (
+                        <span className="text-warning-ink ml-2 text-xs font-medium">
+                          {describeLateness(record.lateMinutes)}
+                        </span>
+                      )}
+                    </TableCell>
                     {/*
                       A day recorded by an administrator has no position, so
                       there is nothing to put in either column. Said in words

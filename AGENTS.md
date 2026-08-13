@@ -456,6 +456,10 @@ The project has **no working hours that judge anybody**, so `LATE` and `HALF_DAY
 absent rather than write-dead in the way `LeaveStatus.PENDING` became. The `status` column exists so
 they have somewhere to land once working hours are actually defined; don't invent them to fill it.
 
+That still holds, including now that lateness exists. Lateness is measured from the **cutoff** — the
+deadline to have appeared — and is derived on read rather than written into `status`; see "How late
+is late" below. `HALF_DAY` remains entirely unwritten.
+
 `AttendancePolicy.openingMinutes` / `closingMinutes` are **not** that definition, and the distinction
 is the whole of why they are safe. They are the hours the company *publishes* — a fact people ask
 for, so the assistant has something true to read out. Nothing compares a `checkInAt` against them:
@@ -537,12 +541,55 @@ for anybody. It is also its own route rather than a `PATCH` on the roster endpoi
 attendance screen is read-only except when it isn't" is not something you have to read the service to
 establish — the same split `/api/admin/chat/action` makes.
 
-`checkInAt` defaults to now, meaning the moment the day was recorded. It is **not** backdated to the
-chosen date: nobody knows what time this person arrived, which is the entire reason the row is being
-written by hand, and a plausible-looking time would be a precise lie. `markEmployeePresentSchema` is
-a `strictObject` for the reason `markAttendanceSchema` is, and the reason is stronger here — that one
-refuses a client's verdict about a position, this one refuses a client's verdict about everything.
-There is no field for a status, because the only status it can produce is `PRESENT`.
+`markEmployeePresentSchema` is a `strictObject` for the reason `markAttendanceSchema` is, and the
+reason is stronger here — that one refuses a client's verdict about a position, this one refuses a
+client's verdict about everything. There is no field for a status, because the only status it can
+produce is `PRESENT`.
+
+**The arrival time is asked for, not assumed, and that is a fix rather than a nicety.** `checkInAt`
+defaulted to `now()` at first, on the reasoning that nobody knows what time the person arrived. That
+was wrong the moment lateness existed: somebody who came in at 17:15 and was written up at 17:20 was
+charged twenty minutes instead of fifteen, silently, with no way to tell from the row. So
+`arrivalTime` is **required** — an absent person has no check-in to reuse, so this is the only place
+it can come from, and a default is exactly what caused the defect. The dialog prefills it with the
+office's current time so the common case is one keystroke, but a prefilled field somebody can see and
+correct is a different thing from a default they never knew was applied. It arrives as `"HH:MM"` and
+is paired with the chosen date through `appZoneInstant`, so a browser in another timezone cannot
+shift the day. An arrival still in the future is refused.
+
+### How late is late
+
+`src/lib/lateness.ts` holds the whole rule, free of Prisma so it can be read and tested alone exactly
+as `geo.ts`, `working-days.ts` and `holiday-notice.ts` are. `lateness.test.ts` pins every specified
+case and passes under `TZ=America/New_York`; if it starts failing there, something has begun trusting
+the server's clock.
+
+**Lateness is measured from `cutoffMinutes`, and never from `openingMinutes`.** The cutoff is the
+deadline to have appeared — the same one the warning sweep uses — so measuring from it is coherent.
+The published opening hours are a courtesy, and the schema says in as many words not to reach for
+them to judge anybody. The consequence is worth stating rather than discovering: **somebody arriving
+at 09:15 is not late, and neither is somebody arriving at 16:59.** Only arrivals past the deadline
+register at all. That is precisely what makes this safe to add to a system that had never judged
+anybody by the clock — it accuses only the people who missed the deadline outright, who are the
+people an administrator is correcting the record for. Repointing this at `openingMinutes` would
+reclassify every check-in after 9am in the system's history as late, in one deploy, silently.
+
+**`LATE` is still not an `AttendanceStatus`.** The enum still has one value and `describeDay` is
+untouched, because somebody late is `PRESENT` — they were there. Lateness is derived on read from
+`lateMinutesOf`, which is the one place a row becomes a number of minutes, so the roster, the CSV,
+the employee's own history and the assistant cannot arrive at different answers. `LATE` exists only
+as a *filter* on the roster query, meaning "present, and past the deadline", and `summary.late` is a
+**subset of `summary.present`** rather than a column beside it — adding them would count a latecomer
+twice and make the tiles overshoot the headcount.
+
+**`lateBasisMinutes` is the one judgement attendance stores rather than derives, and it stores the
+input rather than the verdict.** The cutoff in force is copied onto the row when it is written and
+never recomputed, so moving the deadline next month cannot rewrite how late somebody was last week —
+the same argument `AttendanceWarning.consecutiveMissed` makes, that a stored figure is what the
+record *said*. The minutes themselves are still computed on every read, so there is no second copy of
+the answer to fall out of step with the check-in time. Both write paths freeze it, the geofenced one
+included, so an ordinary check-in and a corrected day are judged alike. Verified: with a row written
+at a 17:00 cutoff, moving the policy to 18:00 leaves it reporting 15 minutes.
 
 Verified end to end against the real database, crossing the Zod schema rather than calling the
 service directly: the blank-day refusal, the ungranted admin, the write and its audit fields, the

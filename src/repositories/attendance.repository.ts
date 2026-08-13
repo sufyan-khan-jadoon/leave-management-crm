@@ -13,6 +13,10 @@ export const attendanceSelect = {
   longitude: true,
   accuracyMeters: true,
   distanceMeters: true,
+  // Read everywhere, because lateness is derived on every read and needs both
+  // halves. Selecting the basis here rather than joining the policy is what lets
+  // a past day report the deadline it was actually judged by.
+  lateBasisMinutes: true,
   markedAt: true,
   reason: true,
   // The name travels with every read of a check-in, because every surface that
@@ -58,6 +62,8 @@ export const attendanceRepository = {
     longitude: number;
     accuracyMeters: number;
     distanceMeters: number;
+    /** Today's cutoff, frozen onto the row — see the model. */
+    lateBasisMinutes: number;
   }): Promise<AttendanceDto | null> {
     try {
       return await prisma.attendance.create({
@@ -88,6 +94,9 @@ export const attendanceRepository = {
   async createManual(data: {
     employeeId: string;
     date: Date;
+    /** When the employee actually arrived, as told to the administrator. */
+    checkInAt: Date;
+    lateBasisMinutes: number;
     markedById: string;
     reason: string | null;
   }): Promise<AttendanceDto | null> {
@@ -97,13 +106,16 @@ export const attendanceRepository = {
           employeeId: data.employeeId,
           date: data.date,
           status: AttendanceStatus.PRESENT,
+          // The arrival time, not the moment this was recorded. Those differ by
+          // however long it took somebody to reach the screen, and charging that
+          // gap to the employee as lateness is the specific mistake this field
+          // being explicit exists to prevent. `markedAt` below holds the other
+          // one, for audit rather than for arithmetic.
+          checkInAt: data.checkInAt,
+          lateBasisMinutes: data.lateBasisMinutes,
           markedById: data.markedById,
           markedAt: new Date(),
           reason: data.reason,
-          // `checkInAt` defaults to now, which is the honest reading of it: the
-          // moment the day was recorded. It is not backdated to the chosen date,
-          // because nobody knows what time this person arrived — that is the
-          // whole reason the row is being written by hand.
         },
         select: attendanceSelect,
       });

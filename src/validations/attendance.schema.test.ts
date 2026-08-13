@@ -158,7 +158,7 @@ describe("resetAttendanceSchema", () => {
  * and this one refuses a client's verdict about everything.
  */
 describe("markEmployeePresentSchema", () => {
-  const valid = { employeeId: "cmsjdvtj50002ky04grbvudgv", date: "2026-08-11" };
+  const valid = { employeeId: "cmsjdvtj50002ky04grbvudgv", date: "2026-08-11", arrivalTime: "17:15" };
 
   it("accepts what the dialog actually sends", () => {
     const parsed = markEmployeePresentSchema.parse({ ...valid, reason: "phone battery died" });
@@ -188,6 +188,30 @@ describe("markEmployeePresentSchema", () => {
   it("requires somebody to mark", () => {
     expect(markEmployeePresentSchema.safeParse({ date: valid.date }).success).toBe(false);
     expect(markEmployeePresentSchema.safeParse({ ...valid, employeeId: "  " }).success).toBe(false);
+  });
+
+  /**
+   * The arrival time is required rather than defaulted, and that is the fix for
+   * a real defect: `checkInAt` used to fall back to `now()`, so somebody who
+   * arrived at 17:15 and was recorded at 17:20 was charged twenty minutes of
+   * lateness instead of fifteen. A default here would reintroduce it silently.
+   */
+  it("requires the arrival time, rather than defaulting to now", () => {
+    const { arrivalTime: _omitted, ...withoutTime } = valid;
+    expect(markEmployeePresentSchema.safeParse(withoutTime).success).toBe(false);
+  });
+
+  it("accepts a 24-hour time and refuses anything else", () => {
+    for (const time of ["00:00", "09:05", "17:15", "23:59"]) {
+      expect(markEmployeePresentSchema.safeParse({ ...valid, arrivalTime: time }).success, time).toBe(true);
+    }
+
+    for (const time of ["24:00", "17:60", "5:15 PM", "1715", "17.15", "", "abc", "-1:00"]) {
+      expect(
+        markEmployeePresentSchema.safeParse({ ...valid, arrivalTime: time }).success,
+        JSON.stringify(time),
+      ).toBe(false);
+    }
   });
 
   /**

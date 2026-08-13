@@ -12,6 +12,7 @@ import { ALLOWED_RADIUS_METERS } from "@/lib/constants";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { formatDistance } from "@/lib/geo";
 import { GEOLOCATION_MESSAGES, requestPosition } from "@/lib/geolocation";
+import { describeLateness } from "@/lib/lateness";
 import type { AttendanceTodayView, AttendanceView } from "@/types";
 
 /** What the button is doing, and what it says while doing it. */
@@ -117,6 +118,11 @@ export function MarkAttendanceCard({ today, onMarked }: Props) {
             <span className="text-muted-foreground flex items-center gap-1.5 text-sm">
               <Clock className="size-3.5" aria-hidden />
               Checked in at {formatDateTime(attendance.checkInAt)}
+              {attendance.lateMinutes > 0 && (
+                <span className="text-warning-ink font-medium">
+                  · {describeLateness(attendance.lateMinutes)}
+                </span>
+              )}
             </span>
           )}
         </div>

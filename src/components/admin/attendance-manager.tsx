@@ -6,6 +6,7 @@ import {
   CalendarOff,
   CheckCircle2,
   CircleDashed,
+  Clock,
   Download,
   Eye,
   MapPin,
@@ -43,14 +44,19 @@ import { useApiResource } from "@/hooks/use-api-resource";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { ApiClientError, apiClient, toQueryString } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
-import { formatDate, formatDateTime, toIsoDate, todayUtc } from "@/lib/date";
+import { friendlyTimeLabel, timeLabelToMinutes } from "@/lib/attendance-policy";
+import { currentAppZoneTimeInput, formatDate, formatDateTime, toIsoDate, todayUtc } from "@/lib/date";
 import { formatDistance } from "@/lib/geo";
+import { describeLateness, minutesLate } from "@/lib/lateness";
 import { initialsOf } from "@/lib/utils";
 import type { AttendanceRosterView, PaginatedEmployees } from "@/types";
 
 const STATUS_FILTERS = [
   { value: "ALL", label: "All statuses" },
   { value: "PRESENT", label: "Present" },
+  // Narrows within Present rather than beside it — somebody late was still
+  // there. See `attendanceRosterQuerySchema`.
+  { value: "LATE", label: "Late" },
   { value: "ABSENT", label: "Absent" },
   { value: "ON_LEAVE", label: "On leave" },
   { value: "NO_RECORD", label: "No record" },
@@ -123,10 +129,41 @@ export function AttendanceManager({
     `/api/admin/attendance${toQueryString(query)}`,
   );
 
-  /** The person about to be recorded present, and the note going with it. */
+  /** The person about to be recorded present, and what goes with it. */
   const [pending, setPending] = useState<{ id: string; name: string } | null>(null);
+  const [arrivalTime, setArrivalTime] = useState("");
   const [reason, setReason] = useState("");
   const [working, setWorking] = useState(false);
+
+  const cutoffMinutes = data?.cutoffMinutes ?? null;
+
+  /**
+   * What the typed arrival time would come to, shown while it is being typed.
+   *
+   * A courtesy only — the figure that lands is computed on the server from the
+   * basis frozen onto the row, exactly as `EmailAttachmentsField` warns about a
+   * file the service judges again. It exists because "17:15" and "15 min late"
+   * are not the same thought, and the person typing the first is deciding the
+   * second.
+   */
+  const latePreview = useMemo(() => {
+    if (cutoffMinutes === null) return null;
+
+    const minutes = timeLabelToMinutes(arrivalTime);
+    if (minutes === null) return null;
+
+    return describeLateness(minutesLate(minutes, cutoffMinutes)) ?? "On time";
+  }, [arrivalTime, cutoffMinutes]);
+
+  function openMarkDialog(employee: { id: string; name: string }) {
+    setPending(employee);
+    // Prefilled with the office's current time rather than left empty: the
+    // common case is somebody who has just walked in. It is a starting value a
+    // person can see and correct, which is a different thing from a default
+    // applied silently — that default was the bug this field exists to fix.
+    setArrivalTime(currentAppZoneTimeInput());
+    setReason("");
+  }
 
   async function markPresent() {
     if (!pending) return;
@@ -136,17 +173,25 @@ export function AttendanceManager({
       // `date` is the day on screen, not today — correcting a day that has
       // already gone wrong is the entire purpose, so the selected date travels
       // with the request and the server judges that day rather than this one.
-      const result = await apiClient.post<{ alreadyMarked: boolean }>(
+      const result = await apiClient.post<{ alreadyMarked: boolean; attendance: { lateMinutes: number } }>(
         "/api/admin/attendance/mark",
-        { employeeId: pending.id, date, reason: reason.trim() || undefined },
+        { employeeId: pending.id, date, arrivalTime, reason: reason.trim() || undefined },
       );
 
       // A row that was already there is not a correction anybody just made.
       // Saying so is the difference between "done" and "somebody beat you to it".
+      // The lateness comes back from the server rather than being re-derived
+      // here, so the sentence somebody reads is the figure that was actually
+      // stored — not the preview, which may have been computed against a cutoff
+      // that changed while the dialog was open.
+      const late = describeLateness(result.attendance.lateMinutes);
+
       toast.success(
         result.alreadyMarked
           ? `${pending.name} was already marked present for ${formatDate(date)}.`
-          : "Employee marked as Present successfully.",
+          : late
+            ? `Employee marked as Present successfully — ${late}.`
+            : "Employee marked as Present successfully.",
       );
 
       setPending(null);
@@ -189,13 +234,24 @@ export function AttendanceManager({
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {loading || !summary ? (
-          Array.from({ length: 4 }, (_, index) => <StatCardSkeleton key={index} />)
+          Array.from({ length: 5 }, (_, index) => <StatCardSkeleton key={index} />)
         ) : (
           <>
             <StatCard label="Expected in" value={summary.expected} icon={Users} tone="neutral" />
             <StatCard label="Present" value={summary.present} icon={CheckCircle2} tone="success" />
+            {/*
+              Labelled as a share of Present rather than as a total of its own,
+              because it is one: somebody late is counted in both, and four
+              tiles that summed past the headcount would read as a bug.
+            */}
+            <StatCard
+              label={`Late (of ${summary.present} present)`}
+              value={summary.late}
+              icon={Clock}
+              tone="warning"
+            />
             <StatCard label="Absent" value={summary.absent} icon={XCircle} tone="destructive" />
             <StatCard label="On leave" value={summary.onLeave} icon={CalendarOff} tone="warning" />
           </>
@@ -416,8 +472,21 @@ export function AttendanceManager({
                         </div>
                       </TableCell>
 
+                      {/*
+                        Present and late is still Present — the badge does not
+                        change, because they were there. The lateness rides
+                        beside it as a qualifier rather than replacing it, which
+                        is the same relationship the tile above has to its count.
+                      */}
                       <TableCell>
-                        <AttendanceStatusBadge status={entry.status} />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <AttendanceStatusBadge status={entry.status} />
+                          {entry.attendance && entry.attendance.lateMinutes > 0 && (
+                            <span className="text-warning-ink text-xs font-medium whitespace-nowrap">
+                              {describeLateness(entry.attendance.lateMinutes)}
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
 
                       <TableCell className="text-muted-foreground whitespace-nowrap">
@@ -460,7 +529,7 @@ export function AttendanceManager({
                               variant="outline"
                               size="sm"
                               onClick={() =>
-                                setPending({ id: entry.employee.id, name: entry.employee.name })
+                                openMarkDialog({ id: entry.employee.id, name: entry.employee.name })
                               }
                             >
                               <UserCheck className="size-4" />
@@ -531,21 +600,56 @@ export function AttendanceManager({
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="mark-present-reason">Reason (optional)</Label>
-            <Textarea
-              id="mark-present-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="e.g. came in but phone battery died"
-              maxLength={280}
-              rows={2}
-            />
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="mark-present-arrival">Actual arrival time</Label>
+              <div className="flex flex-wrap items-center gap-3">
+                <Input
+                  id="mark-present-arrival"
+                  type="time"
+                  value={arrivalTime}
+                  onChange={(event) => setArrivalTime(event.target.value)}
+                  className="w-36"
+                  required
+                />
+                {latePreview && (
+                  <span
+                    className={
+                      latePreview === "On time"
+                        ? "text-muted-foreground text-sm"
+                        : "text-warning-ink text-sm font-medium"
+                    }
+                  >
+                    {latePreview}
+                  </span>
+                )}
+              </div>
+              {/*
+                Says which time is being asked for, because the obvious reading
+                is "now" and the whole point of the field is that it is not.
+              */}
+              <p className="text-muted-foreground text-xs">
+                When they actually arrived — not when you are recording it.
+                {cutoffMinutes !== null && ` Lateness is measured from ${friendlyTimeLabel(cutoffMinutes)}.`}
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="mark-present-reason">Reason (optional)</Label>
+              <Textarea
+                id="mark-present-reason"
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="e.g. came in but phone battery died"
+                maxLength={280}
+                rows={2}
+              />
+            </div>
           </div>
 
           <AlertDialogFooter>
             <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
-            <Button onClick={markPresent} loading={working}>
+            <Button onClick={markPresent} loading={working} disabled={!arrivalTime}>
               Mark present
             </Button>
           </AlertDialogFooter>

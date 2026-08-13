@@ -1,7 +1,17 @@
 import type { Role } from "@prisma/client";
 
 import { hasCutoffPassed } from "@/lib/attendance-policy";
-import { addUtcDays, endOfUtcMonth, startOfUtcMonth, toIsoDate, todayUtc, type DayScope } from "@/lib/date";
+import {
+  addUtcDays,
+  appZoneInstant,
+  appZoneMinutesOfDay,
+  endOfUtcMonth,
+  startOfUtcMonth,
+  toIsoDate,
+  todayUtc,
+  type DayScope,
+} from "@/lib/date";
+import { minutesLate } from "@/lib/lateness";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { isSuperAdminRole, rolesInPopulation } from "@/lib/enums";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
@@ -72,6 +82,12 @@ export type AttendanceSummary = {
   present: number;
   absent: number;
   onLeave: number;
+  /**
+   * Present, but past the deadline. A **subset of `present`**, not a fifth
+   * column beside it — somebody late was still there, and adding this to the
+   * others would count them twice and make the tiles overshoot the headcount.
+   */
+  late: number;
 };
 
 export type TodayState = {
@@ -420,7 +436,23 @@ function summarise(entries: RosterEntry[]): AttendanceSummary {
     present: entries.filter((entry) => entry.status === "PRESENT").length,
     absent: entries.filter((entry) => entry.status === "ABSENT").length,
     onLeave: entries.filter((entry) => entry.status === "ON_LEAVE").length,
+    // Counted off the rows rather than tracked separately, so it cannot disagree
+    // with the figure each row displays.
+    late: entries.filter((entry) => lateMinutesOf(entry.attendance) > 0).length,
   };
+}
+
+/**
+ * How late one check-in was, or zero when there was none.
+ *
+ * The single place a row is turned into a number of minutes. Derived on read
+ * rather than stored, exactly as every other attendance status is — what the row
+ * carries is the *basis* it was judged by, so the arithmetic can never fall out
+ * of step with the check-in time it was computed from.
+ */
+export function lateMinutesOf(attendance: AttendanceDto | null): number {
+  if (!attendance) return 0;
+  return minutesLate(appZoneMinutesOfDay(attendance.checkInAt), attendance.lateBasisMinutes);
 }
 
 function describeDay(options: {
@@ -491,6 +523,11 @@ export const attendanceService = {
       throw new ForbiddenError(OUTSIDE_MESSAGE);
     }
 
+    // Frozen onto the row exactly as the manual path freezes it, so an ordinary
+    // check-in and a corrected day are judged by the same rule and neither moves
+    // when the deadline is next changed.
+    const policy = await attendancePolicyService.get();
+
     const attendance = await attendanceRepository.create({
       employeeId,
       date,
@@ -498,6 +535,7 @@ export const attendanceService = {
       longitude: input.longitude,
       accuracyMeters: input.accuracyMeters,
       distanceMeters: verdict.distanceMeters,
+      lateBasisMinutes: policy.cutoffMinutes,
     });
 
     // Null means the unique index refused it: another tap landed between the
@@ -577,9 +615,31 @@ export const attendanceService = {
     const refusal = refusalFor(entry.status, input.date);
     if (refusal) throw new ConflictError(refusal);
 
+    // The arrival time is paired with the chosen date on the company's clock,
+    // never on the server's — a UTC server would otherwise read "17:15" as an
+    // instant five hours off, and every lateness figure downstream with it.
+    const [hour, minute] = input.arrivalTime.split(":").map(Number);
+    const checkInAt = appZoneInstant(input.date, hour, minute);
+
+    // An arrival still in the future is not a correction of anything. It is the
+    // easiest mistake to make on today's date — picking a time later this
+    // evening — and it would record somebody as having already been somewhere
+    // they have not yet been.
+    if (checkInAt.getTime() > Date.now()) {
+      throw new ValidationError("That arrival time is still in the future.", {
+        arrivalTime: "Enter the time they actually arrived.",
+      });
+    }
+
+    const policy = await attendancePolicyService.get();
+
     const attendance = await attendanceRepository.createManual({
       employeeId: input.employeeId,
       date: input.date,
+      checkInAt,
+      // Frozen onto the row, so moving the deadline later never rewrites how
+      // late this day was. See `Attendance.lateBasisMinutes`.
+      lateBasisMinutes: policy.cutoffMinutes,
       markedById: actor.id,
       reason: input.reason,
     });
@@ -699,7 +759,14 @@ export const attendanceService = {
       roles: query.population === "ALL" ? undefined : rolesInPopulation(query.population),
     });
 
-    const filtered = query.status === "ALL" ? entries : entries.filter((e) => e.status === query.status);
+    // `LATE` narrows within PRESENT rather than matching a day status, because
+    // it is not one — see `attendanceRosterQuerySchema`.
+    const filtered =
+      query.status === "ALL"
+        ? entries
+        : query.status === "LATE"
+          ? entries.filter((e) => lateMinutesOf(e.attendance) > 0)
+          : entries.filter((e) => e.status === query.status);
     const start = (query.page - 1) * query.pageSize;
 
     return {

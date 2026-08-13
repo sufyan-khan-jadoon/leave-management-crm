@@ -13,7 +13,13 @@ import { isSuperAdminRole } from "@/lib/enums";
 import { ValidationError } from "@/lib/errors";
 import { employeeRepository, type AttendanceRosterMember } from "@/repositories/employee.repository";
 import { leaveRepository } from "@/repositories/leave.repository";
-import { attendanceService, type AttendanceDayStatus, type RosterEntry } from "@/services/attendance.service";
+import { describeLateness } from "@/lib/lateness";
+import {
+  attendanceService,
+  lateMinutesOf,
+  type AttendanceDayStatus,
+  type RosterEntry,
+} from "@/services/attendance.service";
 import { interpretAdminChat, type ChatTurn } from "@/services/ai.service";
 import { employeeService, type Actor } from "@/services/employee.service";
 import { invitationService } from "@/services/invitation.service";
@@ -519,7 +525,15 @@ async function describeStatus(member: AttendanceRosterMember, date: Date): Promi
   if (member.position) lines.push(`• Position: ${member.position}`);
 
   if (entry.attendance) {
-    lines.push(`• Attendance marked: ${formatTimeInAppZone(entry.attendance.checkInAt)}`);
+    // Lateness comes from `lateMinutesOf`, the same function the roster and the
+    // CSV use, so the assistant cannot describe a day differently from the
+    // screen an administrator would check it against.
+    const late = describeLateness(lateMinutesOf(entry.attendance));
+    lines.push(`• Attendance marked: ${formatTimeInAppZone(entry.attendance.checkInAt)}${late ? ` — ${late}` : ""}`);
+
+    if (entry.attendance.markedBy) {
+      lines.push(`• Recorded by ${entry.attendance.markedBy.name}, not by the location check`);
+    }
   }
 
   if (entry.status === "ON_LEAVE") {
@@ -559,7 +573,8 @@ async function describeHistory(
       : numbered(
           notable.map((day) => {
             const time = day.attendance ? ` at ${formatTimeInAppZone(day.attendance.checkInAt)}` : "";
-            return `${formatDate(day.date)} — ${STATUS_WORD[day.status]}${time}`;
+            const late = day.attendance ? describeLateness(lateMinutesOf(day.attendance)) : null;
+            return `${formatDate(day.date)} — ${STATUS_WORD[day.status]}${time}${late ? ` (${late})` : ""}`;
           }),
         );
 

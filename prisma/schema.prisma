@@ -422,6 +422,12 @@ model AttendancePolicy {
   /// Those are absent because this project has no working hours in the sense
   /// that judges a person, and publishing an opening time does not create one.
   ///
+  /// Lateness now exists and is still not measured from here. It is measured
+  /// from `cutoffMinutes`, the deadline to have appeared at all, and is derived
+  /// on read rather than stored in `status` — see `src/lib/lateness.ts`.
+  /// Repointing it at `openingMinutes` would reclassify every check-in after
+  /// 9am in the system's history as late, in one deploy and without a word.
+  ///
   /// 9-to-5 is a starting value, not an assumption, exactly as `[1,2,3,4,5]` is
   /// below: a company opening at 08:30 and closing at 16:00 configures that.
   openingMinutes Int @default(540)
@@ -523,8 +529,29 @@ model Attendance {
   /// derived from the company's clock, not the server's, so a check-in at 2am
   /// in Karachi belongs to that day rather than the one UTC is still on.
   date      DateTime @db.Date
-  /// The instant the check-in was accepted. Rendered in APP_TIME_ZONE.
+  /// The instant the employee actually arrived. Rendered in APP_TIME_ZONE.
+  ///
+  /// Defaults to now because a geofenced check-in happens as it is recorded. An
+  /// administrator correcting a day sets it **explicitly** to the arrival time
+  /// they were told, which is deliberately not the moment they pressed the
+  /// button: somebody who came in at 17:15 and was recorded at 17:20 was fifteen
+  /// minutes late, not twenty. `markedAt` is what holds the latter, and holds it
+  /// for audit rather than for arithmetic.
   checkInAt DateTime @default(now())
+
+  /// The cutoff this day was judged against, in minutes after midnight.
+  ///
+  /// Copied from `AttendancePolicy.cutoffMinutes` when the row is written, and
+  /// never recomputed. Lateness is therefore frozen at what the policy said on
+  /// the day — the same reason `AttendanceWarning.consecutiveMissed` is stored
+  /// rather than derived: it is what the record *said*, and moving the deadline
+  /// next month must not silently rewrite how late somebody was last week.
+  ///
+  /// This is the one place attendance stores a judgement instead of deriving it,
+  /// and it is safe precisely because it stores the *input* rather than the
+  /// verdict. `minutesLate` is still computed on every read, so there is no
+  /// second copy of the answer to fall out of step with the check-in time.
+  lateBasisMinutes Int
 
   status AttendanceStatus @default(PRESENT)
 

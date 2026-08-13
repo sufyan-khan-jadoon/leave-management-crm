@@ -1,9 +1,10 @@
 import { failure, parseQuery } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth/guards";
+import { friendlyTimeLabel } from "@/lib/attendance-policy";
 import { toIsoDate } from "@/lib/date";
 import { AppError } from "@/lib/errors";
 import { formatDistance } from "@/lib/geo";
-import { attendanceService } from "@/services/attendance.service";
+import { attendanceService, lateMinutesOf } from "@/services/attendance.service";
 import { attendanceRosterQuerySchema } from "@/validations/attendance.schema";
 
 /** Streams the day's roster as CSV, matching whatever is filtered on screen. */
@@ -34,6 +35,12 @@ export async function GET(request: Request) {
       "Position",
       "Status",
       "Check-in",
+      // Both the figure and the deadline it was judged against, because a
+      // spreadsheet outlives the setting: "15" alone becomes unreadable the day
+      // somebody moves the cutoff, and this is the column an argument about
+      // somebody's timekeeping would be had over.
+      "Late (minutes)",
+      "Late measured from",
       "Distance",
       "GPS accuracy",
       "Recorded by",
@@ -54,6 +61,8 @@ export async function GET(request: Request) {
         entry.employee.position ?? "",
         entry.status,
         record ? record.checkInAt.toISOString() : "",
+        record ? String(lateMinutesOf(record)) : "",
+        record ? friendlyTimeLabel(record.lateBasisMinutes) : "",
         geo ? formatDistance(record.distanceMeters!) : "",
         geo ? formatDistance(record.accuracyMeters!) : "",
         record?.markedBy?.name ?? "",

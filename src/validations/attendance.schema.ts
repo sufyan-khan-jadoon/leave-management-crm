@@ -46,7 +46,16 @@ export const attendanceRosterQuerySchema = z.object({
   employeeId: z.string().trim().max(40).optional(),
   department: z.string().trim().max(60).optional(),
   search: z.string().trim().max(120).optional(),
-  status: z.enum(["ALL", "PRESENT", "ABSENT", "ON_LEAVE", "NO_RECORD"]).default("ALL"),
+  /**
+   * `LATE` is deliberately **not** an `AttendanceDayStatus`.
+   *
+   * It is a filter over one, and the distinction is what keeps `describeDay`
+   * unchanged: somebody late is `PRESENT` — they were there — so a fifth day
+   * status would have to be ordered against the other four and would make the
+   * tiles double-count. Narrowing to it here means "present, and past the
+   * deadline", and the service applies it as exactly that.
+   */
+  status: z.enum(["ALL", "PRESENT", "LATE", "ABSENT", "ON_LEAVE", "NO_RECORD"]).default("ALL"),
   /**
    * Which population to show — everybody, the employees, or the administrators.
    *
@@ -88,6 +97,26 @@ export type AttendanceRosterQuery = z.infer<typeof attendanceRosterQuerySchema>;
 export const markEmployeePresentSchema = z.strictObject({
   employeeId: z.string().trim().min(1, "Choose somebody").max(40),
   date: calendarDateSchema,
+  /**
+   * When the employee actually arrived, on the company's clock.
+   *
+   * **Required, and deliberately not defaulted to the current time.** An absent
+   * person has no check-in to reuse — absence is the lack of a row — so this is
+   * the only place the arrival time can come from, and defaulting it would mean
+   * silently charging somebody the minutes between arriving and being recorded.
+   * Somebody who came in at 17:15 and was written up at 17:20 was fifteen
+   * minutes late, not twenty. The form prefills it with the current time so the
+   * common case is one keystroke, but a prefilled field a person can see and
+   * correct is a different thing from a default they never knew was applied.
+   *
+   * "HH:MM" rather than a full instant, matching how every other time of day in
+   * this system is entered and stored: the server pairs it with the chosen date
+   * in `APP_TIME_ZONE`, so a browser in another timezone cannot shift the day.
+   */
+  arrivalTime: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter a time between 00:00 and 23:59"),
   /**
    * Optional, and trimmed to null when blank.
    *

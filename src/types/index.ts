@@ -74,6 +74,13 @@ export type AttendanceView = {
   markedBy: { id: string; name: string } | null;
   markedAt: string | null;
   reason: string | null;
+  /** The deadline this day was judged against, frozen when the row was written. */
+  lateBasisMinutes: number;
+  /**
+   * Minutes past that deadline, computed on the server. Zero means on time,
+   * including arriving exactly on it — there is no negative lateness.
+   */
+  lateMinutes: number;
   createdAt: string;
 };
 
@@ -142,9 +149,12 @@ export type AttendanceRosterView = {
   isWorkingDay: boolean;
   items: AttendanceRosterEntry[];
   pagination: Pagination;
-  summary: { expected: number; present: number; absent: number; onLeave: number };
+  /** `late` is a subset of `present`, never a column beside it. */
+  summary: { expected: number; present: number; absent: number; onLeave: number; late: number };
   /** Whether to offer "Mark present". Mirrors the server check, never replaces it. */
   canMarkAttendance: boolean;
+  /** The deadline lateness is judged against, for the mark dialog's preview. */
+  cutoffMinutes: number;
 };
 
 /** Who a custom email went to. Mirrors the Prisma enum. */

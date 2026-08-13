@@ -2,7 +2,7 @@ import type { AttendanceDto } from "@/repositories/attendance.repository";
 import type { EmployeeDto } from "@/repositories/employee.repository";
 import type { HolidayDto } from "@/repositories/holiday.repository";
 import type { LeaveWithEmployeeDto } from "@/repositories/leave.repository";
-import type { TodayState } from "@/services/attendance.service";
+import { lateMinutesOf, type TodayState } from "@/services/attendance.service";
 import type {
   AttendanceTodayView,
   AttendanceView,
@@ -45,6 +45,10 @@ export function serializeAttendance(attendance: AttendanceDto): AttendanceView {
     date: attendance.date.toISOString(),
     checkInAt: attendance.checkInAt.toISOString(),
     markedAt: attendance.markedAt?.toISOString() ?? null,
+    // Computed here rather than in each client, so no screen can arrive at its
+    // own answer — and computed on the server, where `APP_TIME_ZONE` is the
+    // clock rather than whatever the viewer's laptop is set to.
+    lateMinutes: lateMinutesOf(attendance),
     createdAt: attendance.createdAt.toISOString(),
   };
 }

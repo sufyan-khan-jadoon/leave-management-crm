@@ -71,6 +71,35 @@ export function appZoneInstant(day: Date, hour: number, minute = 0): Date {
   return new Date(wallClock - (appZoneReading(firstPass) - firstPass.getTime()));
 }
 
+/**
+ * What the company's clock reads at `instant`, as minutes after midnight.
+ *
+ * The inverse of `appZoneInstant`, and the form every time-of-day setting here
+ * is already stored in — so a check-in can be compared against the cutoff
+ * without either side being converted twice. Read in `APP_TIME_ZONE` rather than
+ * server-local, for the reason `appZoneInstant` gives: a server in UTC reads
+ * 17:15 Karachi as 12:15, which is five hours of lateness nobody had.
+ */
+export function appZoneMinutesOfDay(instant: Date): number {
+  const reading = new Date(appZoneReading(instant));
+  return reading.getUTCHours() * 60 + reading.getUTCMinutes();
+}
+
+/**
+ * Now, on the company's clock, as "HH:MM" — what a `<input type="time">` wants.
+ *
+ * Read through `APP_TIME_ZONE` rather than from the browser, so an administrator
+ * working from another country prefills the office's time rather than their own.
+ */
+export function currentAppZoneTimeInput(): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: APP_TIME_ZONE,
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date());
+}
+
 /** Current wall-clock time in the company's timezone, e.g. "3:16 AM". */
 export function currentTimeInAppZone(locale = "en-US"): string {
   return formatTimeInAppZone(new Date(), locale);

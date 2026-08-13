@@ -2,6 +2,7 @@ import { handleRoute, ok, parseQuery } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth/guards";
 import { serializeAttendance } from "@/lib/serialize";
 import { attendanceService } from "@/services/attendance.service";
+import { attendancePolicyService } from "@/services/attendance-policy.service";
 import { attendanceRosterQuerySchema } from "@/validations/attendance.schema";
 
 /**
@@ -29,9 +30,10 @@ export async function GET(request: Request) {
     const user = await requireAdmin();
     const query = parseQuery(request, attendanceRosterQuerySchema);
 
-    const [roster, canMarkAttendance] = await Promise.all([
+    const [roster, canMarkAttendance, policy] = await Promise.all([
       attendanceService.roster(query, user),
       attendanceService.mayMarkAttendance(user),
+      attendancePolicyService.get(),
     ]);
 
     return ok({
@@ -43,6 +45,11 @@ export async function GET(request: Request) {
       // the row — exactly as `canIssue` and `canManage` do on the invitation and
       // holiday routes.
       canMarkAttendance,
+      // The deadline lateness is judged against, so the mark dialog can show
+      // what a typed arrival time would come to *before* it is submitted. The
+      // preview is a courtesy; the figure that lands is computed on the server
+      // from the basis frozen onto the row.
+      cutoffMinutes: policy.cutoffMinutes,
       summary: roster.summary,
       items: roster.items.map((entry) => ({
         employee: entry.employee,
