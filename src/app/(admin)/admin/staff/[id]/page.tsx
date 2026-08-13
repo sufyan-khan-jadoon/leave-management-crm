@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { auth } from "@/lib/auth/auth";
 import { MONTHLY_LEAVE_ALLOWANCE, ROUTES } from "@/lib/constants";
 import { formatDate, relativeTime } from "@/lib/date";
 import { EMPLOYEE_STATUS } from "@/lib/enums";
@@ -34,8 +35,17 @@ export const metadata: Metadata = { title: "Employee profile" };
 
 export default async function AdminEmployeeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await auth();
+  const viewer = session?.user;
 
-  const employee = await employeeService.byId(id).catch((error) => {
+  if (!viewer) notFound();
+
+  // `byIdForActor`, not `byId`. This page called the ungated one, so it rendered
+  // any account to any administrator — including the super admin's — while the
+  // endpoint behind it, `GET /api/admin/employees/[id]`, refused exactly that.
+  // A server-rendered page is as reachable as an API: the eye button on the
+  // attendance roster links straight here, and the id is in the URL.
+  const employee = await employeeService.byIdForActor(id, viewer).catch((error) => {
     if (error instanceof NotFoundError) notFound();
     throw error;
   });

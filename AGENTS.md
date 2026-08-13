@@ -211,9 +211,12 @@ it. The cost is that `emailVerified` can outlive the address it was proved again
 is a courtesy, exactly as the read-only address on the registration form is. An unset title is still
 claimable, which is what profile setup writes. The owner is the exception, for the reason above.
 
-Listing is gated in the route handler — `role=ADMIN` on `/api/admin/employees` requires super
-admin — because the roster is the route to every action on those accounts. `SUPER_ADMIN` is not a
-value `employeeQuerySchema` accepts, so it can never be listed.
+Listing is gated in the route handler — `role=ADMIN` on `/api/admin/employees` requires
+`canViewAdminRecords`, the grant the attendance roster and leave list already use. That is a *read*
+and nothing more: everything above still applies to every write, so a granted administrator sees
+those rows and can edit, suspend or delete none of them. See "Filtering by population" for why
+seeing and acting were separated rather than kept together. `SUPER_ADMIN` is not a value
+`employeeQuerySchema` accepts, so it can never be listed at all.
 
 **The screen is `/admin/staff`; the endpoints behind it are `/api/admin/employees`, and the two are
 deliberately out of step.** The screen has been called Staff since it started listing administrators
@@ -686,10 +689,31 @@ administrator exactly as it always was. `assertMayFilter` guards a surface that 
 about a surface offering both, and applying it where it does not hold would have taken the dashboard
 away from every ordinary admin.
 
-**It never widens to Staff.** `role=ADMIN` on `/api/admin/employees` stays the super admin's, gated
-in that route as before, because that roster is the route to *acting* on those accounts rather than
-a report about them — and `assertMayManage` would refuse every write anyway, so granting it would
-list administrators and do nothing to them.
+**It reaches Staff too, and this note used to say the opposite.** `role=ADMIN` on
+`/api/admin/employees` was the super admin's alone, on the reasoning that the roster is the route to
+every management action on those accounts. That reasoning was about *managing*, and it still holds —
+what it never justified was hiding the list. The objection recorded here against widening it was
+that a granted administrator would "list administrators and do nothing to them", and that turned out
+to be the feature rather than the flaw: knowing who your colleagues are and being able to suspend
+them are different powers, and conflating them cost the first in order to protect the second.
+
+So the listing needs `canViewAdminRecords` — the same grant, not a sixth one, because it hands over
+the same knowledge — and **`assertMayManage` is untouched**. A granted administrator gets the
+Administrators tab, search, filters and the profile page; edit, suspend and delete stay the super
+admin's and those menu items do not render. `SUPER_ADMIN` is still not a value
+`employeeQuerySchema` accepts, so the owner appears in no listing whoever is asking.
+
+`byIdForActor` gained the matching third way through: an employee, your own account, or an `ADMIN`
+when you hold the grant. A roster somebody may page through whose rows they may not open would be a
+screen at war with itself. The owner stays unreachable by all three, and refusals stay *not found*
+rather than *forbidden*, so the endpoint cannot be used to discover which ids belong to
+administrators.
+
+**`staff/[id]/page.tsx` called `byId`, not `byIdForActor`, and that was a real hole.** The
+server-rendered profile had no seniority check at all while `GET /api/admin/employees/[id]` beside
+it did — so any administrator could open any account, the super admin's included, by typing the URL.
+The attendance roster's eye button links straight there and the id sits in the address bar. Verified
+refused now. **A page is as reachable as an endpoint; gate it with the same function.**
 
 **The leave list carries the same filter, through the same service.** `/api/leaves` and its CSV
 export both accept `population` and both call `assertMayFilter`, so the two screens cannot come to

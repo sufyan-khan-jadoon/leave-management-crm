@@ -10,6 +10,7 @@ import {
   type EmployeeListFilters,
 } from "@/repositories/employee.repository";
 import { emailService } from "@/services/email/email.service";
+import { populationService } from "@/services/population.service";
 import type { AdminEmployeeUpdateInput, ProfileSetupInput, ProfileUpdateInput } from "@/validations/employee.schema";
 
 /** Whoever is performing the action — role decides what they may reach. */
@@ -48,15 +49,38 @@ export const employeeService = {
     return employee;
   },
 
-  /** `byId` for the admin dashboard, narrowed to what the viewer may see. */
+  /**
+   * `byId` for the admin dashboard, narrowed to what the viewer may see.
+   *
+   * Three ways through: the account is an employee, it is your own, or you hold
+   * `canViewAdminRecords` and it is an administrator. That third is the same
+   * grant the Staff listing, the attendance roster and the leave list use — a
+   * roster somebody may page through and rows they may not then open would be a
+   * screen at war with itself.
+   *
+   * **`SUPER_ADMIN` is unreachable by all three.** It is not `EMPLOYEE`, it is
+   * not the viewer unless the owner is looking at themselves, and the grant
+   * admits `ADMIN` alone. Reading the owner's record stays where it was.
+   *
+   * Refusals are *not found* rather than *forbidden*, so this cannot be used to
+   * discover which ids belong to administrators by reading which refusal comes
+   * back — the same phrasing the assistant's candidate search uses.
+   *
+   * Seeing is all this grants. `assertMayManage` is untouched, so every write
+   * against an administrator account is still the super admin's alone.
+   */
   async byIdForActor(id: string, actor: Actor): Promise<EmployeeDto> {
     const employee = await this.byId(id);
 
-    if (employee.role !== Role.EMPLOYEE && !isSuperAdminRole(actor.role) && employee.id !== actor.id) {
-      throw new NotFoundError("Employee not found.");
+    if (employee.role === Role.EMPLOYEE || employee.id === actor.id || isSuperAdminRole(actor.role)) {
+      return employee;
     }
 
-    return employee;
+    if (employee.role === Role.ADMIN && (await populationService.mayViewAdminRecords(actor))) {
+      return employee;
+    }
+
+    throw new NotFoundError("Employee not found.");
   },
 
   /** Completes the post-verification profile step. */

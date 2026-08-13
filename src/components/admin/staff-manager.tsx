@@ -7,13 +7,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ROLE } from "@/lib/enums";
 
 /**
- * Splits the staff into the two populations a super admin manages.
+ * Splits the staff into the two populations.
  *
  * Each tab mounts its own `EmployeeManager`, so search, filters, sorting and
  * page position stay independent — switching back to Employees does not reset
  * what you had narrowed it down to.
+ *
+ * The Administrators tab is shown to anybody holding `canViewAdminRecords`, but
+ * `canManageAdmins` is a separate question with a separate answer: an ordinary
+ * administrator may read that roster and act on none of it, so the tab renders
+ * and the row menus lose everything but *View profile*.
  */
-export function StaffManager() {
+export function StaffManager({ canManageAdmins = false }: { canManageAdmins?: boolean }) {
   return (
     <Tabs defaultValue={ROLE.EMPLOYEE} className="space-y-4">
       <TabsList>
@@ -32,7 +37,7 @@ export function StaffManager() {
       </TabsContent>
 
       <TabsContent value={ROLE.ADMIN}>
-        <EmployeeManager role={ROLE.ADMIN} />
+        <EmployeeManager role={ROLE.ADMIN} canManage={canManageAdmins} />
       </TabsContent>
     </Tabs>
   );

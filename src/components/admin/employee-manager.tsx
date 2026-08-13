@@ -89,7 +89,22 @@ const STATUS_BADGE: Record<EmployeeStatus, { label: string; variant: "success" |
 const isSettled = (status: EmployeeStatus) =>
   status === EMPLOYEE_STATUS.ACTIVE || status === EMPLOYEE_STATUS.SUSPENDED;
 
-export function EmployeeManager({ role = ROLE.EMPLOYEE }: { role?: InviteRole }) {
+export function EmployeeManager({
+  role = ROLE.EMPLOYEE,
+  /**
+   * Whether the viewer may act on these accounts, not merely read them.
+   *
+   * False for an administrator looking at the Administrators tab: they may hold
+   * `canViewAdminRecords`, which lists the rows, while `assertMayManage` still
+   * reserves every write to those accounts for the super admin. Hiding the menu
+   * items is a courtesy — the endpoints refuse all three regardless — but a menu
+   * whose every entry errors is worse than no menu.
+   */
+  canManage = true,
+}: {
+  role?: InviteRole;
+  canManage?: boolean;
+}) {
   const table = useEmployeeTable(10, role);
   const { filters, update, toggleSort, reset, hasActiveFilters, data, loading, error, refresh } = table;
   const copy = COPY[role];
@@ -316,34 +331,40 @@ export function EmployeeManager({ role = ROLE.EMPLOYEE }: { role?: InviteRole })
                                 </Link>
                               </DropdownMenuItem>
 
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setEditing(employee);
-                                  setDialogOpen(true);
-                                }}
-                              >
-                                <Pencil className="size-4" />
-                                Edit details
-                              </DropdownMenuItem>
+                              {canManage && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setEditing(employee);
+                                      setDialogOpen(true);
+                                    }}
+                                  >
+                                    <Pencil className="size-4" />
+                                    Edit details
+                                  </DropdownMenuItem>
 
-                              <DropdownMenuSeparator />
+                                  <DropdownMenuSeparator />
 
-                              {/* Hidden for accounts still in approval — the
-                                  service refuses the toggle for those. */}
-                              {isSettled(employee.status) && (
-                                <DropdownMenuItem onClick={() => setConfirming({ employee, action: "status" })}>
-                                  {suspended ? <CircleCheck className="size-4" /> : <Ban className="size-4" />}
-                                  {suspended ? "Reactivate" : "Suspend"}
-                                </DropdownMenuItem>
+                                  {/* Hidden for accounts still in approval — the
+                                      service refuses the toggle for those. */}
+                                  {isSettled(employee.status) && (
+                                    <DropdownMenuItem
+                                      onClick={() => setConfirming({ employee, action: "status" })}
+                                    >
+                                      {suspended ? <CircleCheck className="size-4" /> : <Ban className="size-4" />}
+                                      {suspended ? "Reactivate" : "Suspend"}
+                                    </DropdownMenuItem>
+                                  )}
+
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onClick={() => setConfirming({ employee, action: "delete" })}
+                                  >
+                                    <Trash2 className="size-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </>
                               )}
-
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onClick={() => setConfirming({ employee, action: "delete" })}
-                              >
-                                <Trash2 className="size-4" />
-                                Delete
-                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
