@@ -250,7 +250,8 @@ src/
     (auth)/                  login, register, verify-email, admin/login, admin/register
     (onboarding)/            profile/setup — post-verification, no dashboard chrome
     (employee)/              dashboard, leaves, leaves/new, profile
-    (admin)/admin/           overview, employees, employees/[id], leaves, access
+    (admin)/admin/           overview, staff, staff/[id], leaves, attendance,
+                             assistant, emails, working-days, access
     api/
       auth/                  [...nextauth], register, verify-email, resend-otp
       leaves/                list, ai, [id], export
@@ -475,6 +476,11 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET` | `/api/admin/administrators` | Super admin | Administrators and their invite permission |
 | `PATCH` | `/api/admin/administrators/[id]` | Super admin | Grant or withdraw `canInviteEmployees` |
 | `GET` | `/api/health` | Public | Liveness probe |
+
+The Staff screen lives at `/admin/staff`, while the endpoints behind it keep the
+`/api/admin/employees` path above — the screen was renamed and the API deliberately was not, since
+moving it would rewrite every call site for something nobody sees. `/admin/employees` permanently
+redirects to `/admin/staff` (`next.config.ts`) so links from before the rename still work.
 
 ---
 

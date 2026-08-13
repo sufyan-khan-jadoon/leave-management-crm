@@ -215,6 +215,20 @@ Listing is gated in the route handler — `role=ADMIN` on `/api/admin/employees`
 admin — because the roster is the route to every action on those accounts. `SUPER_ADMIN` is not a
 value `employeeQuerySchema` accepts, so it can never be listed.
 
+**The screen is `/admin/staff`; the endpoints behind it are `/api/admin/employees`, and the two are
+deliberately out of step.** The screen has been called Staff since it started listing administrators
+alongside employees, and the address is the one part of it somebody reads aloud or pastes to a
+colleague — so that is the half that was renamed. The endpoints were left alone because moving them
+would rewrite every call site and the README's endpoint table for something nobody sees. Don't tidy
+either half into agreeing with the other.
+
+Every link goes through `ROUTES.adminStaff`, which is why the rename touched one constant rather
+than eight components — keep it that way and don't write the path out in a `Link`. `/admin/employees`
+is a permanent redirect in `next.config.ts` rather than a 404: the old address was live long enough
+to be sitting in bookmarks, and the page it named is still there, so a 404 would report a screen as
+deleted when it had only moved. Being permanent, it is cached by browsers, so reusing that path for
+anything else later would need every visitor's cache to expire first.
+
 `setStatus` only toggles accounts that are already `ACTIVE` or `SUSPENDED`. An administrator in
 `PENDING_APPROVAL` or `REJECTED` belongs to the approval flow, which also checks the address was
 verified — a status toggle would route around that.
