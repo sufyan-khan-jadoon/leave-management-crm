@@ -175,7 +175,7 @@ export const ROUTES = {
   adminRegister: "/admin/register",
   adminPending: "/admin/pending",
   adminDashboard: "/admin",
-  adminEmployees: "/admin/employees",
+  adminStaff: "/admin/staff",
   adminLeaves: "/admin/leaves",
   adminWorkingDays: "/admin/working-days",
   adminAttendance: "/admin/attendance",

@@ -374,7 +374,7 @@ export function AttendanceManager({
                           asChild
                           aria-label={`View ${entry.employee.name}'s profile`}
                         >
-                          <Link href={`${ROUTES.adminEmployees}/${entry.employee.id}`}>
+                          <Link href={`${ROUTES.adminStaff}/${entry.employee.id}`}>
                             <Eye className="size-4" />
                           </Link>
                         </Button>

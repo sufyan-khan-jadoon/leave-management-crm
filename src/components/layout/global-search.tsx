@@ -90,7 +90,7 @@ export function GlobalSearch({ isAdmin }: { isAdmin: boolean }) {
                   icon={<User className="size-4" />}
                   title={employee.name}
                   subtitle={`${employee.email}${employee.department ? ` · ${employee.department}` : ""}`}
-                  onSelect={() => go(`${ROUTES.adminEmployees}/${employee.id}`)}
+                  onSelect={() => go(`${ROUTES.adminStaff}/${employee.id}`)}
                 />
               ))}
             </Section>

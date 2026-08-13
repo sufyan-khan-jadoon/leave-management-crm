@@ -32,7 +32,7 @@ export function AdminLeaveManager() {
       renderActions={(leave) => (
         <div className="flex items-center justify-end gap-1">
           <Button variant="ghost" size="icon-sm" asChild aria-label={`View ${leave.employee.name}'s profile`}>
-            <Link href={`${ROUTES.adminEmployees}/${leave.employeeId}`}>
+            <Link href={`${ROUTES.adminStaff}/${leave.employeeId}`}>
               <Eye className="size-4" />
             </Link>
           </Button>

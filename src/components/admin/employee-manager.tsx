@@ -310,7 +310,7 @@ export function EmployeeManager({ role = ROLE.EMPLOYEE }: { role?: InviteRole })
 
                             <DropdownMenuContent align="end" className="w-48">
                               <DropdownMenuItem asChild>
-                                <Link href={`${ROUTES.adminEmployees}/${employee.id}`}>
+                                <Link href={`${ROUTES.adminStaff}/${employee.id}`}>
                                   <Eye className="size-4" />
                                   View profile
                                 </Link>

@@ -48,7 +48,7 @@ export const ADMIN_NAV: NavItem[] = [
   // One name for one screen. It lists employees for an administrator and both
   // populations for the super admin, but which rows you are shown is a
   // permission, not a different place to be.
-  { href: ROUTES.adminEmployees, label: "Staff", icon: Users, group: "Manage" },
+  { href: ROUTES.adminStaff, label: "Staff", icon: Users, group: "Manage" },
   { href: ROUTES.adminAttendance, label: "Attendance", icon: MapPin, group: "Manage" },
   // Both admin roles, sitting under Manage rather than Personal: it answers
   // about the workforce, not about the administrator asking. The employee

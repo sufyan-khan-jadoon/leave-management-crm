@@ -9,7 +9,7 @@ import { ROLE, isSuperAdminRole } from "@/lib/enums";
 
 export const metadata: Metadata = { title: "Staff" };
 
-export default async function AdminEmployeesPage() {
+export default async function AdminStaffPage() {
   const session = await auth();
 
   // The layout has already established that this is an administrator. Only the

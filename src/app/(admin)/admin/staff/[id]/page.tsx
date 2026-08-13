@@ -61,9 +61,9 @@ export default async function AdminEmployeeDetailPage({ params }: { params: Prom
         description={`${employee.position ?? "No position"} · ${employee.department ?? "No department"}`}
         actions={
           <Button variant="outline" asChild>
-            <Link href={ROUTES.adminEmployees}>
+            <Link href={ROUTES.adminStaff}>
               <ArrowLeft className="size-4" />
-              Back to employees
+              Back to staff
             </Link>
           </Button>
         }

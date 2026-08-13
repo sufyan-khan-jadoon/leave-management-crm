@@ -86,7 +86,7 @@ export function AdminDashboard({
     </div>
   ) : (
     <Button variant="outline" asChild>
-      <Link href={ROUTES.adminEmployees}>
+      <Link href={ROUTES.adminStaff}>
         <Users className="size-4" />
         Employees
       </Link>
