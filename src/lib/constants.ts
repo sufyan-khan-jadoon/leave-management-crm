@@ -44,6 +44,24 @@ export const HOLIDAY_NOTICE_HOUR = 12;
 /** Enough for "Company retreat — Karachi office only", short of an essay. */
 export const MAX_HOLIDAY_REASON_LENGTH = 120;
 
+/**
+ * How long past the cutoff a delegated administrator may still record somebody
+ * present, in minutes — the **bounds**, not the value. The value lives in
+ * `AttendancePolicy.hrMarkWindowMinutes`, because the whole point of the feature
+ * is that the super admin sets it.
+ *
+ * Zero is permitted and means **no window past the deadline**: recording stays
+ * possible right up to the cutoff and stops the instant it falls. That is the
+ * tightest real setting rather than a switch that turns the feature off, which
+ * is why the floor is not 1.
+ *
+ * The ceiling is four hours — long enough for any plausible grace period, short
+ * enough that a slipped digit is refused rather than quietly turning twenty
+ * minutes into a window that never closes.
+ */
+export const MIN_HR_MARK_WINDOW_MINUTES = 0;
+export const MAX_HR_MARK_WINDOW_MINUTES = 240;
+
 /** A subject line long enough to say something, short enough not to be truncated. */
 export const MAX_EMAIL_SUBJECT_LENGTH = 150;
 

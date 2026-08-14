@@ -1,5 +1,7 @@
 import { handleRoute, ok, parseQuery } from "@/lib/api";
+import { hrMarkWindowExpiresAt, isWithinHrMarkWindow } from "@/lib/attendance-policy";
 import { requireAdmin } from "@/lib/auth/guards";
+import { isSuperAdminRole } from "@/lib/enums";
 import { serializeAttendance } from "@/lib/serialize";
 import { attendanceService } from "@/services/attendance.service";
 import { attendancePolicyService } from "@/services/attendance-policy.service";
@@ -53,6 +55,39 @@ export async function GET(request: Request) {
       // The far edge of what may be recorded, so the dialog can refuse an
       // impossible arrival before it is submitted rather than after.
       closingMinutes: policy.closingMinutes,
+      /**
+       * How long a delegated administrator may still record this date, and when
+       * that runs out.
+       *
+       * `expiresAt` is an **instant computed on the server** from the date's own
+       * cutoff, never a duration for the browser to start counting from. That is
+       * what makes a refresh, a second tab and a fresh sign-in agree: they all
+       * receive the same moment rather than each starting a timer of their own.
+       *
+       * `serverTime` rides along so the countdown can measure the browser's
+       * clock against the server's once and correct for the difference. A
+       * machine set an hour fast would otherwise show a window that had already
+       * closed — or worse, one that had not. Neither figure authorises anything:
+       * `markPresentFor` asks `isWithinHrMarkWindow` again on every request.
+       *
+       * The super admin sees `active: true` regardless, because the window does
+       * not bind them — the screen would otherwise hide a button the server
+       * would have honoured.
+       */
+      hrMarkWindow: {
+        minutes: policy.hrMarkWindowMinutes,
+        expiresAt: hrMarkWindowExpiresAt(
+          roster.date,
+          policy.cutoffMinutes,
+          policy.hrMarkWindowMinutes,
+        ).toISOString(),
+        active:
+          isSuperAdminRole(user.role) ||
+          isWithinHrMarkWindow(roster.date, policy.cutoffMinutes, policy.hrMarkWindowMinutes),
+        /** Whether this viewer is bound by it at all, so the UI can say why. */
+        boundByWindow: !isSuperAdminRole(user.role),
+      },
+      serverTime: new Date().toISOString(),
       summary: roster.summary,
       items: roster.items.map((entry) => ({
         employee: entry.employee,

@@ -142,7 +142,10 @@ export const emailService = {
     return send(to, leaveApprovedTemplate(name, dates, reason, remaining));
   },
 
-  sendOfficeClosed(to: string, options: { name: string; weekday: string; date: Date; reason: string }) {
+  sendOfficeClosed(
+    to: string,
+    options: { name: string; weekday: string; date: Date; reason: string; closesToday: boolean },
+  ) {
     return send(to, officeClosedTemplate(options));
   },
 

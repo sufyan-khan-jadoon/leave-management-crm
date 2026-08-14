@@ -1,4 +1,5 @@
-import { isTimeOfDay } from "@/lib/attendance-policy";
+import { isHrMarkWindow, isTimeOfDay } from "@/lib/attendance-policy";
+import { MAX_HR_MARK_WINDOW_MINUTES, MIN_HR_MARK_WINDOW_MINUTES } from "@/lib/constants";
 import { ValidationError } from "@/lib/errors";
 import {
   attendancePolicyRepository,
@@ -36,6 +37,16 @@ export const attendancePolicyService = {
       throw new ValidationError("Choose a time of day.", { closingMinutes: "Enter a time between 00:00 and 23:59." });
     }
 
+    // Belt and braces over the schema for the same reason the cutoff is: this
+    // one decides whether a granted administrator may correct a day at all, and
+    // a value out of range would not fail loudly — it would quietly refuse every
+    // correction while the panel went on showing a number.
+    if (input.hrMarkWindowMinutes !== undefined && !isHrMarkWindow(input.hrMarkWindowMinutes)) {
+      throw new ValidationError("Check the mark-present window.", {
+        hrMarkWindowMinutes: `Enter a whole number of minutes between ${MIN_HR_MARK_WINDOW_MINUTES} and ${MAX_HR_MARK_WINDOW_MINUTES}.`,
+      });
+    }
+
     // Re-checked here rather than left to the schema, because this is the pair's
     // one invariant and every screen quotes it as a sentence: "9:00 AM to 8:00
     // AM" is not a day, and nothing downstream would notice it was reading one.
@@ -56,6 +67,9 @@ export const attendancePolicyService = {
         ...(input.cutoffMinutes !== undefined ? { cutoffMinutes: input.cutoffMinutes } : {}),
         ...(input.openingMinutes !== undefined ? { openingMinutes: input.openingMinutes } : {}),
         ...(input.closingMinutes !== undefined ? { closingMinutes: input.closingMinutes } : {}),
+        ...(input.hrMarkWindowMinutes !== undefined
+          ? { hrMarkWindowMinutes: input.hrMarkWindowMinutes }
+          : {}),
         ...(input.warningsEnabled !== undefined ? { warningsEnabled: input.warningsEnabled } : {}),
       },
       actorId,

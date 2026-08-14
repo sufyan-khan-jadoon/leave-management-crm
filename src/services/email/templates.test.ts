@@ -68,6 +68,14 @@ const templates = {
     weekday: "Friday",
     date: day("2026-08-14"),
     reason: "Race Condition Day",
+    closesToday: false,
+  }),
+  officeClosedToday: officeClosedTemplate({
+    name: "System Administrator",
+    weekday: "Friday",
+    date: day("2026-08-14"),
+    reason: "Race Condition Day",
+    closesToday: true,
   }),
   attendanceWarningFirst: attendanceWarningTemplate({
     name: "Ayesha Khan",
@@ -212,9 +220,48 @@ describe("user-supplied values are still escaped", () => {
       weekday: "Friday",
       date: day("2026-08-14"),
       reason: '<img src=x onerror="alert(1)">',
+      closesToday: false,
     });
 
     expect(template.html).not.toContain("<img");
     expect(template.html).toContain("&lt;img");
+  });
+});
+
+/**
+ * The one piece of prose here that is a rule rather than wording.
+ *
+ * A closure declared for the day it names is announced immediately, which only
+ * beats saying nothing if the message says "today". Announcing a same-day
+ * closure with the day-before letter is exactly the failure `planHolidayNotice`
+ * used to avoid by skipping the announcement altogether, so the wording is
+ * pinned rather than left to review.
+ */
+describe("the office-closed announcement words itself for the day it is sent", () => {
+  it("says today, and never tomorrow, for a same-day closure", () => {
+    const { subject, html, text } = templates.officeClosedToday;
+
+    expect(subject).toBe("Office closed today — Race Condition Day");
+    expect(text).toContain("the office is closed today");
+
+    // The assertion that matters: a stray "tomorrow" anywhere in a same-day
+    // announcement sends the whole company in on the wrong day.
+    for (const part of [subject, html, text]) expect(part).not.toContain("tomorrow");
+  });
+
+  it("keeps the day-before wording for a closure still to come", () => {
+    const { subject, text } = templates.officeClosed;
+
+    expect(subject).toBe("Office closed tomorrow — Race Condition Day");
+    expect(text).toContain("the office will be closed tomorrow");
+    expect(text).not.toContain("closed today");
+  });
+
+  it("names the same date either way", () => {
+    // Formatted in UTC, like every other calendar date here: a closure is a day,
+    // not an instant, so it must not shift with the reader's zone.
+    for (const template of [templates.officeClosed, templates.officeClosedToday]) {
+      expect(template.text).toContain("Friday, August 14, 2026");
+    }
   });
 });

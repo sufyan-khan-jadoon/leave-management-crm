@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { MAX_HR_MARK_WINDOW_MINUTES, MIN_HR_MARK_WINDOW_MINUTES } from "@/lib/constants";
 import { calendarDateSchema } from "@/validations/holiday.schema";
 
 /**
@@ -167,6 +168,19 @@ export const updateAttendancePolicySchema = z
     cutoff: timeOfDay("Enter a time between 00:00 and 23:59").optional(),
     opening: timeOfDay("Enter an opening time between 00:00 and 23:59").optional(),
     closing: timeOfDay("Enter a closing time between 00:00 and 23:59").optional(),
+    /**
+     * Minutes, not a time of day — this is a duration measured from the cutoff,
+     * so "HH:MM" would be the wrong shape and would cap it at midnight for no
+     * reason. Bounded here and re-checked in the service, exactly as the cutoff
+     * is: a window out of range refuses every correction silently rather than
+     * failing where somebody would see it.
+     */
+    hrMarkWindowMinutes: z.coerce
+      .number()
+      .int("Enter a whole number of minutes.")
+      .min(MIN_HR_MARK_WINDOW_MINUTES, "The window cannot be negative.")
+      .max(MAX_HR_MARK_WINDOW_MINUTES, `Keep the window to ${MAX_HR_MARK_WINDOW_MINUTES} minutes or less.`)
+      .optional(),
     warningsEnabled: z.boolean().optional(),
   })
   .refine(
@@ -174,6 +188,7 @@ export const updateAttendancePolicySchema = z
       value.cutoff !== undefined ||
       value.opening !== undefined ||
       value.closing !== undefined ||
+      value.hrMarkWindowMinutes !== undefined ||
       value.warningsEnabled !== undefined,
     "Change something first.",
   )

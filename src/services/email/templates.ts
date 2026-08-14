@@ -348,19 +348,25 @@ export function leaveApprovedTemplate(name: string, dates: Date[], reason: strin
 // by email afterwards, and no administrator can decline one that did fit.
 
 /**
- * The office-closed announcement, sent the day before to everyone on the books.
+ * The office-closed announcement, sent to everyone on the books.
  *
- * It says "tomorrow" without hedging because it is only ever sent the day
- * before — an announcement whose moment has passed is skipped rather than sent
- * late, so this wording cannot go out on the day itself. It states the two
- * things people would otherwise write in to ask: that no attendance is expected,
- * and that the day does not come out of their leave.
+ * `closesToday` picks the wording, and it is a parameter rather than an
+ * assumption because there are two moments this can go out: noon the day before,
+ * which is the ordinary path, and the instant a closure is declared for the day
+ * it names. Announcing a same-day closure with "tomorrow" would be worse than
+ * saying nothing, which is why this used to be skipped altogether; the caller
+ * settles the fact from the row and the sentence follows it.
+ *
+ * Either way it states the two things people would otherwise write in to ask:
+ * that no attendance is expected, and that the day does not come out of their
+ * leave.
  */
 export function officeClosedTemplate(options: {
   name: string;
   weekday: string;
   date: Date;
   reason: string;
+  closesToday: boolean;
 }): Template {
   const longDate = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -370,12 +376,16 @@ export function officeClosedTemplate(options: {
     timeZone: "UTC",
   }).format(options.date);
 
+  const when = options.closesToday ? "today" : "tomorrow";
+  // "will be closed today" reads as a forecast about a day already underway.
+  const phrase = options.closesToday ? "the office is closed today" : "the office will be closed tomorrow";
+
   return {
-    subject: `Office closed tomorrow — ${options.reason}`,
+    subject: `Office closed ${when} — ${options.reason}`,
     html: layout(
-      "The office is closed tomorrow",
+      `The office is closed ${when}`,
       `<p>Hello ${esc(options.name)},</p>
-       <p>Please be informed that the office will be closed tomorrow, <strong>${esc(longDate)}</strong>, for ${esc(options.reason)}.</p>
+       <p>Please be informed that ${phrase}, <strong>${esc(longDate)}</strong>, for ${esc(options.reason)}.</p>
        ${detailTable([
          ["Day", options.weekday],
          ["Date", longDate],
@@ -385,7 +395,7 @@ export function officeClosedTemplate(options: {
        <p>Enjoy the holiday!</p>
        <p style="color:${C.muted};">Regards,<br />${BRAND}</p>`,
     ),
-    text: `Hello ${options.name},\n\nPlease be informed that the office will be closed tomorrow, ${longDate}, for ${options.reason}.\n\nNo attendance is required on this day, and it will not be counted as leave or absence.\n\nEnjoy the holiday!\n\nRegards,\n${BRAND}`,
+    text: `Hello ${options.name},\n\nPlease be informed that ${phrase}, ${longDate}, for ${options.reason}.\n\nNo attendance is required on this day, and it will not be counted as leave or absence.\n\nEnjoy the holiday!\n\nRegards,\n${BRAND}`,
   };
 }
 

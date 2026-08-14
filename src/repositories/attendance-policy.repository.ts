@@ -16,6 +16,7 @@ export const attendancePolicySelect = {
   cutoffMinutes: true,
   openingMinutes: true,
   closingMinutes: true,
+  hrMarkWindowMinutes: true,
   workingDays: true,
   warningsEnabled: true,
   updatedAt: true,
@@ -48,6 +49,7 @@ export const attendancePolicyRepository = {
       cutoffMinutes?: number;
       openingMinutes?: number;
       closingMinutes?: number;
+      hrMarkWindowMinutes?: number;
       workingDays?: number[];
       warningsEnabled?: boolean;
     },

@@ -62,13 +62,15 @@ enum AttendanceStatus {
   PRESENT
 }
 
-/// How far the "office is closed tomorrow" announcement has got.
+/// How far the office-closed announcement has got.
 ///
-/// SCHEDULED and SENT are the ordinary path. SKIPPED is for a closure announced
-/// too late to warn anyone the day before — the date still closes the office,
-/// there is simply nobody left to tell in advance. CANCELLED marks an
-/// announcement called off because the closure moved or was withdrawn, so a
-/// withdrawn row can never be picked up by a later sweep.
+/// SCHEDULED and SENT are the ordinary path, and a closure declared for *today*
+/// reaches SENT in the same request that created it — the letter says "closed
+/// today" rather than "closed tomorrow", so there is a real message to send.
+/// SKIPPED is for a closure whose day is already over by the time anything tries
+/// to announce it, which now only a sweep that has been down can produce.
+/// CANCELLED marks an announcement called off because the closure moved or was
+/// withdrawn, so a withdrawn row can never be picked up by a later sweep.
 enum HolidayNotice {
   SCHEDULED
   SENT
@@ -400,9 +402,11 @@ model Holiday {
   date   DateTime @unique @db.Date
   reason String
 
-  /// Where the "office closed tomorrow" announcement has got to, and when it is
-  /// due. `noticeDueAt` is an instant, not a date: it is noon in the company's
-  /// timezone on the day before, which is a different moment in UTC.
+  /// Where the office-closed announcement has got to, and when it is due.
+  /// `noticeDueAt` is an instant, not a date: it is noon in the company's
+  /// timezone on the day before, which is a different moment in UTC. For a
+  /// closure declared for today it is the moment of declaring, since there is no
+  /// day before left to wait for.
   notice     HolidayNotice @default(SCHEDULED)
   noticeDueAt DateTime?
   noticeSentAt DateTime?
@@ -461,6 +465,26 @@ model AttendancePolicy {
   /// below: a company opening at 08:30 and closing at 16:00 configures that.
   openingMinutes Int @default(540)
   closingMinutes Int @default(1020)
+
+  /// How long past the cutoff a **delegated** administrator may still record
+  /// somebody present, in minutes.
+  ///
+  /// The expiry is computed as `cutoff + this` on the company's clock and is
+  /// never stored on an attendance row, because it is a fact about the *date*
+  /// rather than about anybody's attendance — see `hrMarkWindowExpiresAt`. That
+  /// is what makes a refreshed page, a new tab and a fresh sign-in all agree,
+  /// and it is why raising this tomorrow cannot reopen yesterday: yesterday's
+  /// cutoff has gone regardless of what the number says today.
+  ///
+  /// It binds `canMarkAttendance` and **not** the super admin, deliberately. The
+  /// grant is the thing being time-boxed; somebody has to remain able to correct
+  /// a record found wrong next week, or the feature that put this column here
+  /// would have no counterpart. `assertMayCorrect` still applies to both.
+  ///
+  /// 20 is a starting value, not an assumption, exactly as 9-to-5 and
+  /// `[1,2,3,4,5]` are. Zero is legal and means the permission ends the instant
+  /// the deadline falls.
+  hrMarkWindowMinutes Int @default(20)
 
   /// ISO weekday numbers attendance is expected on — 1 = Monday, 7 = Sunday.
   ///

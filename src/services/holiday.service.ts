@@ -78,10 +78,13 @@ function assertNotPast(date: Date): void {
  * A closure that could not be announced is still a closure.
  */
 async function announce(holiday: HolidayDto): Promise<"sent" | "skipped" | "failed" | "claimed-elsewhere"> {
+  const today = todayUtc().getTime();
+
   // Re-checked at the moment of sending, not only when it was scheduled: a
-  // sweep that has been down for a day would otherwise mail "closed tomorrow"
-  // about a day that is already here.
-  if (holiday.date.getTime() <= todayUtc().getTime()) {
+  // sweep that has been down for a day would otherwise mail about a closure
+  // that is already over. A closure that is *today* is still worth announcing,
+  // and says so in its own words — see `planHolidayNotice`.
+  if (holiday.date.getTime() < today) {
     if (!(await holidayRepository.claimNotice(holiday.id, HolidayNotice.SKIPPED))) return "claimed-elsewhere";
     return "skipped";
   }
@@ -90,6 +93,10 @@ async function announce(holiday: HolidayDto): Promise<"sent" | "skipped" | "fail
 
   const recipients = await employeeRepository.listNotifiable();
   const weekday = utcWeekday(holiday.date);
+  // Decided here, from the row, rather than passed down from whoever called:
+  // the same closure is announced by a creation and by the sweep, and the two
+  // must not be able to word it differently.
+  const closesToday = holiday.date.getTime() === today;
 
   const results = await Promise.all(
     recipients.map((person) =>
@@ -98,6 +105,7 @@ async function announce(holiday: HolidayDto): Promise<"sent" | "skipped" | "fail
         weekday,
         date: holiday.date,
         reason: holiday.reason,
+        closesToday,
       }),
     ),
   );
@@ -132,11 +140,14 @@ export const holidayService = {
    * about telling people.
    *
    * The announcement is decided at creation rather than left for the sweep to
-   * work out, because the interesting case is the one where it is already too
+   * work out, because the interesting cases are the ones where it is already too
    * late to schedule anything: a closure declared at 3pm for tomorrow has missed
-   * its noon slot, and waiting for the next sweep would mean announcing it after
-   * the office had already closed. That case sends immediately, in the same
-   * request.
+   * its noon slot, and one declared for today never had a slot at all. Waiting
+   * for the next sweep would mean announcing either of them after the office had
+   * already closed. Both send immediately, in the same request.
+   *
+   * `assertNotPast` runs first, so `plan` can only ever be `send` or `schedule`
+   * here — the `skip` arms below are the type's, not a case this can reach.
    */
   async create(actor: HolidayActor, input: CreateHolidayInput): Promise<HolidayDto> {
     await assertMayManage(actor);

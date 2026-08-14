@@ -1,11 +1,19 @@
 import type { Role } from "@prisma/client";
 
-import { friendlyTimeLabel, hasCutoffPassed, isAfterClosing } from "@/lib/attendance-policy";
+import {
+  describeHrMarkWindow,
+  friendlyTimeLabel,
+  hasCutoffPassed,
+  hrMarkWindowExpiresAt,
+  isAfterClosing,
+  isWithinHrMarkWindow,
+} from "@/lib/attendance-policy";
 import {
   addUtcDays,
   appZoneInstant,
   appZoneMinutesOfDay,
   endOfUtcMonth,
+  formatDateTime,
   startOfUtcMonth,
   toIsoDate,
   todayUtc,
@@ -670,6 +678,45 @@ export const attendanceService = {
     const refusal = refusalFor(entry.status, input.date);
     if (refusal) throw new ConflictError(refusal);
 
+    const policy = await attendancePolicyService.get();
+
+    // **The window, judged on the server's own clock and nothing else.**
+    //
+    // This is the whole of the authorisation: the countdown on the screen is a
+    // courtesy, and a request arriving from a stale tab, a hand-written `curl`
+    // or a browser whose clock has been wound back is refused here regardless of
+    // what any of them believed. `hrMarkWindowExpiresAt` derives the deadline
+    // from the *date's* cutoff, so there is no session, no timer and no stored
+    // expiry to go stale — the same answer comes back however the question
+    // arrives.
+    //
+    // The super admin is exempt, deliberately. The grant is what is being
+    // time-boxed; somebody has to stay able to correct a record found wrong next
+    // month, or this column would have removed the only means of fixing the
+    // register with nothing put in its place. `assertMayCorrect` above still
+    // binds both, so the owner gains no reach over accounts they did not have.
+    if (
+      !isSuperAdminRole(actor.role) &&
+      !isWithinHrMarkWindow(input.date, policy.cutoffMinutes, policy.hrMarkWindowMinutes)
+    ) {
+      const expiredAt = hrMarkWindowExpiresAt(input.date, policy.cutoffMinutes, policy.hrMarkWindowMinutes);
+
+      // The zero case gets its own clause rather than being fed through
+      // `describeHrMarkWindow`, which returns a phrase ("no time past the
+      // cutoff") that reads as nonsense once "after the … cutoff" is appended
+      // to it. Both halves name the configured numbers, because the two ways to
+      // arrive here are a genuinely late request and a window set shorter than
+      // anybody realised.
+      const rule =
+        policy.hrMarkWindowMinutes === 0
+          ? `No time is allowed past the ${friendlyTimeLabel(policy.cutoffMinutes)} cutoff.`
+          : `It runs for ${describeHrMarkWindow(policy.hrMarkWindowMinutes)} after the ${friendlyTimeLabel(policy.cutoffMinutes)} cutoff.`;
+
+      throw new ForbiddenError(
+        `The window for recording attendance on ${toIsoDate(input.date)} closed at ${formatDateTime(expiredAt)}. ${rule} Ask the super administrator, who is not bound by it.`,
+      );
+    }
+
     // The arrival time is paired with the chosen date on the company's clock,
     // never on the server's — a UTC server would otherwise read "17:15" as an
     // instant five hours off, and every lateness figure downstream with it.
@@ -686,8 +733,6 @@ export const attendanceService = {
         arrivalTime: "Enter the time they actually arrived.",
       });
     }
-
-    const policy = await attendancePolicyService.get();
 
     // Nobody can have arrived at an office that had shut. Applied to a typed
     // time and never to a geofenced check-in — see `isAfterClosing` for why the

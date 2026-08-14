@@ -71,18 +71,53 @@ describe("planHolidayNotice", () => {
     expect(plan.action !== "skip" && plan.dueAt.toISOString()).toBe("2026-08-16T07:00:00.000Z");
   });
 
-  it("skips the announcement when the day off is today", () => {
-    // Scenario 4. Nobody can usefully be warned about a day already underway.
+  it("announces immediately when the day off is today", () => {
+    // Scenario 4. Nobody can be warned in *advance* about a day already underway,
+    // but "the office is closed today" is still worth sending — and is what the
+    // template says. This is the case that used to be skipped, leaving a closure
+    // declared for today reading "Not announced" and nobody told at all.
     freeze("2026-08-17T05:00:00.000Z");
 
     expect(planHolidayNotice(day("2026-08-17"))).toEqual({
-      action: "skip",
-      reason: "starts-today-or-earlier",
+      action: "send",
+      dueAt: new Date("2026-08-17T05:00:00.000Z"),
     });
+  });
+
+  it("dates today's announcement now, not at a noon that has already gone", () => {
+    // Storing noon-the-day-before would write a due time into the row that had
+    // already passed when the row was written.
+    freeze("2026-08-17T05:00:00.000Z");
+
+    const plan = planHolidayNotice(day("2026-08-17"));
+
+    expect(plan.action !== "skip" && plan.dueAt.toISOString()).toBe("2026-08-17T05:00:00.000Z");
+    expect(noticeDueAt(day("2026-08-17")).toISOString()).toBe("2026-08-16T07:00:00.000Z");
   });
 
   it("skips a date in the past", () => {
     freeze("2026-08-20T05:00:00.000Z");
+
+    expect(planHolidayNotice(day("2026-08-17"))).toEqual({
+      action: "skip",
+      reason: "already-passed",
+    });
+  });
+
+  it("still announces today's closure late in the evening", () => {
+    // 23:00 Karachi on the 17th is 18:00 UTC on the 17th. The day is nearly over
+    // but not over, so this is a send rather than a skip — the boundary is
+    // Karachi's midnight, not the server's.
+    freeze("2026-08-17T18:00:00.000Z");
+
+    expect(planHolidayNotice(day("2026-08-17")).action).toBe("send");
+  });
+
+  it("skips today's closure once Karachi has rolled past midnight", () => {
+    // 00:30 on the 18th in Karachi is 19:30 on the *17th* in UTC. Reading the
+    // server's UTC date would still call the 17th "today" and announce a closure
+    // that ended half an hour ago.
+    freeze("2026-08-17T19:30:00.000Z");
 
     expect(planHolidayNotice(day("2026-08-17")).action).toBe("skip");
   });
@@ -112,11 +147,15 @@ describe("planHolidayNotice", () => {
 
   it("treats the small hours in Karachi as today, not yesterday", () => {
     // 02:00 on the 17th in Karachi is 21:00 on the *16th* in UTC. The office
-    // shuts on the 17th, so this is "today" and must skip. Reading the server's
-    // UTC date would call it tomorrow and cheerfully send "closed tomorrow"
-    // hours after the office had already shut.
+    // shuts on the 17th, so this is *today* — and the giveaway is `dueAt`, since
+    // both branches say "send". Reading the server's UTC date would call it
+    // tomorrow, take the noon-has-passed branch, and cheerfully announce "closed
+    // tomorrow" about a day that had already begun.
     freeze("2026-08-16T21:00:00.000Z");
 
-    expect(planHolidayNotice(day("2026-08-17")).action).toBe("skip");
+    const plan = planHolidayNotice(day("2026-08-17"));
+
+    expect(plan.action).toBe("send");
+    expect(plan.action !== "skip" && plan.dueAt.toISOString()).toBe("2026-08-16T21:00:00.000Z");
   });
 });

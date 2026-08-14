@@ -1,0 +1,24 @@
+-- How long past the cutoff a delegated administrator may still record somebody
+-- present, in minutes.
+--
+-- One column on the existing singleton rather than a table: it is one number of
+-- configuration, and the policy row already holds the cutoff it is measured
+-- from. Nothing is added to `attendance` — the expiry is a fact about a *date*,
+-- derived as `cutoff + this` on the company's clock, so storing it per row would
+-- be a second copy of an answer that can already be computed, and would fall out
+-- of step with the cutoff the moment either moved.
+--
+-- Existing data is untouched. The column is added with a default, so every
+-- attendance row, warning and policy value in production survives this exactly
+-- as it was; the only change is that from here on a granted administrator is
+-- time-boxed where before they were not.
+--
+-- The default is 20 minutes, matching the value this feature was specified
+-- against. It is a starting value rather than an assumption, and the super admin
+-- changes it from the Access panel. Note it takes effect immediately on deploy:
+-- an administrator holding `canMarkAttendance` who could previously correct any
+-- past day can, after this, only record somebody present up to 20 minutes past
+-- that day's cutoff. The super admin is deliberately exempt, so a record found
+-- wrong later is still correctable by somebody.
+ALTER TABLE "public"."attendance_policy"
+  ADD COLUMN "hrMarkWindowMinutes" INTEGER NOT NULL DEFAULT 20;

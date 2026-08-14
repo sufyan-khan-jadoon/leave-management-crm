@@ -14,16 +14,21 @@ import { describe, expect, it } from "vitest";
 import {
   countConsecutiveMissed,
   cutoffInstant,
+  describeHrMarkWindow,
   describeOfficeHours,
   friendlyTimeLabel,
   hasCutoffPassed,
+  hrMarkWindowExpiresAt,
   isAfterClosing,
+  isHrMarkWindow,
   isTimeOfDay,
+  isWithinHrMarkWindow,
   MINUTES_IN_DAY,
   minutesToTimeLabel,
   ordinal,
   timeLabelToMinutes,
 } from "@/lib/attendance-policy";
+import { MAX_HR_MARK_WINDOW_MINUTES } from "@/lib/constants";
 
 const FIVE_PM = 17 * 60;
 
@@ -227,5 +232,130 @@ describe("ordinal", () => {
     expect(ordinal(12)).toBe("12th");
     expect(ordinal(13)).toBe("13th");
     expect(ordinal(21)).toBe("21st");
+  });
+});
+
+/**
+ * The window a delegated administrator has to record somebody present.
+ *
+ * Every instant below is UTC and the cutoff is 5:00 PM Karachi = 12:00 UTC, for
+ * the reason the file header gives: a rule that started reading the server's
+ * local clock would keep passing on a laptop set to Pakistan time and would be
+ * five hours wrong in production. These run under `TZ=America/New_York` in CI.
+ */
+describe("hrMarkWindowExpiresAt", () => {
+  it("is the cutoff plus the window, on the company's clock", () => {
+    // 5:00 PM Karachi + 20 min = 5:20 PM Karachi = 12:20 UTC.
+    expect(hrMarkWindowExpiresAt(day("2026-08-14"), FIVE_PM, 20).toISOString()).toBe(
+      "2026-08-14T12:20:00.000Z",
+    );
+  });
+
+  it("puts a zero window exactly on the cutoff", () => {
+    expect(hrMarkWindowExpiresAt(day("2026-08-14"), FIVE_PM, 0).toISOString()).toBe(
+      "2026-08-14T12:00:00.000Z",
+    );
+  });
+
+  it("carries past midnight rather than wrapping back to the same morning", () => {
+    // A cutoff of 11:50 PM Karachi on the 14th is 18:50 UTC on the 14th; thirty
+    // minutes later is 19:20 UTC, which is 00:20 on the 15th in Karachi. Adding
+    // to the *instant* is what gets that right — adding to the minutes-of-day
+    // and re-anchoring would have wrapped it to 00:20 on the 14th, sixteen
+    // hours before the window was supposed to open.
+    expect(hrMarkWindowExpiresAt(day("2026-08-14"), 23 * 60 + 50, 30).toISOString()).toBe(
+      "2026-08-14T19:20:00.000Z",
+    );
+  });
+});
+
+describe("isWithinHrMarkWindow", () => {
+  const date = day("2026-08-14");
+  /** 5:00 PM Karachi on the 14th, in UTC. */
+  const at = (utc: string) => new Date(`2026-08-14T${utc}:00.000Z`);
+
+  it("allows a mark inside the window — cutoff 5:00 PM, window 20, now 5:10 PM", () => {
+    // Test 1 of the specification. 5:10 PM Karachi = 12:10 UTC.
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 20, at("12:10"))).toBe(true);
+  });
+
+  it("refuses a mark after the window — now 5:21 PM", () => {
+    // Test 2. 12:21 UTC.
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 20, at("12:21"))).toBe(false);
+  });
+
+  it("treats the exact expiry as closed, not as one last minute", () => {
+    // Test 3. The boundary is strict: at 5:20 PM the permission is over.
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 20, at("12:20"))).toBe(false);
+    // And one millisecond before it is not.
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 20, new Date(at("12:20").getTime() - 1))).toBe(true);
+  });
+
+  it("makes the duration actually configurable", () => {
+    // Test 4. The same instant is inside a 30-minute window and outside a
+    // 10-minute one, which is the whole claim the setting makes.
+    const quarterPast = at("12:15");
+
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 10, quarterPast)).toBe(false);
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 30, quarterPast)).toBe(true);
+
+    // And each closes at its own edge rather than at a shared one.
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 10, at("12:09"))).toBe(true);
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 30, at("12:29"))).toBe(true);
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 30, at("12:30"))).toBe(false);
+  });
+
+  it("is open before the cutoff, because the window is a far edge and not a slot", () => {
+    // The ordinary case: correcting a day while it is still running. A rule that
+    // only permitted marking *after* the deadline would refuse this for no
+    // reason anybody could act on.
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 20, at("06:00"))).toBe(true);
+  });
+
+  it("closes a zero window the instant the cutoff falls", () => {
+    // Documented meaning of 0: no time past the deadline, not "switched off".
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 0, at("11:59"))).toBe(true);
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 0, at("12:00"))).toBe(false);
+  });
+
+  it("refuses a date whose window closed on a previous day", () => {
+    // This is what stops the window being sat out by waiting until tomorrow and
+    // correcting yesterday. Same clock time, a day later.
+    expect(isWithinHrMarkWindow(day("2026-08-13"), FIVE_PM, 20, at("12:10"))).toBe(false);
+  });
+
+  it("is decided by the company's calendar day, not the server's", () => {
+    // 00:30 on the 15th in Karachi is 19:30 UTC on the *14th*. The 14th's window
+    // shut hours ago; a rule comparing UTC dates would still call it open.
+    expect(isWithinHrMarkWindow(date, FIVE_PM, 20, at("19:30"))).toBe(false);
+  });
+});
+
+describe("isHrMarkWindow", () => {
+  it("accepts the range the panel offers, zero included", () => {
+    for (const minutes of [0, 5, 10, 15, 20, 30, 60, MAX_HR_MARK_WINDOW_MINUTES]) {
+      expect(isHrMarkWindow(minutes)).toBe(true);
+    }
+  });
+
+  it("refuses negatives, fractions and anything past the ceiling", () => {
+    expect(isHrMarkWindow(-1)).toBe(false);
+    expect(isHrMarkWindow(20.5)).toBe(false);
+    expect(isHrMarkWindow(MAX_HR_MARK_WINDOW_MINUTES + 1)).toBe(false);
+    expect(isHrMarkWindow(Number.NaN)).toBe(false);
+  });
+});
+
+describe("describeHrMarkWindow", () => {
+  it("says what zero means rather than printing '0 minutes'", () => {
+    expect(describeHrMarkWindow(0)).toBe("no time past the cutoff");
+  });
+
+  it("reads naturally either side of an hour", () => {
+    expect(describeHrMarkWindow(1)).toBe("1 minute");
+    expect(describeHrMarkWindow(20)).toBe("20 minutes");
+    expect(describeHrMarkWindow(60)).toBe("1 hour");
+    expect(describeHrMarkWindow(90)).toBe("1 hour 30 minutes");
+    expect(describeHrMarkWindow(121)).toBe("2 hours 1 minute");
   });
 });

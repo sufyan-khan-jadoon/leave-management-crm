@@ -9,6 +9,7 @@
  * working week governs leave as well as attendance, so it outgrew this file and
  * lives in `working-days.ts` as the one rule both read.
  */
+import { MAX_HR_MARK_WINDOW_MINUTES, MIN_HR_MARK_WINDOW_MINUTES } from "@/lib/constants";
 import { appZoneInstant } from "@/lib/date";
 
 export const MINUTES_IN_DAY = 24 * 60;
@@ -77,6 +78,105 @@ export function cutoffInstant(day: Date, cutoffMinutes: number): Date {
 /** Whether today's deadline to mark attendance has already gone. */
 export function hasCutoffPassed(day: Date, cutoffMinutes: number, now: Date = new Date()): boolean {
   return cutoffInstant(day, cutoffMinutes).getTime() <= now.getTime();
+}
+
+/**
+ * The instant a delegated administrator stops being able to record somebody
+ * present for `day`.
+ *
+ * Derived from the day's own cutoff rather than from when anybody opened a
+ * screen, which is the whole security property: the deadline is a fact about the
+ * date, so refreshing the page, signing out and back in, or leaving a tab open
+ * overnight all arrive at the same answer. Nothing about it is stored, and
+ * nothing needs to be — `cutoffInstant` reads the company's clock through
+ * `appZoneInstant`, so a server in UTC computes the same moment a server in
+ * Karachi does.
+ *
+ * A window of zero puts the expiry exactly on the cutoff, which is coherent
+ * rather than degenerate: recording stays possible until the deadline and stops
+ * when it falls. See `MIN_HR_MARK_WINDOW_MINUTES`.
+ */
+export function hrMarkWindowExpiresAt(day: Date, cutoffMinutes: number, windowMinutes: number): Date {
+  return new Date(cutoffInstant(day, cutoffMinutes).getTime() + windowMinutes * 60_000);
+}
+
+/**
+ * Whether that window is still open.
+ *
+ * **Strictly before the expiry.** At exactly `cutoff + window` the permission is
+ * over — a boundary that "counts as inside" is one that has to be re-argued at
+ * every call site, and the configured expiry is more useful as a promise that
+ * nothing lands on it than as one more minute nobody asked for.
+ *
+ * Note what this deliberately does *not* ask: whether the cutoff has passed at
+ * all. Before the deadline the window is trivially open, which is right — the
+ * ordinary case is an administrator correcting a day while it is still running,
+ * and a rule that only permitted marking *after* the cutoff would refuse that
+ * for no reason. The window is a far edge, not a slot.
+ *
+ * A date in the past is refused for free: its cutoff, and therefore its expiry,
+ * is long gone. That is the point rather than a side effect — a window somebody
+ * could sit out by waiting until tomorrow and correcting yesterday would not be
+ * a window at all.
+ */
+export function isWithinHrMarkWindow(
+  day: Date,
+  cutoffMinutes: number,
+  windowMinutes: number,
+  now: Date = new Date(),
+): boolean {
+  return now.getTime() < hrMarkWindowExpiresAt(day, cutoffMinutes, windowMinutes).getTime();
+}
+
+/**
+ * Whether a stored window is a usable one.
+ *
+ * Asked by the policy service as well as the schema, for the reason the cutoff's
+ * own `isTimeOfDay` check is asked twice: a nonsensical value here would not
+ * fail loudly, it would quietly decide that nobody may correct anything.
+ */
+export function isHrMarkWindow(minutes: number): boolean {
+  return (
+    Number.isInteger(minutes) &&
+    minutes >= MIN_HR_MARK_WINDOW_MINUTES &&
+    minutes <= MAX_HR_MARK_WINDOW_MINUTES
+  );
+}
+
+/**
+ * "14:32" — a duration counting down, as a clock reads.
+ *
+ * Minutes and seconds even past an hour ("75:04" rather than "1:15:04"), because
+ * the thing being counted is a grace period bounded at four hours and the reader
+ * is watching it run out. A field that changes width when it crosses an hour
+ * makes the number jump about while somebody is watching it.
+ *
+ * Floors at zero rather than counting negatives: an expired window has no time
+ * left, and "-00:07" invites the reader to wonder whether it is still usable.
+ */
+export function formatWindowCountdown(remainingMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/**
+ * "20 minutes", "1 hour 30 minutes" — the window as a phrase.
+ *
+ * Its own wording rather than `describeLateness`: that one is an accusation
+ * about a person and ends in "late", and this is a duration of permission.
+ */
+export function describeHrMarkWindow(minutes: number): string {
+  if (minutes === 0) return "no time past the cutoff";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  const hourPart = `${hours} hour${hours === 1 ? "" : "s"}`;
+
+  return rest === 0 ? hourPart : `${hourPart} ${rest} minute${rest === 1 ? "" : "s"}`;
 }
 
 /**

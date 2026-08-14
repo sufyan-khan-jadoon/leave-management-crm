@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   CalendarOff,
@@ -44,7 +44,13 @@ import { useApiResource } from "@/hooks/use-api-resource";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { ApiClientError, apiClient, toQueryString } from "@/lib/api-client";
 import { ROUTES } from "@/lib/constants";
-import { friendlyTimeLabel, isAfterClosing, timeLabelToMinutes } from "@/lib/attendance-policy";
+import {
+  describeHrMarkWindow,
+  formatWindowCountdown,
+  friendlyTimeLabel,
+  isAfterClosing,
+  timeLabelToMinutes,
+} from "@/lib/attendance-policy";
 import { currentAppZoneTimeInput, formatDate, formatDateTime, toIsoDate, todayUtc } from "@/lib/date";
 import { formatDistance } from "@/lib/geo";
 import { describeLateness, minutesLate } from "@/lib/lateness";
@@ -137,6 +143,45 @@ export function AttendanceManager({
 
   const cutoffMinutes = data?.cutoffMinutes ?? null;
   const closingMinutes = data?.closingMinutes ?? null;
+  const hrWindow = data?.hrMarkWindow ?? null;
+
+  /**
+   * How far this browser's clock is from the server's, measured once per
+   * response.
+   *
+   * The countdown is drawn from `expiresAt`, which is an instant the server
+   * computed — so a machine set an hour fast would otherwise render a window
+   * that had already closed, or worse one that had not. Correcting for the
+   * difference keeps the number honest without ever making the browser the
+   * authority: the endpoint judges every request against its own clock, and this
+   * is only here so the figure on screen agrees with the answer that comes back.
+   */
+  const clockSkewMs = useMemo(
+    () => (data ? Date.now() - Date.parse(data.serverTime) : 0),
+    [data],
+  );
+
+  // Ticks only while there is a live window to count down, so an expired one —
+  // or a super admin, whom it does not bind — costs no timer at all.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!hrWindow?.boundByWindow) return;
+
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [hrWindow?.boundByWindow, hrWindow?.expiresAt]);
+
+  /**
+   * What remains of the window, and whether anything does.
+   *
+   * Derived from the expiry rather than from a duration started at page load,
+   * which is the whole of requirement: refreshing, reopening the page, signing
+   * out and back in, or having a second tab open all land on the same moment
+   * because they all read the same timestamp. Nothing here restarts.
+   */
+  const windowRemainingMs = hrWindow ? Date.parse(hrWindow.expiresAt) - (now - clockSkewMs) : 0;
+  const windowOpen = hrWindow ? !hrWindow.boundByWindow || windowRemainingMs > 0 : false;
 
   /**
    * What the typed arrival time would come to, shown while it is being typed.
@@ -390,6 +435,57 @@ export function AttendanceManager({
           )}
 
           {/*
+            The window this administrator has to record somebody present, and
+            what is left of it.
+
+            Shown only to somebody who may actually mark and is actually bound —
+            the super admin is not, and a viewer without the grant has no button
+            for it to be about. Everything in it is drawn from `expiresAt`, an
+            instant the server computed from the day's own cutoff, so it survives
+            a refresh and cannot be extended by a browser clock. It is rendering
+            and never permission: the endpoint asks again on every request.
+          */}
+          {data?.canMarkAttendance && hrWindow?.boundByWindow && (
+            <div
+              className={
+                windowOpen
+                  ? "glass-inset flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl p-3 text-sm"
+                  : "border-warning/40 bg-warning/10 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border p-3 text-sm"
+              }
+            >
+              <Clock
+                className={windowOpen ? "text-primary-ink size-4 shrink-0" : "text-warning-ink size-4 shrink-0"}
+                aria-hidden
+              />
+
+              {windowOpen ? (
+                <>
+                  <span className="font-medium">Mark-present window</span>
+                  <span
+                    className="text-primary-ink font-mono text-base font-semibold tabular-nums"
+                    // Read out as it changes would be unbearable; the sentence
+                    // beside it already says when the window closes.
+                    aria-live="off"
+                  >
+                    {formatWindowCountdown(windowRemainingMs)}
+                  </span>
+                  <span className="text-muted-foreground">
+                    left. Runs {describeHrMarkWindow(hrWindow.minutes)} past the{" "}
+                    {cutoffMinutes !== null ? friendlyTimeLabel(cutoffMinutes) : "day's"} cutoff, so it
+                    closes at {formatDateTime(hrWindow.expiresAt)}.
+                  </span>
+                </>
+              ) : (
+                <span className="text-warning-ink">
+                  The mark-present window closed at {formatDateTime(hrWindow.expiresAt)}. Nobody can be
+                  recorded present for {formatDate(data.date)} through this screen any more — ask the
+                  super administrator, who is not bound by the window.
+                </span>
+              )}
+            </div>
+          )}
+
+          {/*
             A day with nothing recorded against it, said out loud.
 
             The roster is built from the staff list, so it lists everybody
@@ -537,12 +633,18 @@ export function AttendanceManager({
                             <Button
                               variant="outline"
                               size="sm"
+                              // Rendered rather than removed once the window has
+                              // gone, and labelled with the reason. A button that
+                              // silently disappears reads as a permission lost or
+                              // a screen gone wrong; one that says why reads as a
+                              // deadline, which is what it is.
+                              disabled={!windowOpen}
                               onClick={() =>
                                 openMarkDialog({ id: entry.employee.id, name: entry.employee.name })
                               }
                             >
                               <UserCheck className="size-4" />
-                              Mark present
+                              {windowOpen ? "Mark present" : "Mark present — window expired"}
                             </Button>
                           )}
 
@@ -661,11 +763,23 @@ export function AttendanceManager({
           </div>
 
           <AlertDialogFooter>
+            {/*
+              Re-checked here as well as on the row, because the window can run
+              out while this dialog is open — somebody typing a reason at 5:19
+              submits at 5:21. The countdown above keeps ticking underneath it,
+              so this goes disabled at the moment the permission does, and the
+              server refuses it either way.
+            */}
+            {!windowOpen && (
+              <p className="text-warning-ink mr-auto text-sm">
+                The window closed while this was open.
+              </p>
+            )}
             <AlertDialogCancel disabled={working}>Cancel</AlertDialogCancel>
             <Button
               onClick={markPresent}
               loading={working}
-              disabled={!arrivalTime || arrivalVerdict?.blocked === true}
+              disabled={!arrivalTime || arrivalVerdict?.blocked === true || !windowOpen}
             >
               Mark present
             </Button>

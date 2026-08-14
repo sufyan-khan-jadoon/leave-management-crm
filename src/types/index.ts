@@ -126,6 +126,8 @@ export type AttendancePolicyView = {
   /** Published hours. Nothing judges a check-in by them — see the Prisma model. */
   openingMinutes: number;
   closingMinutes: number;
+  /** Minutes past the cutoff a delegated administrator may still record somebody present. */
+  hrMarkWindowMinutes: number;
   workingDays: number[];
   warningsEnabled: boolean;
   updatedAt: string;
@@ -167,6 +169,23 @@ export type AttendanceRosterView = {
   cutoffMinutes: number;
   /** The latest arrival that may be recorded by hand. */
   closingMinutes: number;
+  /**
+   * How long a delegated administrator may still record this date.
+   *
+   * `expiresAt` is an instant the **server** computed from the date's own
+   * cutoff — never a duration for the browser to start counting from, which is
+   * exactly what would restart on every refresh. The countdown is rendering
+   * only; `/api/admin/attendance/mark` re-checks the window on every request.
+   */
+  hrMarkWindow: {
+    minutes: number;
+    expiresAt: string;
+    active: boolean;
+    /** False for the super admin, whom the window does not bind. */
+    boundByWindow: boolean;
+  };
+  /** The server's clock when it answered, so the countdown can correct for the browser's. */
+  serverTime: string;
 };
 
 /** Who a custom email went to. Mirrors the Prisma enum. */

@@ -31,10 +31,17 @@ import { MAX_HOLIDAY_REASON_LENGTH } from "@/lib/constants";
 import { formatDate, formatDateTime, toIsoDate, todayUtc, utcWeekday } from "@/lib/date";
 import type { HolidayView } from "@/types";
 
-/** How each announcement state reads, and how loudly. */
+/**
+ * How each announcement state reads, and how loudly.
+ *
+ * Worded for the column they sit under — "Announcement" — rather than for the
+ * mechanism: what an administrator wants to know is whether the office has been
+ * told, not that an SMTP call returned. A closure declared for today reaches
+ * `SENT` in the same request, so it reads "Announced" the moment it appears.
+ */
 const NOTICE: Record<HolidayView["notice"], { label: string; tone: "brand" | "muted" | "warning" }> = {
   SCHEDULED: { label: "Scheduled", tone: "muted" },
-  SENT: { label: "Sent", tone: "brand" },
+  SENT: { label: "Announced", tone: "brand" },
   SKIPPED: { label: "Not announced", tone: "muted" },
   FAILED: { label: "Delivery failed", tone: "warning" },
   CANCELLED: { label: "Cancelled", tone: "muted" },
@@ -101,15 +108,23 @@ export function HolidayManager() {
         reason: form.reason.trim(),
       });
 
-      // Says which way it went, because "scheduled for tomorrow" and "everyone
-      // has just been emailed" are very different things to have done.
-      toast.success(
-        holiday.notice === "SENT"
-          ? "Office day off added — everyone has been emailed."
-          : holiday.notice === "SKIPPED"
-            ? "Office day off added. It starts too soon to announce in advance."
-            : `Office day off added — everyone is emailed on ${formatDate(holiday.noticeDueAt ?? holiday.date)}.`,
-      );
+      // Says which way it went, because "scheduled for Thursday" and "everyone
+      // has just been emailed" are very different things to have done. A closure
+      // declared for today comes back already announced.
+      if (holiday.notice === "FAILED") {
+        // Reported rather than thrown, matching the service: the office is
+        // closed on that date either way, and the announcement is the part that
+        // needs a person to notice.
+        toast.warning("Office day off added, but the announcement could not be emailed.");
+      } else {
+        toast.success(
+          holiday.notice === "SENT"
+            ? "Office day off added — everyone has been emailed."
+            : holiday.notice === "SCHEDULED"
+              ? `Office day off added — everyone is emailed on ${formatDate(holiday.noticeDueAt ?? holiday.date)}.`
+              : "Office day off added.",
+        );
+      }
 
       setForm(EMPTY_FORM);
       await load();
@@ -189,8 +204,8 @@ export function HolidayManager() {
               Close the office
             </CardTitle>
             <CardDescription>
-              Everyone active is emailed at noon the day before. Add one after that point and the email goes
-              out straight away.
+              Everyone active is emailed at noon the day before. Add one after that point — or for today —
+              and the email goes out straight away.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -377,10 +377,11 @@ Attendance is where that outranking actually happens — see below. `holidayRepo
 is the single question, and `attendance.service.ts` asks it *before* judging a position rather than
 alongside it: on a closed day there is no attendance to take, so there is nothing to decide.
 
-`SKIPPED` is not a failure: it means the closure was declared too late for a day-before warning to
-mean anything. The date still closes the office. There is deliberately no `PENDING` — every closure
-gets a real answer the moment it is created, so a "not looked at yet" value would be write-dead in
-exactly the way `LeaveStatus.PENDING` became.
+`SKIPPED` is not a failure: it means the day was already over by the time anything tried to announce
+it. The date still closes the office. Note it no longer covers a closure declared *for today* — that
+is announced on the spot, in its own words; see "Announcing it" below. There is deliberately no
+`PENDING` — every closure gets a real answer the moment it is created, so a "not looked at yet" value
+would be write-dead in exactly the way `LeaveStatus.PENDING` became.
 
 Closures that have already started cannot be edited or deleted. Deleting one would quietly bill
 people a day of leave for a day the office was shut, and the row is the record of why nobody came
@@ -395,6 +396,36 @@ UTC — a server in UTC reaches "noon" five hours after Karachi does, which is t
 telling people the afternoon before and telling them nothing at all. `holiday-notice.test.ts` pins
 this with UTC instants and passes under `TZ=America/New_York`; if it ever starts failing there,
 something has begun trusting the server's clock.
+
+**A closure declared for today is announced immediately, and this note used to say the opposite.**
+The old rule skipped anything starting today or earlier, on the reasoning that nobody can be warned
+in advance about a day already underway. That reasoning was sound about *advance warning* and wrong
+about the message: it left an administrator closing the office this morning with a row reading **Not
+announced** and not one person told, which is how it came to be reported as broken. The whole of the
+mistake was in the wording, not the timing — "closed tomorrow" is useless on the day, "closed today"
+is exactly what somebody who has not yet set off needs. So `officeClosedTemplate` takes `closesToday`
+and words itself from it, and the plan sends rather than skips.
+
+Only a day that is genuinely **over** skips now, which in practice only a sweep that has been down
+can produce. `announce` re-judges this from the row at the moment of sending — `< today` skips,
+`=== today` sends and says "today" — rather than trusting what the caller believed when the row was
+written, so a creation and a late sweep cannot word the same closure differently. Both comparisons go
+through `todayUtc()`, which reads the company's calendar day, so 00:30 in Karachi is the 15th here
+even while the server's UTC clock still says the 14th.
+
+`dueAt` for a same-day closure is **now**, not the noon that has already gone by. Storing the latter
+would write a due time into the row that had already passed when the row was written, which reads as
+an announcement running late rather than one made on the spot. It is also what the retry depends on:
+`findDueNotices` looks for `SCHEDULED` rows whose moment has come, so a same-day announcement whose
+delivery failed is picked up by the next sweep that day and skipped only once the day is over.
+
+The status is `SENT` and the screen calls it **Announced** — the badge is worded for the column it
+sits under, not for the SMTP call underneath it. `SCHEDULED` still reads "Scheduled" and carries the
+due date, which is the future case; `SKIPPED` keeps "Not announced". Verified against the real
+database with the mailer stubbed: today → `SENT` and "Office closed today", tomorrow after noon →
+`SENT` and "Office closed tomorrow", six days out → `SCHEDULED` due at noon the day before, a past
+date refused at creation, a stale `SCHEDULED` row for a finished day → `SKIPPED` with nothing sent,
+the status surviving a re-read, and the next sweep finding nothing left to re-announce.
 
 **A second email is impossible because the row is claimed before anything is sent.** `claimNotice`
 moves the status out of `SCHEDULED` with a conditional `updateMany`, so of any number of workers
@@ -571,6 +602,66 @@ The audit trail lives on the row rather than in a log table, because the unique 
 only ever one row per person per day to describe, and nothing amends a check-in once it exists.
 `onDelete: SetNull` on `markedBy`: deleting the administrator who made a correction must not delete
 the attendance of the person it was about.
+
+### How long the correction stays open
+
+`AttendancePolicy.hrMarkWindowMinutes` is how long past a day's cutoff a **delegated** administrator
+may still record somebody present. The super admin sets it from the Access panel; 20 is the seeded
+starting value and 0 to 240 is the accepted range. Nothing in the attendance logic names a duration —
+`hrMarkWindowExpiresAt` and `isWithinHrMarkWindow` in `attendance-policy.ts` are the whole rule, free
+of Prisma so they read and test alone exactly as `geo.ts`, `lateness.ts` and `holiday-notice.ts` do.
+
+**The expiry is derived from the date, never stored and never started by a page load.** It is
+`cutoffInstant(day) + window`, computed through `appZoneInstant` like every other time rule here, so
+a refresh, a second tab, a fresh sign-in and a request from `curl` all arrive at the same moment. A
+row on `attendance` holding an expiry would be a second copy of an answer already derivable, and
+would fall out of step the instant either the cutoff or the window moved. That is also what makes
+changing the window safe: raising it tomorrow cannot reopen yesterday, because yesterday's cutoff has
+gone regardless of what the number says today.
+
+**It is judged on the server on every request and nowhere else.** The countdown on the roster is
+rendering; `markPresentFor` asks `isWithinHrMarkWindow` again after the roster has spoken and before
+anything is written, so a stale tab, a wound-back clock or a hand-written POST is refused with the
+button still on screen. The endpoint returns `serverTime` beside `expiresAt` purely so the countdown
+can correct for a browser clock that disagrees — it authorises nothing.
+
+**The boundary is strict.** At exactly `cutoff + window` the permission is over. A boundary that
+counts as inside is one that has to be re-argued at every call site.
+
+**Before the cutoff the window is trivially open**, which is the ordinary case rather than an
+oversight: an administrator correcting a day while it is still running should not be refused for
+being early. The window is a far edge, not a slot. A window of **0** therefore means the permission
+ends the instant the deadline falls — the tightest real setting, not an off switch.
+
+**It binds `canMarkAttendance` and deliberately not the super admin.** The grant is the thing being
+time-boxed; somebody has to stay able to correct a record found wrong next month, or this column
+would have removed the only means of fixing the register with nothing put in its place.
+`assertMayCorrect` still binds both, so the owner gains no reach they did not already have. The
+alternative — binding everybody, which is the literal reading of "every request" — was rejected for
+exactly that reason, and scoping the window to *today* was rejected too: an administrator refused at
+17:21 could simply correct yesterday tomorrow morning, and a window somebody can sit out is not one.
+
+**Watch the closing time.** `isAfterClosing` refuses a *typed* arrival later than `closingMinutes`,
+so when the office closes at or before the cutoff — which is what the shipped defaults say, both
+1020 — every late arrival is also an arrival after closing and **nothing inside the window can be
+recorded at all**. That interaction is documented above and pinned in `attendance-policy.test.ts`;
+what was missing was anybody being told, so the policy panel now warns where the value is set. Do not
+"fix" it by exempting window marks from the closing check: that would let an administrator assert an
+arrival at a time the office was shut, which is the one claim there is no reason to accept.
+
+**No column was added to `attendance`, and the suggested ones were declined for reasons this file
+already gives.** `markedById` / `markedAt` / `reason` are the audit trail and were already there;
+`original_status` would be storing absence, which has no row by construction; `manual_mark` is
+`markedById != null`; `late_minutes` is derived from the frozen `lateBasisMinutes`, and a second copy
+of the answer is what that field exists to avoid.
+
+Verified end to end against the real database, crossing the Zod schema rather than calling the
+service directly: a granted admin allowed inside the window and refused outside it with the record
+left untouched, the super admin allowed in the same expired window, a zero window closing on the
+cutoff, yesterday refused under a four-hour window, the schema refusing −1, 20.5 and 241, lateness
+preserved at 13 minutes rather than reset (cutoff 6:45 PM, arrival 6:58 PM, recorded at 8:30 PM),
+`lateBasisMinutes` unchanged after the policy moved underneath it, four concurrent marks producing
+one row, and a real geofenced check-in surviving an attempt to overwrite it.
 
 ### Whose day may be corrected
 
