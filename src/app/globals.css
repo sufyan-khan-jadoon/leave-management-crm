@@ -564,4 +564,45 @@
   .no-print {
     display: none !important;
   }
+
+  /* The dashboard chrome is navigation, and navigation has nothing to say on
+     paper — the sidebar alone would cost a printed report a sixth of the page
+     width and carry a menu nobody can click. Both are marked `no-print` in
+     `app-shell.tsx`; the offset they reserved has to come off with them, or the
+     page prints with a wide empty gutter down the left. */
+  .app-shell-body {
+    padding-left: 0 !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Glass is a translucent fill over an aurora that does not exist on paper, so
+     every panel would print as a grey wash behind grey text. Flattened to a
+     plain surface with a hairline rule, which is what a filed report is expected
+     to look like. */
+  .glass,
+  .glass-strong,
+  .glass-inset {
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 1px solid #d4d4d4 !important;
+    backdrop-filter: none !important;
+  }
+
+  .app-aurora::before,
+  .app-aurora::after {
+    display: none !important;
+  }
+
+  /* A table broken across a page boundary mid-row is unreadable, and a header
+     printed once leaves every later page a grid of unlabelled dates. */
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    break-inside: avoid;
+  }
 }

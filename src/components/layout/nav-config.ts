@@ -2,6 +2,7 @@ import {
   BotMessageSquare,
   CalendarDays,
   CalendarOff,
+  FileBarChart,
   Mail,
   LayoutDashboard,
   MapPin,
@@ -50,6 +51,11 @@ export const ADMIN_NAV: NavItem[] = [
   // permission, not a different place to be.
   { href: ROUTES.adminStaff, label: "Staff", icon: Users, group: "Manage" },
   { href: ROUTES.adminAttendance, label: "Attendance", icon: MapPin, group: "Manage" },
+  // Shown to every administrator, not only those holding `canViewAdminRecords`.
+  // The screen says so and points at who can enable it, which is the same
+  // courtesy "Send email" and "Working days" already extend — an item that
+  // silently vanishes reads as a broken sidebar rather than a permission.
+  { href: ROUTES.adminReports, label: "Reports", icon: FileBarChart, group: "Manage" },
   // Both admin roles, sitting under Manage rather than Personal: it answers
   // about the workforce, not about the administrator asking. The employee
   // assistant under Personal is a different thing entirely — that one books

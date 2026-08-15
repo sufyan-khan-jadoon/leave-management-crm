@@ -188,6 +188,108 @@ export type AttendanceRosterView = {
   serverTime: string;
 };
 
+/**
+ * The workforce report, as the screen receives it.
+ *
+ * Dates cross as ISO strings like everywhere else here. Every number in it was
+ * computed on the server from the rows the report holds — nothing on this screen
+ * adds anything up, which is why there is no shape here for a client-side total
+ * to live in.
+ */
+export type ReportRecordTypeView = "ATTENDANCE" | "ABSENT" | "LEAVE";
+
+export type PeopleSelectionView =
+  | "SELECTED_EMPLOYEES"
+  | "SELECTED_ADMINS"
+  | "ALL_EMPLOYEES"
+  | "ALL_ADMINS"
+  | "EVERYONE";
+
+export type ReportRowView = {
+  date: string;
+  employeeId: string;
+  name: string;
+  email: string;
+  role: Role;
+  department: string | null;
+  position: string | null;
+  recordType: ReportRecordTypeView;
+  /** The roster's own verdict — `PRESENT`, `ABSENT` or `ON_LEAVE`. */
+  status: AttendanceDayStatus;
+  checkInAt: string | null;
+  lateMinutes: number;
+  lateBasisMinutes: number | null;
+  distanceMeters: number | null;
+  /** Names who vouched for the day when the geofence did not. */
+  markedBy: { id: string; name: string } | null;
+  markedAt: string | null;
+  markedReason: string | null;
+  /** Carried on every row, so leave held beneath a check-in is not lost. */
+  leaveStatus: LeaveStatus | null;
+  leaveReason: string | null;
+};
+
+export type ReportTotalsView = {
+  records: number;
+  present: number;
+  absent: number;
+  onLeave: number;
+  /** Present, and past the deadline. A subset of `present`, never beside it. */
+  late: number;
+  lateMinutes: number;
+};
+
+/** Facts about the period, true of everybody in it — never summed across people. */
+export type ReportCoverageView = {
+  calendarDays: number;
+  workingDays: number;
+  daysOff: number;
+  closedDays: number;
+  noRecordDays: number;
+  upcomingDays: number;
+};
+
+export type ReportPersonSummaryView = {
+  employee: Pick<
+    EmployeeView,
+    "id" | "name" | "email" | "role" | "status" | "department" | "position" | "profilePhoto"
+  >;
+  totals: ReportTotalsView;
+  coverage: ReportCoverageView;
+  /** Set when they started partway through the period — reported, never acted on. */
+  joinedDuringPeriod: string | null;
+};
+
+export type ReportView = {
+  period: { kind: "MONTHLY" | "CUSTOM" | "DAILY"; from: string; to: string };
+  periodLabel: string;
+  people: PeopleSelectionView;
+  recordTypes: ReportRecordTypeView[];
+  generatedAt: string;
+  coverage: ReportCoverageView;
+  totals: ReportTotalsView;
+  peopleCount: number;
+  summaries: ReportPersonSummaryView[];
+  rows: ReportRowView[];
+  totalRows: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  /** Ids that were asked for and matched nobody — reported rather than dropped. */
+  missingSelections: string[];
+};
+
+/** One candidate in the report's people picker. */
+export type ReportPersonView = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  status: EmployeeStatus;
+  department: string | null;
+  position: string | null;
+};
+
 /** Who a custom email went to. Mirrors the Prisma enum. */
 export type EmailAudienceView = "INDIVIDUAL" | "EMPLOYEES" | "ADMINS" | "ALL_MEMBERS";
 

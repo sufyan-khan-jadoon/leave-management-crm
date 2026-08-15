@@ -92,6 +92,45 @@ export const populationService = {
   },
 
   /**
+   * Guards a surface that **names roles outright**: the reports screen.
+   *
+   * The strictest of the three, and the only one with no free case. Both other
+   * asserts wave through a view that mentions nobody's role — `ALL` on the
+   * roster, the employee half of the overview — because what the grant protects
+   * is the ability to tell the two populations apart. A report cannot offer that
+   * exemption: every row it prints carries a `Role` column, every person it can
+   * be pointed at is offered by name in a picker that says what they are, and the
+   * summaries are split by population. There is no version of this screen that
+   * withholds the thing the grant exists to withhold, so the whole feature sits
+   * behind it rather than half of it.
+   *
+   * The super admin always; an administrator once granted `canViewAdminRecords`,
+   * read from the row on every request like the other four delegable rights, so
+   * withdrawing it takes the reports away on the next request rather than when a
+   * week-old token expires.
+   *
+   * It is deliberately **not** a sixth grant. Reporting on the workforce hands
+   * over exactly the knowledge this one already hands over — who your colleagues
+   * are and how the two groups compare — and a second column meaning the same
+   * thing is two columns to keep in step. It confers no write of any kind:
+   * `report.service.ts` reads, and every act on an account still answers to
+   * `assertMayManage`, every correction to `assertMayCorrect`.
+   */
+  async assertMayReport(actor: PopulationActor): Promise<void> {
+    if (await mayViewAdminRecords(actor)) return;
+
+    // Worded for this screen rather than routed through `refuse`, which names
+    // the population filter — somebody refused here was not filtering anything,
+    // and being told about a control they never touched is how a refusal reads
+    // as a bug.
+    throw new ForbiddenError(
+      actor.role === Role.ADMIN
+        ? "You do not have permission to generate workforce reports. Ask your super administrator to enable it."
+        : "Only administrators can generate workforce reports.",
+    );
+  },
+
+  /**
    * Grants or withdraws the right. The super admin's alone, gated in the route
    * that calls this — delegating the delegation would defeat the point.
    */

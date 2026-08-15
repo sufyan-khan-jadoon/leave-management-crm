@@ -280,6 +280,30 @@ export const leaveRepository = {
     });
   },
 
+  /**
+   * Every leave row several people hold across an inclusive range, whatever its
+   * status.
+   *
+   * The wide counterpart of `approvedForEmployeesBetween`, which returns ids and
+   * dates for the sweep. This one carries the reason and the status because the
+   * report prints both — and it deliberately does **not** filter to `APPROVED`.
+   * `PENDING` and `REJECTED` are write-dead but rows predating that still exist,
+   * and a leave history that silently omitted them would be a report claiming
+   * somebody never asked. What they are not is a day off: the report counts a
+   * leave *day* from the roster's own verdict, which reads approved leave alone,
+   * so an old rejected row appears in the record without ever costing an
+   * allowance or clearing an absence.
+   */
+  listForEmployeesBetween(employeeIds: string[], from: Date, to: Date): Promise<LeaveDto[]> {
+    if (employeeIds.length === 0) return Promise.resolve([]);
+
+    return prisma.leave.findMany({
+      where: { employeeId: { in: employeeIds }, leaveDate: { gte: from, lte: to } },
+      orderBy: { leaveDate: "asc" },
+      select: leaveSelect,
+    });
+  },
+
   findByEmployeeAndDate(employeeId: string, leaveDate: Date): Promise<LeaveDto | null> {
     return prisma.leave.findFirst({
       where: { employeeId, leaveDate, status: { not: LeaveStatus.REJECTED } },

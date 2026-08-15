@@ -441,6 +441,43 @@ rules from the Access panel:
 
 ---
 
+## Reports
+
+`/admin/reports` answers attendance, absence and leave over any period, for anyone. Three filters
+combine freely:
+
+| Filter | Options |
+| --- | --- |
+| **Period** | A month, a custom range (up to 366 days), or a single day |
+| **People** | Everyone, all employees, all administrators, or named employees / administrators |
+| **Records** | Attendance, Absent, Leave — any combination; all three reads as *All* |
+
+The report gives an overall summary, a summary per person, and a searchable, sortable table of the
+detailed records, with **Print** and a branded **CSV export** carrying the period, the selection, both
+summaries and every record.
+
+- **Access is `canViewAdminRecords`** — the HR grant the super admin hands out per administrator from
+  the Access panel, and the same one that unlocks the population filter on the attendance roster.
+  Unlike the other screens there is no unrestricted half to leave open: every row carries a `Role`
+  column and the picker names what everybody is, so the whole feature sits behind the grant. It is
+  read from the database on every request, so withdrawing it bites immediately. The endpoints refuse
+  a caller without it regardless of what the screen rendered.
+- **It owns no facts.** Every date is judged by `describeDay` — the same rule the attendance roster,
+  the warning sweep and the assistant use — so office closures, the working week, approved leave,
+  future days and `NO_RECORD` are all honoured without being re-derived. Lateness is read off the
+  cutoff frozen on each row, so moving the deadline never rewrites a past report.
+- **Exactly one record per person per day.** A day's single verdict decides the row's type, so
+  selecting every record type cannot double-count anybody. Where a date holds a check-in *and*
+  approved leave, the row reads Present and the leave rides beside it.
+- **Days off are never records.** A closure or a weekly day off is counted in the summary as a day
+  off and appears in no table — it is neither present, absent, nor leave, and costs nobody a leave.
+- **Nothing is computed in the browser.** Filtering, summarising and paging all happen on the server,
+  so the summary and the table always describe the same rows and a search cannot miss a match on
+  page two. The export re-posts the request rather than serialising the screen.
+- **The report is read-only** and writes nothing — verified by counting every table before and after.
+
+---
+
 ## API reference
 
 All responses use the envelope `{ success: true, data }` or `{ success: false, error, code, details? }`.
@@ -462,6 +499,9 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET` | `/api/admin/attendance/export` | Admin | CSV of the roster honouring current filters |
 | `GET` | `/api/admin/attendance/policy` | Admin | Read the cutoff and working week |
 | `PATCH` | `/api/admin/attendance/policy` | Super admin | Change the cutoff, working days or off switch |
+| `POST` | `/api/admin/reports` | Admin + `canViewAdminRecords` | Generate an attendance/absence/leave report over a period |
+| `POST` | `/api/admin/reports/export` | Admin + `canViewAdminRecords` | The same report, as a branded CSV |
+| `GET` | `/api/admin/reports/people` | Admin + `canViewAdminRecords` | People a report may be pointed at, for the picker |
 | `GET` | `/api/search` | Auth | Global search, scoped by role |
 | `GET` | `/api/admin/stats` | Admin | Overview, charts, recent activity |
 | `GET` | `/api/admin/employees` | Admin | Paginated employee list |

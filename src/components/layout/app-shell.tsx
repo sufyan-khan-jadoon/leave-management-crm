@@ -49,9 +49,16 @@ export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, childre
         />
       )}
 
+      {/*
+        Marked `no-print` along with the topbar below: navigation has nothing to
+        say on paper, and a printed report should be the report. `app-shell-body`
+        is what lets the print stylesheet reclaim the gutter this reserved —
+        hiding the sidebar without dropping the offset leaves a blank sixth of
+        the page down the left.
+      */}
       <aside
         className={cn(
-          "glass-sidebar fixed z-50 flex flex-col transition-transform duration-300 ease-standard",
+          "glass-sidebar no-print fixed z-50 flex flex-col transition-transform duration-300 ease-standard",
           "inset-y-3 left-3 w-[16.5rem] rounded-2xl",
           "lg:translate-x-0",
           drawerOpen ? "translate-x-0" : "-translate-x-[calc(100%+1rem)]",
@@ -147,8 +154,8 @@ export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, childre
         </div>
       </aside>
 
-      <div className="flex min-h-dvh min-w-0 flex-col lg:pl-[17.5rem]">
-        <div className="sticky top-0 z-30 px-3 pt-3 sm:px-4 lg:pr-4">
+      <div className="app-shell-body flex min-h-dvh min-w-0 flex-col lg:pl-[17.5rem]">
+        <div className="no-print sticky top-0 z-30 px-3 pt-3 sm:px-4 lg:pr-4">
           <header className="glass flex h-14 items-center gap-2 rounded-xl px-2 sm:px-3">
             <Button
               variant="ghost"

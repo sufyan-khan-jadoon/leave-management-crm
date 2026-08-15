@@ -3,6 +3,7 @@ import type { EmployeeDto } from "@/repositories/employee.repository";
 import type { HolidayDto } from "@/repositories/holiday.repository";
 import type { LeaveWithEmployeeDto } from "@/repositories/leave.repository";
 import { lateMinutesOf, type TodayState } from "@/services/attendance.service";
+import type { ReportResult } from "@/services/report.service";
 import type {
   AttendanceTodayView,
   AttendanceView,
@@ -10,6 +11,7 @@ import type {
   HolidayView,
   LeaveWithEmployeeView,
   MonthlyTrendPoint,
+  ReportView,
 } from "@/types";
 
 /**
@@ -81,6 +83,50 @@ export function serializeLeave(leave: LeaveWithEmployeeDto): LeaveWithEmployeeVi
     decidedAt: leave.decidedAt?.toISOString() ?? null,
     createdAt: leave.createdAt.toISOString(),
     updatedAt: leave.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * The workforce report for the client.
+ *
+ * The return type is annotated rather than inferred, for the reason
+ * `serializeAttendanceToday` gives and more so: this payload is wide, and an
+ * object literal that quietly forgot a field would leave the client type
+ * promising a summary the response never carried. Every figure is passed through
+ * untouched — nothing is recomputed here, because recomputing on the way out is
+ * how a second answer gets into a report that already had one.
+ */
+export function serializeReport(report: ReportResult): ReportView {
+  return {
+    period: {
+      kind: report.period.kind,
+      from: report.period.from.toISOString(),
+      to: report.period.to.toISOString(),
+    },
+    periodLabel: report.periodLabel,
+    people: report.people,
+    recordTypes: report.recordTypes,
+    generatedAt: report.generatedAt.toISOString(),
+    coverage: report.coverage,
+    totals: report.totals,
+    peopleCount: report.peopleCount,
+    summaries: report.summaries.map((summary) => ({
+      employee: summary.employee,
+      totals: summary.totals,
+      coverage: summary.coverage,
+      joinedDuringPeriod: summary.joinedDuringPeriod?.toISOString() ?? null,
+    })),
+    rows: report.rows.map((row) => ({
+      ...row,
+      date: row.date.toISOString(),
+      checkInAt: row.checkInAt?.toISOString() ?? null,
+      markedAt: row.markedAt?.toISOString() ?? null,
+    })),
+    totalRows: report.totalRows,
+    page: report.page,
+    pageSize: report.pageSize,
+    totalPages: report.totalPages,
+    missingSelections: report.missingSelections,
   };
 }
 

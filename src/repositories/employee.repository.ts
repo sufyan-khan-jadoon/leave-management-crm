@@ -68,6 +68,35 @@ export const staffCandidateSelect = {
 
 export type StaffCandidate = Prisma.EmployeeGetPayload<{ select: typeof staffCandidateSelect }>;
 
+/**
+ * Who a report is about, and enough to head their section of it.
+ *
+ * Carries `role`, which `attendanceRosterSelect` deliberately does not — the
+ * roster names people without saying what they are, because seeing the
+ * administrators separated out is the thing `canViewAdminRecords` gates. That is
+ * exactly the grant every path to this select is behind, so the column is not a
+ * leak here: a caller who has reached it may already ask for the administrators
+ * by name.
+ *
+ * `joiningDate` rides along because a report over a period somebody joined
+ * partway through has to be able to say so. It is **not** used to re-decide what
+ * their earlier days meant — see `report.service.ts`, which reports the fact and
+ * leaves `describeDay` the only opinion about a date.
+ */
+export const reportSubjectSelect = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  status: true,
+  department: true,
+  position: true,
+  profilePhoto: true,
+  joiningDate: true,
+} satisfies Prisma.EmployeeSelect;
+
+export type ReportSubject = Prisma.EmployeeGetPayload<{ select: typeof reportSubjectSelect }>;
+
 /** Just enough to address somebody, and to show who they are without listing them. */
 export const mailRecipientSelect = {
   id: true,
@@ -306,6 +335,57 @@ export const employeeRepository = {
       where,
       orderBy: { name: "asc" },
       select: attendanceRosterSelect,
+    });
+  },
+
+  /**
+   * People a report may be about.
+   *
+   * One query for both ways in — a population, or a list of ids — because the
+   * two differ only in the `where` clause and writing them apart is how the
+   * picker comes to offer somebody the report itself would then leave out.
+   *
+   * `statuses` is **required** rather than defaulted to `ACTIVE`, and that is the
+   * interesting part. A bulk selection means the office as it stands, so it asks
+   * for `ACTIVE` alone, exactly as `listAttendanceRoster` does and for the same
+   * reason: a suspended or not-yet-approved account is not part of the office
+   * this week, and counting them absent every day would be noise nobody can act
+   * on. Naming somebody by id is a different instruction — their history did not
+   * stop existing when their account was suspended — so that path asks for
+   * `SUSPENDED` too. Defaulting would have made the looser of the two the one
+   * you get by forgetting.
+   */
+  listReportSubjects(filters: {
+    statuses: EmployeeStatus[];
+    roles?: Role[];
+    ids?: string[];
+    search?: string;
+    limit?: number;
+  }): Promise<ReportSubject[]> {
+    // An explicit but empty id list is "nobody", not "everybody" — the caller
+    // asked for a named set and named none. Returning the whole company here is
+    // the shape of mistake that turns a filter into a company-wide report.
+    if (filters.ids && filters.ids.length === 0) return Promise.resolve([]);
+
+    const where: Prisma.EmployeeWhereInput = { status: { in: filters.statuses } };
+
+    if (filters.roles) where.role = { in: filters.roles };
+    if (filters.ids) where.id = { in: filters.ids };
+
+    if (filters.search) {
+      where.OR = [
+        { name: { contains: filters.search, mode: "insensitive" } },
+        { email: { contains: filters.search, mode: "insensitive" } },
+        { department: { contains: filters.search, mode: "insensitive" } },
+        { position: { contains: filters.search, mode: "insensitive" } },
+      ];
+    }
+
+    return prisma.employee.findMany({
+      where,
+      orderBy: { name: "asc" },
+      ...(filters.limit ? { take: filters.limit } : {}),
+      select: reportSubjectSelect,
     });
   },
 

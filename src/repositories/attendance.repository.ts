@@ -216,6 +216,31 @@ export const attendanceRepository = {
   },
 
   /**
+   * Full check-in rows for several people across an inclusive range.
+   *
+   * The wide counterpart of `listForEmployeesBetween` below, and the two are
+   * kept apart on purpose. The narrow one serves the warning sweep, which asks
+   * only *whether* somebody was in and does it for the whole company across a
+   * fortnight — selecting a dozen columns there would be paid every night for
+   * nothing. This one serves the report and the multi-person history, which
+   * render the check-in time, the lateness basis and who vouched for the day, so
+   * the columns are the whole point.
+   */
+  listRowsForEmployeesBetween(
+    employeeIds: string[],
+    from: Date,
+    to: Date,
+  ): Promise<AttendanceDto[]> {
+    if (employeeIds.length === 0) return Promise.resolve([]);
+
+    return prisma.attendance.findMany({
+      where: { employeeId: { in: employeeIds }, date: { gte: from, lte: to } },
+      orderBy: { date: "asc" },
+      select: attendanceSelect,
+    });
+  },
+
+  /**
    * Who checked in on which day, across several people at once.
    *
    * One query for the whole lookback window rather than one per person per day:

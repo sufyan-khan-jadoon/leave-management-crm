@@ -876,6 +876,117 @@ and `summarise` counts what came back — switching to Administrators changes wh
 not merely which rows are listed. Verified: with one super admin, one admin and two employees, the
 roster reports 4 / 2 / 2, and an `ADMIN` caller is refused both narrowings.
 
+### Reporting on it — the screen that owns no facts
+
+`/admin/reports` answers attendance, absence and leave over a period, for people an administrator
+chooses. **It derives nothing.** Every date it prints comes back from `attendanceService.historiesFor`,
+which is `describeDay` — so a closure, the working week, approved leave, the future and `NO_RECORD`
+are all honoured for free, and lateness is `lateMinutesOf` reading the basis frozen on each row. A
+second opinion about what a day meant is the one thing a reporting feature must not introduce: it
+would be wrong in a spreadsheet somebody archives and mails around, where nothing can be checked
+against the screen that disagreed with it. What `report.service.ts` actually decides is narrower than
+it looks — **who** the report covers, **which** of their days are records worth printing, and **what
+those add up to**.
+
+`historiesFor` is the rectangle `rosterEntries` and `historyFor` were two edges of: everybody on one
+day, one person across many days, and now many people across many days. `historyFor` was rewritten
+as a call through it rather than left beside it — the `in [id]` costs nothing over the equality it
+replaced, and two implementations of one day walk is how the report and the assistant come to
+describe one date differently. `holdsRecord` is still asked **company-wide per day**, so narrowing a
+report to a department that happened to be away cannot turn its absences into nothing having
+happened.
+
+**Exactly one record per person per day, and never two.** That is what makes selecting every record
+type impossible to double-count: the row's type comes from the day's single verdict, so a date cannot
+be both an attendance record and a leave record however many boxes are ticked. Where a date holds a
+check-in *and* approved leave the roster ranks the check-in first — it is the stronger evidence — so
+the row reads `PRESENT` and the leave rides along on `leaveStatus`/`leaveReason` rather than being
+lost or printed twice. Verified against the real database: all three types together is exactly the
+three singles summed, and every key is distinct.
+
+**`CLOSED`, `NON_WORKING`, `NO_RECORD` and `UPCOMING` are not records**, so `recordTypeOf` returns
+null for them and they appear in no table. They are counted in `ReportCoverage` instead, which is
+where they belong — the office being shut is a fact about the period rather than about anybody.
+That is also why coverage is kept apart from the totals: "22 working days" is a property of the
+calendar, and summing it across eleven people to report 242 is a number nobody asked for and
+everybody misreads. The tiles say *per person* out loud.
+
+**Every number describes the rows the report currently holds.** One rule for the whole payload — the
+record types, then the search, role and status narrowing on top — so the summary, the individual
+sections, the table and the export cannot say different things about one report. `coverage` is the
+exception that proves it: the calendar does not narrow when somebody types a name into a search box.
+
+**The narrowing runs on the server, and that is not ceremony.** The report is paged, so a search
+applied in the browser would search page one and report that nothing matched, while the summary
+beside it went on describing rows the table had stopped showing. It is assembled and summarised whole
+and only then paged, the same trade `roster()` makes and for the same reason: the thing a row is
+filtered on — its record type — **does not exist in the database to filter by**, being derived per
+person per day from four tables and the working week. `MAX_REPORT_RANGE_DAYS` (366) on one axis and
+`MAX_SELECTED_PEOPLE` (200) on the other are what bound it; the queries behind it are six bulk reads
+however many people are named.
+
+**Joining mid-period is reported, never acted on.** `describeDay` takes no notice of when somebody
+started, so a day before their first one reads exactly as it does on the attendance roster.
+Reclassifying it here would be the report forming an opinion about a date. `joinedDuringPeriod` names
+it instead and the screen marks the section.
+
+#### Who may report
+
+`assertMayReport` is `canViewAdminRecords` with **no free case**, and that is the one place this
+screen is stricter than its neighbours. `assertMayFilter` waves `ALL` through and `assertMayReportOn`
+waves the employees through, because what the grant protects is the ability to tell the two
+populations apart. A report cannot offer that exemption: every row carries a `Role` column, the
+picker names what everybody is, and the summaries split by population — there is no version of this
+screen that withholds the thing the grant exists to withhold, so the whole feature sits behind it
+rather than half of it. It is deliberately **not a sixth grant**: reporting hands over exactly the
+knowledge this one already hands over, and it confers no write — `assertMayManage` and
+`assertMayCorrect` are untouched.
+
+The picker is behind the same assert as the report, because the list is the sensitive half. `SELECTED_*`
+resolves ids **within the roles the selection claims**, so an administrator's id posted into the
+employee selection reports on nobody and comes back in `missingSelections` rather than being silently
+dropped — a report quietly covering four of five chosen people is indistinguishable from one whose
+totals are simply low.
+
+The bulk selections admit `ACTIVE` alone, exactly as `listAttendanceRoster` does — "all employees" has
+to mean the same set of people here as on the screen beside it. A **named** selection also admits
+`SUSPENDED`, because naming somebody is an explicit instruction about them and their history did not
+stop existing when their account did. `SUPER_ADMIN` is counted with the administrators, as
+`rolesInPopulation` counts them in every report; an account in neither population would vanish from
+its own organisation's figures.
+
+#### The export
+
+`/api/admin/reports/export` re-posts **the same body through the same service call** with only the
+page size opened up (`generateAll`), refinements included, so the file cannot hold rows the screen did
+not nor leave out rows it did. `report-csv.ts` is pure and free of Next, so it is driven with a real
+report rather than only through an HTTP call, and the route keeps the two things only a route can do —
+the guard and the response. `escapeCsvCell` moved to `src/lib/csv.ts` when the third export arrived:
+two identical copies were tolerable, a third would have made the formula-injection guard something you
+have to remember to bring with you.
+
+Both report endpoints are **`POST` that write nothing**. A period in one of three shapes, a people
+selection, up to two hundred ids and a set of record types is past what a query string reliably
+carries, and it would land in access logs naming everybody the report was about.
+`reportRequestSchema` is a discriminated union of `strictObject`s, following `markAttendanceSchema`:
+there is no field for a total, a count or a summary, because the browser computes none of them, and a
+payload carrying one is refused loudly rather than stripped.
+
+Verified end to end against the real database, crossing the Zod schema rather than calling the service
+directly — 77 checks: every people mode and every record-type combination, the three period shapes,
+agreement with `roster()` on present/absent/on-leave/late for a real day, a hand-recorded row keeping
+its `markedBy` and its null distance beside a geofenced row keeping its distance, a temporary closure
+removing a working day and its withdrawal restoring the day exactly, pages that neither overlap nor
+disagree about the total, an empty period reading `NO_RECORD` rather than accusing everybody, a future
+period accusing nobody, the CSV holding every row the report did, and every table counted before and
+after to prove nothing was written.
+
+**What this system does not record, and what the report therefore does not invent.** There is no
+check-out time on `Attendance` and no leave *type* on `Leave` — so there is no "hours worked" column
+and no "Casual / Sick" column, and neither is computed from something adjacent. The leave reason is
+the free text the assistant extracted, and it is printed as that. If check-out ever lands, the working
+hours belong beside `lateMinutesOf` as another thing derived on read from the row.
+
 ### Missing the day earns a letter
 
 Anyone still absent after the day's cutoff is emailed a warning. The sweep lives in

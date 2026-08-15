@@ -84,6 +84,20 @@ export type RosterEntry = {
   attendance: AttendanceDto | null;
 };
 
+/**
+ * What one date amounted to for one person.
+ *
+ * A roster entry with the person taken off it, because a history is already
+ * about somebody. Named so the report and the assistant can speak about the
+ * shape rather than restating it — both walk these, and neither should be
+ * declaring its own idea of what a day is.
+ */
+export type DayRecord = {
+  date: Date;
+  status: AttendanceDayStatus;
+  attendance: AttendanceDto | null;
+};
+
 /** How a day went for a group of people. */
 export type AttendanceSummary = {
   expected: number;
@@ -479,6 +493,81 @@ async function buildRoster(
   });
 
   return { date, officeClosed, isWorkingDay: workingDay, entries };
+}
+
+/**
+ * Builds the day-by-day history of everybody asked about, in one set of queries.
+ *
+ * The engine behind both `historyFor` and `historiesFor`. Split out here rather
+ * than left in the service object so the two cannot drift, and so the empty case
+ * short-circuits before any query is issued — a report whose people selection
+ * resolved to nobody should cost nothing rather than five round trips returning
+ * nothing.
+ */
+async function buildHistories(
+  employeeIds: string[],
+  from: Date,
+  to: Date,
+): Promise<Map<string, DayRecord[]>> {
+  const histories = new Map<string, DayRecord[]>();
+  if (employeeIds.length === 0) return histories;
+
+  const today = todayUtc();
+
+  const [checkIns, leaves, closures, recordedDates, leaveDates, policy] = await Promise.all([
+    attendanceRepository.listRowsForEmployeesBetween(employeeIds, from, to),
+    leaveRepository.approvedForEmployeesBetween(employeeIds, from, to),
+    holidayRepository.closedDatesBetween(from, addUtcDays(to, 1)),
+    attendanceRepository.datesWithCheckInsBetween(from, to),
+    leaveRepository.datesWithApprovedLeaveBetween(from, to),
+    attendancePolicyService.get(),
+  ]);
+
+  const key = (employeeId: string, day: Date) => `${employeeId}|${toIsoDate(day)}`;
+
+  const byPersonDay = new Map(checkIns.map((row) => [key(row.employeeId, row.date), row]));
+  const onLeave = new Set(leaves.map((row) => key(row.employeeId, row.leaveDate)));
+  const closed = new Set(closures.map(toIsoDate));
+  const recorded = new Set([...recordedDates, ...leaveDates].map(toIsoDate));
+
+  // The calendar is walked once and the weekday judged once per day rather than
+  // once per person per day: the answer cannot differ between two people, and an
+  // office of any size makes that the difference between a few dozen comparisons
+  // and a few thousand.
+  const calendar: Array<{ date: Date; iso: string; isWorkingDay: boolean; isFuture: boolean }> = [];
+
+  for (let day = from; day.getTime() <= to.getTime(); day = addUtcDays(day, 1)) {
+    calendar.push({
+      date: day,
+      iso: toIsoDate(day),
+      isWorkingDay: isWorkingWeekday(day, policy.workingDays),
+      isFuture: day.getTime() > today.getTime(),
+    });
+  }
+
+  for (const employeeId of employeeIds) {
+    histories.set(
+      employeeId,
+      calendar.map((day) => {
+        const attendance = byPersonDay.get(key(employeeId, day.date)) ?? null;
+
+        return {
+          date: day.date,
+          attendance,
+          status: describeDay({
+            attendance,
+            officeClosed: closed.has(day.iso),
+            isWorkingDay: day.isWorkingDay,
+            onLeave: onLeave.has(key(employeeId, day.date)),
+            isFuture: day.isFuture,
+            holdsRecord: recorded.has(day.iso),
+          }),
+        };
+      }),
+    );
+  }
+
+  return histories;
 }
 
 function summarise(entries: RosterEntry[]): AttendanceSummary {
@@ -911,58 +1000,36 @@ export const attendanceService = {
   /**
    * One person's day-by-day history across a range.
    *
-   * The stretched form of `rosterEntries`, and it exists so a question about a
-   * week is not `buildRoster` called seven times — that is thirty-odd round
-   * trips to say what four bulk queries can. Every day is still decided by
-   * `describeDay`, so absence is computed in exactly the one place it always
-   * was; what changes is how the facts it needs are fetched, not the rule.
-   *
-   * `holdsRecord` is asked company-wide per day, exactly as the roster asks it,
-   * which is why the two grouped date queries are not scoped to this employee:
-   * whether a day was one the system was watching is a fact about the day.
+   * A thin call through `historiesFor` rather than a query of its own, so a
+   * single person and a hundred of them are decided by one piece of code. The
+   * `in [id]` this produces costs nothing over the equality it replaced, and the
+   * alternative — two implementations of the same day walk — is the shape that
+   * lets the assistant and the report come to describe one date differently.
    */
-  async historyFor(
-    employeeId: string,
-    from: Date,
-    to: Date,
-  ): Promise<Array<{ date: Date; status: AttendanceDayStatus; attendance: AttendanceDto | null }>> {
-    const today = todayUtc();
+  async historyFor(employeeId: string, from: Date, to: Date): Promise<DayRecord[]> {
+    const histories = await buildHistories([employeeId], from, to);
+    return histories.get(employeeId) ?? [];
+  },
 
-    const [checkIns, leaves, closures, recordedDates, leaveDates, policy] = await Promise.all([
-      attendanceRepository.listForEmployeeBetween(employeeId, from, to),
-      leaveRepository.approvedForEmployeeBetween(employeeId, from, to),
-      holidayRepository.closedDatesBetween(from, addUtcDays(to, 1)),
-      attendanceRepository.datesWithCheckInsBetween(from, to),
-      leaveRepository.datesWithApprovedLeaveBetween(from, to),
-      attendancePolicyService.get(),
-    ]);
-
-    const mine = new Map(checkIns.map((row) => [toIsoDate(row.date), row]));
-    const onLeave = new Set(leaves.map((row) => toIsoDate(row.leaveDate)));
-    const closed = new Set(closures.map(toIsoDate));
-    const recorded = new Set([...recordedDates, ...leaveDates].map(toIsoDate));
-
-    const days: Array<{ date: Date; status: AttendanceDayStatus; attendance: AttendanceDto | null }> = [];
-
-    for (let day = from; day.getTime() <= to.getTime(); day = addUtcDays(day, 1)) {
-      const iso = toIsoDate(day);
-      const attendance = mine.get(iso) ?? null;
-
-      days.push({
-        date: day,
-        attendance,
-        status: describeDay({
-          attendance,
-          officeClosed: closed.has(iso),
-          isWorkingDay: isWorkingWeekday(day, policy.workingDays),
-          onLeave: onLeave.has(iso),
-          isFuture: day.getTime() > today.getTime(),
-          holdsRecord: recorded.has(iso),
-        }),
-      });
-    }
-
-    return days;
+  /**
+   * Several people's day-by-day histories across a range, in one set of queries.
+   *
+   * The stretched form of `rosterEntries` in both directions: that one is
+   * everybody on one day, `historyFor` was one person across many days, and this
+   * is the rectangle. It exists so a month's report for the whole company is six
+   * bulk queries rather than `buildRoster` called thirty-one times — and, far
+   * more importantly, so every one of those cells is still decided by
+   * `describeDay`. Absence is computed in exactly the one place it always was;
+   * what changed is how the facts it needs are fetched, never the rule.
+   *
+   * `holdsRecord` is asked **company-wide per day**, which is why the two grouped
+   * date queries are not scoped to the people being asked about: whether a day
+   * was one the system was watching is a fact about the day, not about them.
+   * Narrowing it to the selection would turn a report on one department that
+   * happened to be away into a day on which nothing had happened.
+   */
+  historiesFor(employeeIds: string[], from: Date, to: Date): Promise<Map<string, DayRecord[]>> {
+    return buildHistories(employeeIds, from, to);
   },
 
   /**
