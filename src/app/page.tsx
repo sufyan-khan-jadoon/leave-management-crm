@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { ShieldCheck, UserRound } from "lucide-react";
 
-import { BrandMark } from "@/components/layout/brand-mark";
+import { ZovenciaLogo } from "@/components/layout/zovencia-logo";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { Card, CardContent } from "@/components/ui/card";
 import { ROUTES } from "@/lib/constants";
-import { appConfig } from "@/lib/env";
 
 const ROLES = [
   {
@@ -26,10 +25,8 @@ export default function RoleSelectionPage() {
   return (
     <div className="app-aurora flex min-h-dvh flex-col">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-4 sm:px-7 sm:py-5">
-        <span className="flex items-center gap-2.5 font-semibold tracking-[-0.015em]">
-          <BrandMark />
-          {appConfig.name}
-        </span>
+        {/* The front door — the full logo at the largest size, theme-aware. */}
+        <ZovenciaLogo variant="full" size="lg" priority />
         <ThemeToggle />
       </header>
 

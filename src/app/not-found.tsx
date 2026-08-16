@@ -1,13 +1,23 @@
 import Link from "next/link";
 import { Compass } from "lucide-react";
 
+import { ZovenciaLogo } from "@/components/layout/zovencia-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ROUTES } from "@/lib/constants";
 
 export default function NotFound() {
   return (
-    <div className="app-aurora flex min-h-dvh items-center justify-center px-4">
+    <div className="app-aurora flex min-h-dvh flex-col items-center justify-center gap-6 px-4">
+      {/*
+        The mark rather than the wordmark, above the card rather than inside it.
+        A mistyped URL lands here with no sidebar and no header, so this was the
+        one screen that never said whose application it was — but the card
+        already leads with a Compass, and a wordmark beside that would give the
+        page two things to look at.
+      */}
+      <ZovenciaLogo size="lg" />
+
       <Card glass className="animate-in fade-in-0 zoom-in-95 w-full max-w-md text-center duration-500 ease-standard">
         <CardContent className="space-y-4">
           <div className="bg-primary/12 text-primary-ink mx-auto flex size-12 items-center justify-center rounded-full">

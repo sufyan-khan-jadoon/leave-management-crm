@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { BrandMark } from "@/components/layout/brand-mark";
+import { ZovenciaLogo } from "@/components/layout/zovencia-logo";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
 import { isAdminRole } from "@/lib/enums";
-import { appConfig } from "@/lib/env";
 import { employeeService } from "@/services/employee.service";
 import { serializeEmployee } from "@/lib/serialize";
 
@@ -25,10 +24,7 @@ export default async function ProfileSetupPage() {
   return (
     <div className="app-aurora flex min-h-dvh flex-col">
       <header className="flex items-center justify-between px-5 py-4 sm:px-7 sm:py-5">
-        <span className="flex items-center gap-2.5 font-semibold tracking-[-0.015em]">
-          <BrandMark />
-          {appConfig.name}
-        </span>
+        <ZovenciaLogo variant="full" priority />
         <ThemeToggle />
       </header>
 

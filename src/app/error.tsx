@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
 
+import { ZovenciaLogo } from "@/components/layout/zovencia-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -12,7 +13,11 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   }, [error]);
 
   return (
-    <div className="app-aurora flex min-h-dvh items-center justify-center px-4">
+    <div className="app-aurora flex min-h-dvh flex-col items-center justify-center gap-6 px-4">
+      {/* The mark, for the reason the not-found page gives: this replaces the
+          whole screen, chrome included, so nothing else here is branded. */}
+      <ZovenciaLogo size="lg" />
+
       <Card glass className="animate-in fade-in-0 zoom-in-95 w-full max-w-md text-center duration-500 ease-standard">
         <CardContent className="space-y-4">
           <div className="bg-destructive/12 text-destructive-ink mx-auto flex size-12 items-center justify-center rounded-full">

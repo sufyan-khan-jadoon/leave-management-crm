@@ -1604,6 +1604,64 @@ message referring to a document with no sign that anything came with it. Deliver
 fire-and-forget: a host that refuses a file is an ordinary failed delivery and reads as `FAILED`,
 with the wording pointed at the attachment rather than at the mail settings.
 
+## The logo — one component, three files
+
+The official artwork lives in `public/brand/` and is copied in **byte for byte** from the supplied
+originals (kept in `zovencia logo/` as the source of truth). It is never cropped, recoloured or
+redrawn:
+
+| File | What it is | Where it goes |
+| --- | --- | --- |
+| `zovencia-mark.png` | the standalone Z | every ground, both themes, permanently |
+| `zovencia-full-black.png` | Z + ZOVENCIA, black wordmark | light ground |
+| `zovencia-full-white.png` | Z + ZOVENCIA, white wordmark | dark ground |
+
+**`ZovenciaLogo` is the only place a logo path is named.** Every surface asks it for a `variant`
+(`mark` or `full`) and a `size`; nothing else imports from `public/brand`, so replacing the artwork
+later is one edit rather than eight. `BrandMark` — a `CalendarCheck` in a green tile — is gone.
+
+**Theme switching is CSS, not `useTheme()`.** Both wordmarks are rendered and `dark:hidden` /
+`hidden dark:block` shows one, driven by the same `.dark` class `next-themes` already puts on
+`<html>`. That is the application's own mechanism read a different way, and it buys two things a
+hook could not: the component stays a **Server Component**, so the sign-in and landing headers do not
+have to become client components to show a logo, and the file swaps in the same paint as every other
+themed colour, so there is no mounted-guard flash of the wrong wordmark. Both images are
+`loading="eager"` on purpose — a lazy image that is `display:none` never intersects the viewport, so
+the browser would only start fetching it at the moment somebody switched theme, which is the one
+moment it has to be there already. Verified: switching themes fires **zero** new requests.
+
+Neither image carries `aria-hidden`. `hidden` is `display:none`, which already takes an element out
+of the accessibility tree, so exactly one "Zovencia" is exposed at a time. Marking the second one
+hidden reads correctly in light mode and leaves dark mode with a logo no screen reader can see.
+
+**`surface="dark"` is the sidebar's exception, and it is not a way round the rule.** `--sidebar` is
+the same dark green in the light palette as in the dark one — the panel does not follow the theme —
+so a theme-aware logo there would put a black wordmark on a near-black slab in light mode. The rule
+is about contrast, and on a surface that does not follow the theme, following the theme is what
+breaks it.
+
+**`ASSETS` carries each file's measured geometry, and that is load-bearing.** The three exports have
+very different transparent padding: the black wordmark's artwork fills 88% of its file's height, the
+white one 56%, and the mark's artwork is square inside a box half again as wide. Dropped into one
+slot with `object-contain` — the obvious implementation — the wordmark **shrinks by a third** the
+moment somebody switches to dark, and the mark sits at 63% of any square slot with the rest as
+invisible margin. So a caller asks for the height of the *artwork* and `sizeFor` works back to the
+file box that puts it there; the wrapper is sized to the ink and the image is centred on top of it,
+free to overhang into transparency. Verified by measuring rendered pixels across a theme switch: the
+artwork lands within 1px, and the layout box does not move at all. **Don't "simplify" this into a
+plain `object-contain` box**, and don't fix it by trimming the files — they are the official assets
+as supplied.
+
+The app icons (`src/app/icon.png`, `apple-icon.png`, `public/favicon.ico`) are generated from the
+mark: the transparent margin trimmed, re-padded square, resized. That is a platform requirement — a
+favicon has to be square and the source is 1.41:1 — and it changes no artwork. The scaffold
+`favicon.ico` that shipped with `create-next-app` is gone.
+
+Email templates are deliberately **not** given the logo. They are signed with the word "Zovencia" as
+a literal, and an image in an email means either an absolute URL to this deployment — which
+`AGENTS.md` already forbids hardcoding, and which breaks the moment the domain moves — or a CID
+attachment on every message. The word survives both.
+
 ## Brand colour — the FILL vs INK rule
 
 The Zovencia palette is fixed: **#0AEA0A** (brand green), **#023506** (dark green), black, white.

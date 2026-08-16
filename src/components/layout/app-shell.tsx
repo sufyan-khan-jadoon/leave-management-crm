@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 
-import { BrandMark } from "@/components/layout/brand-mark";
+import { ZovenciaLogo } from "@/components/layout/zovencia-logo";
 import { GlobalSearch } from "@/components/layout/global-search";
 import { UserMenu } from "@/components/layout/user-menu";
 import { ADMIN_NAV, EMPLOYEE_NAV, SUPER_ADMIN_NAV, isActiveRoute } from "@/components/layout/nav-config";
@@ -65,12 +65,23 @@ export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, childre
         )}
       >
         <div className="flex h-16 items-center justify-between px-4">
+          {/*
+            The full logo rather than the mark beside the product name: the
+            sidebar is a fixed 16.5rem whenever it is visible, so there is room
+            for the wordmark, and the wordmark already says ZOVENCIA — printing
+            `appName` next to it would read "ZOVENCIA ZOVENCIA PRESENCE". The
+            product name keeps its place in the footer below.
+
+            `surface="dark"` because this panel is a dark green slab in *both*
+            themes; a theme-aware logo here would go black-on-black in light
+            mode. See `ZovenciaLogo`.
+          */}
           <Link
             href={nav[0]?.href ?? "/"}
-            className="flex min-w-0 items-center gap-2.5 font-semibold tracking-[-0.015em]"
+            className="flex min-w-0 items-center rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
+            aria-label={`${appName} home`}
           >
-            <BrandMark />
-            <span className="truncate text-[0.9375rem]">{appName}</span>
+            <ZovenciaLogo variant="full" surface="dark" priority />
           </Link>
 
           <Button
@@ -166,6 +177,15 @@ export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, childre
             >
               <Menu className="size-4" />
             </Button>
+
+            {/*
+              Small screens only, and the compact mark rather than the wordmark.
+              Below `lg` the sidebar is off-canvas, so without this there is no
+              Zovencia anywhere on the screen; above it the sidebar is showing
+              the full logo an inch away, and a second one would be clutter.
+              The header follows the theme, so the mark needs no `surface`.
+            */}
+            <ZovenciaLogo size="sm" className="ml-0.5 lg:hidden" />
 
             <GlobalSearch isAdmin={isAdmin} />
 
