@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Mail, Send, ShieldAlert, Trash2 } from "lucide-react";
+import { Loader2, Mail, Send, ShieldAlert, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 
+import { AdminRecipientPicker, type AdminRecipient } from "@/components/admin/admin-recipient-picker";
 import { EmailAttachmentsField } from "@/components/admin/email-attachments-field";
 import { RichTextEditor } from "@/components/admin/rich-text-editor";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -37,11 +38,21 @@ import type { EmailAudienceView, EmailCapabilitiesView, EmailDispatchView, Pagin
 
 /** How each audience reads, and what it means for the person choosing it. */
 const AUDIENCES: Record<EmailAudienceView, { label: string; hint: string }> = {
-  INDIVIDUAL: { label: "One person", hint: "Choose a single employee or administrator." },
+  INDIVIDUAL: { label: "One person", hint: "Choose a single person to write to." },
   EMPLOYEES: { label: "All employees", hint: "Everyone with an employee account." },
-  ADMINS: { label: "All administrators", hint: "Every administrator. Super administrator only." },
+  ADMINS: {
+    label: "All administrators",
+    hint: "Every active administrator except you.",
+  },
+  SELECTED_ADMINS: {
+    label: "Selected administrators",
+    hint: "Pick the administrators this goes to.",
+  },
   ALL_MEMBERS: { label: "Everyone", hint: "Employees and administrators together." },
 };
+
+/** The two audiences drawn from the administrator roster. */
+const ADMIN_AUDIENCES: EmailAudienceView[] = ["ADMINS", "SELECTED_ADMINS"];
 
 const STATUS: Record<EmailDispatchView["status"], { label: string; variant: "success" | "secondary" | "destructive" }> = {
   SENT: { label: "Sent", variant: "success" },
@@ -61,6 +72,26 @@ function describeAttached(files: File[]): string {
   if (files.length === 1) return `, with ${files[0]!.name} attached`;
 
   return `, with ${files.length} files attached`;
+}
+
+/**
+ * Names the people a send would reach, and keeps naming them.
+ *
+ * A count alone tells somebody the send is bigger than they meant; only names
+ * tell them it is going to the wrong people, and that is the mistake an email
+ * cannot be recalled from. Long lists still lead with names rather than
+ * collapsing to a figure — the first few plus a remainder is the shape that
+ * stays readable while still being checkable.
+ */
+function describePeople(people: Array<{ name: string }>): string {
+  const names = people.map((person) => person.name);
+
+  if (names.length === 0) return "nobody";
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  if (names.length <= 5) return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+
+  return `${names.slice(0, 4).join(", ")} and ${names.length - 4} others`;
 }
 
 /**
@@ -85,6 +116,15 @@ export function CustomEmailComposer() {
   const [recipientId, setRecipientId] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [recipientSearch, setRecipientSearch] = useState("");
+
+  // The administrator roster, fetched whole once. It backs both admin
+  // audiences: the picker filters it, and "all administrators" counts it — so
+  // the number confirmed in the dialog and the list somebody chose from are the
+  // same fetch and cannot disagree about who is eligible.
+  const [adminRoster, setAdminRoster] = useState<AdminRecipient[]>([]);
+  const [adminRosterLoading, setAdminRosterLoading] = useState(false);
+  const [selectedAdmins, setSelectedAdmins] = useState<AdminRecipient[]>([]);
+
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
@@ -126,10 +166,32 @@ export function CustomEmailComposer() {
     if (audience !== "INDIVIDUAL" || !capabilities?.canSend) return;
 
     apiClient
-      .get<{ items: Recipient[] }>(`/api/admin/emails/recipients?search=${encodeURIComponent(search)}`)
+      .get<{ items: Recipient[] }>(
+        `/api/admin/emails/recipients?scope=INDIVIDUAL&search=${encodeURIComponent(search)}`,
+      )
       .then((result) => setRecipients(result.items))
       .catch(() => setRecipients([]));
   }, [audience, search, capabilities?.canSend]);
+
+  /**
+   * Fetched unfiltered, and only once either admin audience is chosen.
+   *
+   * No `search` in the URL: the picker filters what is already here, and the
+   * "all administrators" count has to be the whole population rather than
+   * whatever somebody last typed. An administrator who never writes to their
+   * colleagues does not pay for the list of the ones they could have.
+   */
+  useEffect(() => {
+    if (!ADMIN_AUDIENCES.includes(audience) || !capabilities?.canSend) return;
+
+    setAdminRosterLoading(true);
+
+    apiClient
+      .get<{ items: AdminRecipient[] }>("/api/admin/emails/recipients?scope=ADMINS")
+      .then((result) => setAdminRoster(result.items))
+      .catch(() => setAdminRoster([]))
+      .finally(() => setAdminRosterLoading(false));
+  }, [audience, capabilities?.canSend]);
 
   /**
    * Erases the trail, then reloads rather than emptying the table locally.
@@ -161,7 +223,33 @@ export function CustomEmailComposer() {
 
   const chosen = useMemo(() => recipients.find((r) => r.id === recipientId), [recipients, recipientId]);
   const bodyHasText = body.replace(/<[^>]*>/g, "").trim().length > 0;
-  const ready = subject.trim().length >= 3 && bodyHasText && (audience !== "INDIVIDUAL" || Boolean(recipientId));
+
+  /**
+   * Who this send would actually reach, named.
+   *
+   * Used for both the line under the button and the confirmation, so what
+   * somebody reads before pressing send is what they read when asked to confirm
+   * it. The server resolves the audience again and is the only thing that
+   * decides — this is a description, never the instruction.
+   */
+  const audienceRecipients = useMemo<AdminRecipient[]>(() => {
+    if (audience === "ADMINS") return adminRoster;
+    if (audience === "SELECTED_ADMINS") return selectedAdmins;
+
+    return [];
+  }, [audience, adminRoster, selectedAdmins]);
+
+  const namesRecipients = ADMIN_AUDIENCES.includes(audience);
+
+  // Every audience needs a subject and a body; the two that name people need at
+  // least one. The same rule is the server's, which refuses an empty selection
+  // in the schema and an ineligible one in the service.
+  const ready =
+    subject.trim().length >= 3 &&
+    bodyHasText &&
+    (audience !== "INDIVIDUAL" || Boolean(recipientId)) &&
+    (audience !== "SELECTED_ADMINS" || selectedAdmins.length > 0) &&
+    (audience !== "ADMINS" || adminRoster.length > 0);
 
   async function send() {
     setSending(true);
@@ -173,6 +261,14 @@ export function CustomEmailComposer() {
       const form = new FormData();
       form.append("audience", audience);
       if (audience === "INDIVIDUAL") form.append("recipientId", recipientId);
+
+      // One comma-joined field rather than a repeated one: the body is
+      // multipart, and repeated text parts collapse to a single value on the
+      // way in. The schema splits it back and refuses an empty list.
+      if (audience === "SELECTED_ADMINS") {
+        form.append("recipientIds", selectedAdmins.map((person) => person.id).join(","));
+      }
+
       form.append("subject", subject.trim());
       form.append("body", body);
       for (const file of attachments) form.append("attachments", file);
@@ -183,6 +279,7 @@ export function CustomEmailComposer() {
       setSubject("");
       setBody("");
       setRecipientId("");
+      setSelectedAdmins([]);
       setAttachments([]);
       setPage(1);
       await load();
@@ -247,7 +344,12 @@ export function CustomEmailComposer() {
                   value={audience}
                   onValueChange={(value) => {
                     setAudience(value as EmailAudienceView);
+                    // Both recipient choices are cleared on any change of
+                    // audience. A selection carried across is the one way this
+                    // form could send to people the sender is no longer looking
+                    // at.
                     setRecipientId("");
+                    setSelectedAdmins([]);
                   }}
                   disabled={sending}
                 >
@@ -293,6 +395,51 @@ export function CustomEmailComposer() {
               )}
             </div>
 
+            {audience === "SELECTED_ADMINS" && (
+              <AdminRecipientPicker
+                candidates={adminRoster}
+                selected={selectedAdmins}
+                onChange={setSelectedAdmins}
+                disabled={sending}
+                loading={adminRosterLoading}
+              />
+            )}
+
+            {/*
+              "All administrators" names them rather than only counting them.
+              A number is enough to notice that a send is bigger than intended;
+              a list is what lets somebody notice it is going to the wrong
+              people, which is the mistake an email cannot be recalled from.
+            */}
+            {audience === "ADMINS" && (
+              <div className="border-border/60 bg-muted/20 space-y-2 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <Users className="text-primary-ink size-4 shrink-0" aria-hidden />
+                  <p className="text-sm font-medium">
+                    {adminRosterLoading
+                      ? "Counting administrators…"
+                      : `${adminRoster.length} ${adminRoster.length === 1 ? "recipient" : "recipients"}`}
+                  </p>
+                </div>
+
+                {!adminRosterLoading && adminRoster.length === 0 ? (
+                  <p className="text-muted-foreground text-xs">
+                    There is nobody else with an administrator account to write to.
+                  </p>
+                ) : (
+                  <ul className="flex flex-wrap gap-1.5">
+                    {adminRoster.map((person) => (
+                      <li key={person.id}>
+                        <Badge variant="secondary" className="max-w-48 truncate">
+                          {person.name}
+                        </Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label htmlFor="email-subject">Subject</Label>
               <Input
@@ -326,6 +473,16 @@ export function CustomEmailComposer() {
               </Button>
               {audience === "INDIVIDUAL" && chosen && (
                 <span className="text-muted-foreground text-xs">Going to {chosen.name}</span>
+              )}
+              {namesRecipients && audienceRecipients.length > 0 && (
+                <span className="text-muted-foreground text-xs">
+                  Going to {describePeople(audienceRecipients)}
+                </span>
+              )}
+              {audience === "SELECTED_ADMINS" && selectedAdmins.length === 0 && (
+                <span className="text-muted-foreground text-xs">
+                  Choose at least one administrator
+                </span>
               )}
             </div>
           </form>
@@ -393,8 +550,19 @@ export function CustomEmailComposer() {
                           {formatDateTime(entry.createdAt)}
                         </TableCell>
                         <TableCell className="max-w-64 truncate font-medium">{entry.subject}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {entry.recipient?.name ?? AUDIENCES[entry.audience].label}
+                        {/*
+                          A hand-picked send names who it went to, because the
+                          audience label cannot: "Selected administrators" is
+                          the one row in this table that says nothing about the
+                          recipients unless the names are shown. They are the
+                          names recorded at send time, so a rename since does
+                          not rewrite who was written to.
+                        */}
+                        <TableCell className="text-muted-foreground max-w-64 truncate text-sm">
+                          {entry.recipient?.name ??
+                            (entry.recipientNames.length > 0
+                              ? entry.recipientNames.join(", ")
+                              : AUDIENCES[entry.audience].label)}
                         </TableCell>
                         <TableCell className="text-sm">
                           {entry.deliveredCount === entry.recipientCount
@@ -419,11 +587,25 @@ export function CustomEmailComposer() {
         </CardContent>
       </Card>
 
+      {/*
+        The two admin audiences confirm against the actual recipients rather
+        than against the audience's label. "Send to selected administrators?"
+        is a question somebody answers yes to without checking; the names and
+        the count are the thing worth reading twice.
+      */}
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={`Send to ${AUDIENCES[audience].label.toLowerCase()}?`}
-        description={`"${subject.trim()}" will be emailed to ${AUDIENCES[audience].label.toLowerCase()}${describeAttached(attachments)}. This cannot be recalled once sent.`}
+        title={
+          namesRecipients
+            ? `Send to ${audienceRecipients.length} ${audienceRecipients.length === 1 ? "administrator" : "administrators"}?`
+            : `Send to ${AUDIENCES[audience].label.toLowerCase()}?`
+        }
+        description={
+          namesRecipients
+            ? `"${subject.trim()}" will be emailed to ${describePeople(audienceRecipients)}${describeAttached(attachments)}. This cannot be recalled once sent.`
+            : `"${subject.trim()}" will be emailed to ${AUDIENCES[audience].label.toLowerCase()}${describeAttached(attachments)}. This cannot be recalled once sent.`
+        }
         confirmLabel="Send email"
         onConfirm={async () => {
           setConfirming(false);

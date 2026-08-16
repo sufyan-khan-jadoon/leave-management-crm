@@ -36,6 +36,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       updated = await customEmailService.setPermission(id, permissions.canSendEmails);
     }
 
+    if (permissions.canEmailAdmins !== undefined) {
+      updated = await customEmailService.setAdminEmailPermission(id, permissions.canEmailAdmins);
+    }
+
     if (permissions.canViewAdminRecords !== undefined) {
       updated = await populationService.setPermission(id, permissions.canViewAdminRecords);
     }

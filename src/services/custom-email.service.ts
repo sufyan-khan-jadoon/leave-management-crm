@@ -2,10 +2,14 @@ import { EmailAudience, EmailDispatchStatus, Role } from "@prisma/client";
 
 import { MAX_EMAIL_RECIPIENTS } from "@/lib/constants";
 import {
+  EMAIL_AUDIENCE,
+  NO_EMAIL_GRANTS,
   audienceRoles,
   individualRecipientRoles,
+  mayEmailAdmins,
   maySendAnything,
   permittedAudiences,
+  type EmailGrants,
 } from "@/lib/email-audience";
 import { judgeAttachments } from "@/lib/email-attachments";
 import { isSuperAdminRole } from "@/lib/enums";
@@ -52,19 +56,28 @@ export type EmailCapabilities = {
 };
 
 /**
- * The grant, read fresh from the database.
+ * The grants, read fresh from the database.
  *
  * Never from the session, exactly as `canInviteEmployees` and
- * `canManageHolidays` are not: withdrawing the right has to stop the next send
- * rather than wait for a week-old token to expire. Don't "optimise" it into the
- * JWT. The super admin's own right is not stored — it is their role.
+ * `canManageHolidays` are not: withdrawing a right has to stop the next send
+ * rather than wait for a week-old token to expire. Don't "optimise" either of
+ * them into the JWT. The super admin's own rights are not stored — they are
+ * their role, which is why the flags are not even read for them.
+ *
+ * Both come off one row, so the two questions an administrator's send asks —
+ * may you send, and may you send to administrators — cost one query between
+ * them rather than one each.
  */
-async function grantFor(actor: EmailActor): Promise<boolean> {
-  if (isSuperAdminRole(actor.role)) return true;
-  if (actor.role !== Role.ADMIN) return false;
+async function grantsFor(actor: EmailActor): Promise<EmailGrants> {
+  if (isSuperAdminRole(actor.role)) return NO_EMAIL_GRANTS;
+  if (actor.role !== Role.ADMIN) return NO_EMAIL_GRANTS;
 
   const employee = await employeeRepository.findById(actor.id);
-  return Boolean(employee?.canSendEmails);
+
+  return {
+    canSendEmails: Boolean(employee?.canSendEmails),
+    canEmailAdmins: Boolean(employee?.canEmailAdmins),
+  };
 }
 
 /**
@@ -72,19 +85,26 @@ async function grantFor(actor: EmailActor): Promise<boolean> {
  *
  * The rule itself lives in `lib/email-audience.ts`, free of Prisma so the whole
  * matrix can be enumerated in a test without a database. This function's only
- * job is to fetch the grant and hand it over — so the answer a test proves is
+ * job is to fetch the grants and hand them over — so the answer a test proves is
  * the same answer a send gets.
  */
 async function audiencesFor(actor: EmailActor): Promise<EmailAudience[]> {
-  return permittedAudiences(actor.role, await grantFor(actor)) as EmailAudience[];
+  return permittedAudiences(actor.role, await grantsFor(actor)) as EmailAudience[];
 }
 
 async function maySend(actor: EmailActor): Promise<boolean> {
-  return maySendAnything(actor.role, await grantFor(actor));
+  return maySendAnything(actor.role, await grantsFor(actor));
 }
 
-function individualRolesFor(actor: EmailActor): Role[] {
-  return individualRecipientRoles(actor.role);
+/**
+ * The one-person picker's population, narrowed by the admin grant.
+ *
+ * Takes the grants rather than fetching them, because every caller has already
+ * paid for the row — and because a second read here could disagree with the one
+ * that decided the audience a moment earlier.
+ */
+function individualRolesFor(actor: EmailActor, grants: EmailGrants): Role[] {
+  return individualRecipientRoles(actor.role, grants);
 }
 
 async function assertMaySend(actor: EmailActor): Promise<void> {
@@ -93,6 +113,25 @@ async function assertMaySend(actor: EmailActor): Promise<void> {
   throw new ForbiddenError(
     actor.role === Role.ADMIN
       ? "You do not have permission to send emails. Ask your super administrator to enable it."
+      : "Only administrators can send emails.",
+  );
+}
+
+/**
+ * Refuses anyone who may not write to administrators, by any route.
+ *
+ * Guards the administrator picker, which is the read half of the feature. The
+ * write half is guarded by `resolveRecipients` computing the permitted audiences
+ * from the role rather than comparing against what was sent — so this is not the
+ * only thing standing between a hand-made request and a send, and it is not
+ * relied upon as if it were.
+ */
+async function assertMayEmailAdmins(actor: EmailActor): Promise<void> {
+  if (mayEmailAdmins(actor.role, await grantsFor(actor))) return;
+
+  throw new ForbiddenError(
+    actor.role === Role.ADMIN
+      ? "You do not have permission to email administrators. Ask your super administrator to enable it."
       : "Only administrators can send emails.",
   );
 }
@@ -110,21 +149,18 @@ async function resolveRecipients(
   actor: EmailActor,
   input: SendCustomEmailInput,
 ): Promise<{ recipients: MailRecipient[]; individual: MailRecipient | null }> {
-  const permitted = await audiencesFor(actor);
+  const grants = await grantsFor(actor);
+  const permitted = permittedAudiences(actor.role, grants) as EmailAudience[];
 
   if (!permitted.includes(input.audience)) {
-    throw new ForbiddenError(
-      input.audience === EmailAudience.ALL_MEMBERS || input.audience === EmailAudience.ADMINS
-        ? "Only the super administrator can send to that audience."
-        : "You do not have permission to send to that audience.",
-    );
+    throw new ForbiddenError(refusalFor(input.audience, actor.role));
   }
 
   if (input.audience === EmailAudience.INDIVIDUAL) {
     // `recipientId` is guaranteed present by the schema for this audience.
     const recipient = await employeeRepository.findMailRecipient(
       input.recipientId!,
-      individualRolesFor(actor),
+      individualRolesFor(actor, grants),
     );
 
     // Phrased as not-found rather than forbidden so the endpoint cannot be used
@@ -141,9 +177,62 @@ async function resolveRecipients(
   }
 
   const roles = audienceRoles(input.audience);
+
+  if (input.audience === EmailAudience.SELECTED_ADMINS) {
+    // `recipientIds` is guaranteed present and non-empty by the schema here.
+    const chosen = input.recipientIds!;
+
+    // Resolved **within** the audience's own population rather than by id alone,
+    // which is what makes a manipulated payload inert: an employee's id, a
+    // suspended account, an unverified address or the super admin's id posted
+    // into this list resolves to nobody, so the widest a forged request can
+    // reach is still the administrators this caller was already allowed.
+    const recipients = await employeeRepository.listMailRecipientsByIds(chosen, roles, actor.id);
+
+    // Reported rather than shrugged off. A send that quietly covered four of the
+    // five people somebody picked is indistinguishable from one they meant, and
+    // an email cannot be recalled to add the person who was dropped — the same
+    // argument `missingSelections` makes in the report builder, with the higher
+    // stakes of actually delivering something.
+    if (recipients.length !== chosen.length) {
+      const missing = chosen.length - recipients.length;
+
+      throw new ValidationError(
+        `${missing} of the ${chosen.length} chosen ${missing === 1 ? "recipient is" : "recipients are"} no longer available to email.`,
+        {
+          recipientIds:
+            "Somebody you picked is not an active administrator you may write to. Refresh the list and choose again.",
+        },
+      );
+    }
+
+    return { recipients, individual: null };
+  }
+
   const recipients = await employeeRepository.listMailRecipients(roles, actor.id);
 
   return { recipients, individual: null };
+}
+
+/**
+ * Why an audience was refused, without saying more than the caller may know.
+ *
+ * Each names the grant that would unlock it, because "you may not" with nothing
+ * after it sends somebody hunting for whoever can help. ALL_MEMBERS is the one
+ * that names a person instead, being the audience no grant reaches.
+ */
+function refusalFor(audience: EmailAudience, role: Role): string {
+  if (role !== Role.ADMIN) return "Only administrators can send emails.";
+
+  if (audience === EmailAudience.ALL_MEMBERS) {
+    return "Only the super administrator can send to everybody at once.";
+  }
+
+  if (audience === EmailAudience.ADMINS || audience === EmailAudience.SELECTED_ADMINS) {
+    return "You do not have permission to email administrators. Ask your super administrator to enable it.";
+  }
+
+  return "You do not have permission to send to that audience.";
 }
 
 /**
@@ -193,7 +282,14 @@ export const customEmailService = {
   },
 
   /**
-   * People this caller may pick from, for the Individual option.
+   * People this caller may pick from — for one of the two pickers.
+   *
+   * `scope` says which is asking, and each has its own permission check and its
+   * own population: INDIVIDUAL offers whoever `individualRecipientRoles` allows,
+   * ADMINS offers exactly the population "all administrators" would resolve to,
+   * so the searchable list and the group send can never mean different sets of
+   * people. The scope cannot widen anything — it selects a branch, and the
+   * branch does the asserting.
    *
    * Addresses are deliberately **not** returned. The picker needs a name, a role
    * and a department to tell two people apart; handing it every mailbox in the
@@ -202,12 +298,24 @@ export const customEmailService = {
    */
   async recipientOptions(
     actor: EmailActor,
-    search?: string,
+    options: { search?: string; scope?: "INDIVIDUAL" | "ADMINS" } = {},
   ): Promise<Array<{ id: string; name: string; role: Role; department: string | null }>> {
-    await assertMaySend(actor);
+    const scope = options.scope ?? "INDIVIDUAL";
 
-    const people = await employeeRepository.listMailRecipients(individualRolesFor(actor), actor.id);
-    const term = search?.trim().toLowerCase();
+    let roles: Role[];
+
+    if (scope === "ADMINS") {
+      await assertMayEmailAdmins(actor);
+      // Asks the audience for its population rather than naming `ADMIN` here,
+      // so the picker offers exactly who "all administrators" would resolve to.
+      roles = audienceRoles(EMAIL_AUDIENCE.ADMINS);
+    } else {
+      await assertMaySend(actor);
+      roles = individualRolesFor(actor, await grantsFor(actor));
+    }
+
+    const people = await employeeRepository.listMailRecipients(roles, actor.id);
+    const term = options.search?.trim().toLowerCase();
 
     return people
       .filter(
@@ -308,6 +416,15 @@ export const customEmailService = {
       deliveredCount,
       status,
       recipientId: individual?.id ?? null,
+      // Names only for the audience whose membership the sender chose. Every
+      // other one is a population its role already describes, and copying forty
+      // names onto a row that says "EMPLOYEES, 40" would be storing the answer
+      // twice. Captured at send time, so a later rename or deletion cannot
+      // rewrite who was told something.
+      recipientNames:
+        input.audience === EmailAudience.SELECTED_ADMINS
+          ? recipients.map((recipient) => recipient.name)
+          : [],
     });
 
     return {
@@ -376,16 +493,43 @@ export const customEmailService = {
    * one could widen their own permissions or hand the right to a colleague.
    */
   async setPermission(adminId: string, allowed: boolean) {
-    const employee = await employeeRepository.findById(adminId);
-    if (!employee) throw new NotFoundError("That account no longer exists.");
-
-    if (employee.role !== Role.ADMIN) {
-      throw new ForbiddenError("Email permissions apply to administrators only.");
-    }
+    await assertGrantable(adminId);
 
     return employeeRepository.setEmailPermission(adminId, allowed);
   },
+
+  /**
+   * Grants or withdraws the right to write to the other administrators.
+   *
+   * Its own setter rather than a second argument on the one above, so the route
+   * applies exactly the switch that moved — the same reason each grant has its
+   * own branch in `/api/admin/administrators/[id]`. Reached only through
+   * `requireSuperAdmin`, so no administrator can hand it to themselves or to a
+   * colleague.
+   */
+  async setAdminEmailPermission(adminId: string, allowed: boolean) {
+    await assertGrantable(adminId);
+
+    return employeeRepository.setEmailAdminsPermission(adminId, allowed);
+  },
 };
+
+/**
+ * Refuses to hang an email grant on an account it would mean nothing on.
+ *
+ * The flags are only ever read for `ADMIN` — the super admin's rights are their
+ * role, and an employee's are nothing — so setting one anywhere else would write
+ * a value no code path consults and leave the Access panel implying a right that
+ * does not exist.
+ */
+async function assertGrantable(adminId: string): Promise<void> {
+  const employee = await employeeRepository.findById(adminId);
+  if (!employee) throw new NotFoundError("That account no longer exists.");
+
+  if (employee.role !== Role.ADMIN) {
+    throw new ForbiddenError("Email permissions apply to administrators only.");
+  }
+}
 
 function describeOutcome(
   status: EmailDispatchStatus,

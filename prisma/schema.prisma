@@ -90,17 +90,22 @@ enum InvitationStatus {
 /// Who a custom email was addressed to.
 ///
 /// This is the permission boundary, not merely a label. INDIVIDUAL and EMPLOYEES
-/// are delegable to an administrator through `canSendEmails`; ADMINS and
-/// ALL_MEMBERS are the super admin's alone, because writing to every
-/// administrator — or to the entire organisation in one act — is the kind of
-/// announcement that has to answer to the person who owns the system. The rule
-/// lives in `custom-email.service.ts` and is enforced there, against the role
-/// and the grant read fresh from this table, never against anything the browser
-/// claimed.
+/// are delegable through `canSendEmails`; ADMINS and SELECTED_ADMINS through
+/// `canEmailAdmins`. ALL_MEMBERS is the super admin's alone and is the only
+/// audience that stays that way — writing to the entire organisation in one act
+/// is the kind of announcement that has to answer to the person who owns the
+/// system. The rule lives in `lib/email-audience.ts` and is enforced in
+/// `custom-email.service.ts`, against the role and the grants read fresh from
+/// this table, never against anything the browser claimed.
+///
+/// SELECTED_ADMINS is the only audience whose membership the *sender* chooses
+/// rather than the role deciding it, which is why it is the only one whose
+/// recipients are written down — see `EmailDispatch.recipientNames`.
 enum EmailAudience {
   INDIVIDUAL
   EMPLOYEES
   ADMINS
+  SELECTED_ADMINS
   ALL_MEMBERS
 }
 
@@ -152,6 +157,18 @@ model EmailDispatch {
   recipientId String?
   recipient   Employee? @relation("EmailRecipient", fields: [recipientId], references: [id], onDelete: SetNull)
 
+  /// Who a SELECTED_ADMINS message actually went to, by name, and empty for
+  /// every other audience.
+  ///
+  /// It is the one audience whose membership cannot be reconstructed later: the
+  /// others are a population the role decides, so "ADMINS, 6 recipients" is a
+  /// complete record, while a hand-picked set is a choice the sender made and
+  /// nothing else remembers. Names rather than ids, and copied at send time
+  /// rather than joined — the same argument `AttendanceWarning.consecutiveMissed`
+  /// and `Attendance.lateBasisMinutes` make. This is what the record *said*, and
+  /// a rename or a deleted account must not rewrite who was told something.
+  recipientNames String[] @default([])
+
   @@index([senderId, createdAt])
   @@index([createdAt])
   @@map("email_dispatches")
@@ -192,11 +209,31 @@ model Employee {
   /// send rather than carried in the session, so withdrawing it stops the next
   /// attempt instead of waiting for a week-old token to expire.
   ///
-  /// It never widens to the broadcast audiences. An administrator holding this
-  /// may write to one person at a time or to the employees; writing to every
-  /// administrator, or to the whole organisation at once, stays with the super
-  /// admin — see `EmailAudience`.
+  /// It reaches the employees and nobody senior. An administrator holding this
+  /// alone may write to one employee at a time or to all of them; writing to
+  /// another administrator needs `canEmailAdmins`, and writing to the whole
+  /// organisation at once stays with the super admin — see `EmailAudience`.
   canSendEmails Boolean @default(false)
+
+  /// Whether this administrator may write to the other administrators.
+  ///
+  /// The sixth delegable right, and it is its own rather than folded into
+  /// `canSendEmails` for the reason `canMarkAttendance` is not folded into
+  /// `canViewAdminRecords`: writing to the people who run the system is a
+  /// different act from writing to the staff, and an administrator given the
+  /// second should not silently acquire the first. Off by default, granted per
+  /// administrator by the super admin alone, read from here on every send.
+  ///
+  /// It unlocks two audiences — ADMINS, every administrator at once, and
+  /// SELECTED_ADMINS, a hand-picked set — and it also widens the INDIVIDUAL
+  /// picker, which without it offers employees only. That last part is the whole
+  /// of why the grant means anything: a right to email administrators that could
+  /// be walked around one administrator at a time would not be a boundary.
+  ///
+  /// ALL_MEMBERS is deliberately not among them. It is the audience that
+  /// includes the super admin, and an announcement to the entire organisation
+  /// stays with whoever owns it.
+  canEmailAdmins Boolean @default(false)
 
   /// Whether this administrator may report on the administrators as a population.
   ///

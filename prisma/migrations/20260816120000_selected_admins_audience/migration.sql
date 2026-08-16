@@ -1,0 +1,11 @@
+-- A hand-picked set of administrators, as an audience of its own.
+--
+-- Alone in its own migration on purpose. `ALTER TYPE ... ADD VALUE` runs in a
+-- transaction on PostgreSQL 12 and later, but the value it adds cannot be *used*
+-- until that transaction commits — so anything wanting to write or default to
+-- 'SELECTED_ADMINS' has to be a separate migration, which is what the one beside
+-- this is. Keeping the pair split means neither has to be reasoned about twice.
+--
+-- Nothing is backfilled: no past send was hand-picked, and every existing row
+-- keeps the audience it was written with.
+ALTER TYPE "public"."EmailAudience" ADD VALUE 'SELECTED_ADMINS';

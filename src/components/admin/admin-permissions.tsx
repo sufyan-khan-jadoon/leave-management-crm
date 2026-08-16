@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarOff, Mail, MapPinCheck, ShieldCheck, UserPlus, Users } from "lucide-react";
+import {
+  CalendarOff,
+  Mail,
+  MailWarning,
+  MapPinCheck,
+  ShieldCheck,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
@@ -17,6 +25,7 @@ export type Administrator = {
   canInviteEmployees: boolean;
   canManageHolidays: boolean;
   canSendEmails: boolean;
+  canEmailAdmins: boolean;
   canViewAdminRecords: boolean;
   canMarkAttendance: boolean;
 };
@@ -27,6 +36,7 @@ type Grant = {
     | "canInviteEmployees"
     | "canManageHolidays"
     | "canSendEmails"
+    | "canEmailAdmins"
     | "canViewAdminRecords"
     | "canMarkAttendance";
   icon: LucideIcon;
@@ -59,13 +69,27 @@ const GRANTS: Grant[] = [
   {
     key: "canSendEmails",
     icon: Mail,
-    label: "Send emails",
+    label: "Send emails to employees",
     // Says what it does *not* grant, because that is the part somebody
     // delegating it would otherwise have to guess at.
-    on: "Can write to one person or all employees",
+    on: "Can write to one employee or all of them",
     off: "Cannot send email",
-    granted: "can now email individuals and employees",
-    revoked: "can no longer send email",
+    granted: "can now email employees",
+    revoked: "can no longer email employees",
+  },
+  {
+    key: "canEmailAdmins",
+    icon: MailWarning,
+    label: "Send emails to admins",
+    // Names the reach rather than the screen, because the switch beside it also
+    // says "send emails" and the difference between the two is exactly who is
+    // written to. It is worth saying that this one also opens the one-person
+    // picker up to administrators — otherwise somebody granting only the switch
+    // above would reasonably expect it already had.
+    on: "Can write to selected administrators, or all of them",
+    off: "Cannot write to any administrator",
+    granted: "can now email administrators",
+    revoked: "can no longer email administrators",
   },
   {
     key: "canViewAdminRecords",
@@ -137,9 +161,10 @@ export function AdminPermissions({
         </CardTitle>
         <CardDescription>
           Administrators cannot onboard anyone, close the office, send email or report on
-          administrators as a group until you allow it. Inviting other administrators stays with you
-          either way, as does emailing every administrator or the whole organisation at once, and
-          managing administrator accounts on Staff.
+          administrators as a group until you allow it. Writing to the employees and writing to the
+          other administrators are separate switches, so neither arrives with the other. Inviting
+          other administrators stays with you either way, as does emailing the whole organisation at
+          once, and managing administrator accounts on Staff.
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -9,6 +9,7 @@ export const emailDispatchSelect = {
   recipientCount: true,
   deliveredCount: true,
   status: true,
+  recipientNames: true,
   createdAt: true,
   sender: { select: { id: true, name: true, email: true, role: true } },
   recipient: { select: { id: true, name: true } },
@@ -36,6 +37,11 @@ export const emailDispatchRepository = {
     deliveredCount: number;
     status: EmailDispatchStatus;
     recipientId?: string | null;
+    /**
+     * Who a hand-picked send actually went to. Empty for every other audience,
+     * where the audience and the count already say it completely.
+     */
+    recipientNames?: string[];
   }): Promise<EmailDispatchDto> {
     return prisma.emailDispatch.create({ data, select: emailDispatchSelect });
   },

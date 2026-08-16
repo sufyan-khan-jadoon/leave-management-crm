@@ -41,6 +41,7 @@ export const adminPermissionsSchema = z
     canInviteEmployees: z.boolean().optional(),
     canManageHolidays: z.boolean().optional(),
     canSendEmails: z.boolean().optional(),
+    canEmailAdmins: z.boolean().optional(),
     canViewAdminRecords: z.boolean().optional(),
     canMarkAttendance: z.boolean().optional(),
   })

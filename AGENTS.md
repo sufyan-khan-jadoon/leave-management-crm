@@ -1545,6 +1545,84 @@ Admins are waved past `/profile/setup` by the middleware, so an admin can reach 
 screens with a blank department and joining date. `/api/leaves/chat` refuses that either way;
 `ProfileRequiredNotice` stands in for the assistant so the refusal comes with somewhere to go.
 
+## Writing to the staff and writing to the administrators are two rights
+
+`canSendEmails` and `canEmailAdmins` are separate grants, and neither is a prerequisite for the
+other. The first buys INDIVIDUAL and EMPLOYEES; the second buys ADMINS and SELECTED_ADMINS.
+ALL_MEMBERS is bought by nothing — it is the audience that includes the owner, and an announcement to
+the entire organisation stays with whoever owns the system. Both are off by default, granted per
+administrator from Access, and **read from the row on every send** exactly as the other four
+delegable rights are.
+
+They compose rather than nest, and that was decided rather than fallen into. Requiring
+`canSendEmails` underneath would leave a super admin flipping the admin switch on its own and seeing
+nothing happen — a trap dressed as a safeguard. So an administrator may hold either alone and gets
+exactly that half. `email-audience.test.ts` enumerates all eight callers against all five audiences
+and asserts the two halves never leak into each other.
+
+**The grant narrows the one-person picker, and that is the whole of why it is a boundary.**
+`canSendEmails` used to reach a colleague through INDIVIDUAL, because `individualRecipientRoles`
+offered administrators to anybody who could send at all. A permission to write to administrators that
+could be walked around one administrator at a time is not a permission, so that function now takes
+the grants and offers `[EMPLOYEE]` until `canEmailAdmins` says otherwise. **This narrows what an
+existing grant buys** — it is the one part of this that took something away, the migration says so,
+and `canEmailAdmins` deliberately does **not** backfill from `canSendEmails`: copying it across would
+have handed the new group audiences to everybody who held the old one.
+
+`SELECTED_ADMINS` is a hand-picked set, and the only audience whose membership the *sender* chooses.
+Everything else is a population a role decides. Three consequences follow and all three are load-
+bearing:
+
+- **The ids are resolved *within* the audience's own population**, by
+  `listMailRecipientsByIds(ids, audienceRoles(SELECTED_ADMINS), actor.id)`. An employee's id, a
+  suspended or unverified account, the super admin's id or the sender's own posted into that list
+  resolves to nobody — so the widest a forged payload reaches is still the administrators the caller
+  already had. Don't loosen it to `findMany({ where: { id: { in: ids } } })` and filter afterwards;
+  that is the same query with the check somewhere it can be forgotten.
+- **A shortfall is refused, never trimmed.** If five ids resolve to four people the send is refused
+  outright. A message quietly covering four of five is indistinguishable from one the sender meant,
+  and mail cannot be recalled to add the person who was dropped.
+- **Its recipients are written down.** `EmailDispatch.recipientNames` holds their names, captured at
+  send time, empty for every other audience — where the audience and the count already describe it
+  completely. Names rather than a join, for the reason `consecutiveMissed` and `lateBasisMinutes`
+  are stored: this is what the record *said*, and a rename or a deleted account must not rewrite who
+  was told something. The body is still never stored.
+
+The list travels as **one comma-joined `recipientIds` field**, not a repeated one, because the body
+is multipart and `parseMultipart` folds repeated text parts to a single value. The schema splits it,
+bounds it, deduplicates it and refuses it empty. `email.schema.test.ts` pins that round trip at the
+wire rather than at either end — the lesson `admin-chat.schema.test.ts` records, applied before it
+could bite a second time.
+
+`/api/admin/emails/recipients` gained a `scope`, which selects between the one-person picker and the
+administrator multi-select and **cannot widen anything**: each branch asserts for itself and builds
+its own population, and the default is the narrower. The admin branch asks
+`audienceRoles(EMAIL_AUDIENCE.ADMINS)` for its population rather than naming `ADMIN`, so the
+searchable list offers exactly who "all administrators" would resolve to.
+
+`AdminRecipientPicker` filters **in the browser**, which is the opposite of `ReportPeoplePicker` and
+deliberate: that endpoint is capped, so a client-side filter would search page one of an organisation
+and report nobody else exists, while this one returns the administrators — a population bounded by
+how many people run the company. The same fetch backs the picker and the "all administrators" count
+beside it, so the two cannot disagree about who is eligible. Both admin audiences **name their
+recipients** before sending and again in the confirmation, rather than only counting them: a number
+tells somebody the send is bigger than they meant, only names tell them it is going to the wrong
+people.
+
+Verified end to end against the real database with the mailer stubbed, crossing the Zod schema and
+the multipart parsing rather than calling the service directly — 97 checks: the grant off by default,
+every route to an administrator refused without it, `canSendEmails` alone refused all three of them
+including the one-person path, the grant applied and all four delegable audiences appearing, the
+eligible list excluding the sender/suspended/unverified/owner/employees and carrying no addresses,
+one selected admin receiving it and the other not, both receiving it when both are picked, a
+duplicated selection writing once, an empty selection refused three ways, seven manipulated payloads
+refused with nothing delivered, three bodies carrying their own verdict refused by `strictObject`,
+"all administrators" matching the picker's list exactly, the audit row naming its recipients and
+holding no body, revoking the grant stopping the very next send with no new session, an employee
+refused everything, the grant refused on an employee and on the owner, the super admin unaffected
+throughout, existing employee email untouched, and an attachment riding along while `payroll.exe`
+stopped the whole message.
+
 ## A message may carry files
 
 The composer sends `multipart/form-data`, and it does so whether or not anything is attached. One

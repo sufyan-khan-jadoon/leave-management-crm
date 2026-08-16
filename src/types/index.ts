@@ -291,7 +291,12 @@ export type ReportPersonView = {
 };
 
 /** Who a custom email went to. Mirrors the Prisma enum. */
-export type EmailAudienceView = "INDIVIDUAL" | "EMPLOYEES" | "ADMINS" | "ALL_MEMBERS";
+export type EmailAudienceView =
+  | "INDIVIDUAL"
+  | "EMPLOYEES"
+  | "ADMINS"
+  | "SELECTED_ADMINS"
+  | "ALL_MEMBERS";
 
 /**
  * What the signed-in administrator may do with custom email.
@@ -322,6 +327,11 @@ export type EmailDispatchView = {
   createdAt: string;
   sender: { id: string; name: string; email: string; role: Role };
   recipient: { id: string; name: string } | null;
+  /**
+   * Who a hand-picked send went to, by name, and empty for every other
+   * audience — where the audience label and the count already say it.
+   */
+  recipientNames: string[];
 };
 
 export type PaginatedAttendance = { items: AttendanceView[]; pagination: Pagination };

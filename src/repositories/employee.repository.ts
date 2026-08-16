@@ -13,6 +13,7 @@ export const employeeSelect = {
   canInviteEmployees: true,
   canManageHolidays: true,
   canSendEmails: true,
+  canEmailAdmins: true,
   canViewAdminRecords: true,
   canMarkAttendance: true,
   lockedAt: true,
@@ -208,6 +209,14 @@ export const employeeRepository = {
     });
   },
 
+  setEmailAdminsPermission(id: string, canEmailAdmins: boolean): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { canEmailAdmins },
+      select: employeeSelect,
+    });
+  },
+
   setAdminRecordsPermission(id: string, canViewAdminRecords: boolean): Promise<EmployeeDto> {
     return prisma.employee.update({
       where: { id },
@@ -296,6 +305,41 @@ export const employeeRepository = {
         status: EmployeeStatus.ACTIVE,
         emailVerified: { not: null },
       },
+      select: mailRecipientSelect,
+    });
+  },
+
+  /**
+   * A hand-picked set of addressable people, resolved **within** a population.
+   *
+   * The `role` and standing filters are the point rather than a tidy-up: the ids
+   * arrive from the browser, so this is the query that decides an employee's id
+   * posted into an administrator selection resolves to nobody. It cannot be
+   * loosened into `findMany({ where: { id: { in: ids } } })` and filtered
+   * afterwards — that is the same query with the check somewhere it can be
+   * forgotten. `SELECTED_*` in `report.service.ts` narrows the same way, for the
+   * same reason.
+   *
+   * Returns whoever matched, in name order, and says nothing about the rest. The
+   * caller compares counts and reports the shortfall, exactly as the report
+   * builder does with `missingSelections` — a send quietly covering four of five
+   * chosen people is indistinguishable from one the sender meant.
+   */
+  listMailRecipientsByIds(
+    ids: string[],
+    roles: Role[],
+    excludeId?: string,
+  ): Promise<MailRecipient[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+
+    return prisma.employee.findMany({
+      where: {
+        id: { in: ids, ...(excludeId ? { not: excludeId } : {}) },
+        role: { in: roles },
+        status: EmployeeStatus.ACTIVE,
+        emailVerified: { not: null },
+      },
+      orderBy: { name: "asc" },
       select: mailRecipientSelect,
     });
   },
