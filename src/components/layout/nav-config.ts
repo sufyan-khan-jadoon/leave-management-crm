@@ -6,6 +6,7 @@ import {
   Mail,
   LayoutDashboard,
   MapPin,
+  MessageSquareWarning,
   ShieldCheck,
   Sparkles,
   User,
@@ -33,6 +34,7 @@ export const EMPLOYEE_NAV: NavItem[] = [
   { href: ROUTES.attendance, label: "Attendance", icon: MapPin, exact: true },
   { href: ROUTES.newLeave, label: "Request leave", icon: Sparkles, exact: true },
   { href: ROUTES.leaves, label: "Leave history", icon: CalendarDays, exact: true },
+  { href: ROUTES.complaints, label: "Complaints", icon: MessageSquareWarning },
   { href: ROUTES.profile, label: "My profile", icon: User, exact: true },
 ];
 
@@ -69,6 +71,12 @@ export const ADMIN_NAV: NavItem[] = [
   // Shown to every administrator. Whether they may actually send is granted per
   // account, and the screen says so rather than vanishing from the sidebar.
   { href: ROUTES.adminEmails, label: "Send email", icon: Mail, group: "Manage" },
+  // The one Manage item that is **not** shown to every administrator — see
+  // `visibleNav`. Every other permission-gated screen here stays visible and
+  // explains itself, because an item that vanishes reads as a broken sidebar.
+  // Complaints invert that: reading them is the privilege, so there is no
+  // useful ungranted version of the screen to send anybody to.
+  { href: ROUTES.adminComplaints, label: "Complaints", icon: MessageSquareWarning, group: "Manage" },
 
   { href: ROUTES.dashboard, label: "My leave", icon: LayoutDashboard, exact: true, group: "Personal" },
   // Administrators turn up to the office like everybody else, so they mark
@@ -93,6 +101,36 @@ export const SUPER_ADMIN_NAV: NavItem[] = [
   { href: ROUTES.adminAccess, label: "Access", icon: ShieldCheck, group: "Manage" },
   ...ADMIN_NAV.filter((item) => item.group === "Personal"),
 ];
+
+/** Items whose presence in the sidebar depends on a grant rather than a role. */
+const GRANTED_ITEMS: Record<string, "complaints"> = {
+  [ROUTES.adminComplaints]: "complaints",
+};
+
+/**
+ * The nav, minus anything this account has not been granted.
+ *
+ * Only complaints are filtered today, and the asymmetry with every other
+ * permission-gated screen is deliberate rather than an oversight. "Send email",
+ * "Working days" and "Reports" all stay on screen for administrators who cannot
+ * use them, because those screens have a useful ungranted state — they say what
+ * the grant is and who hands it out, which beats a sidebar item that silently
+ * disappears. Complaints have no such state: the whole content of the screen is
+ * the thing being withheld, so a version of it that showed nothing would be a
+ * page explaining that it is empty.
+ *
+ * This is **presentation only.** `/api/admin/complaints` refuses an ungranted
+ * caller regardless of what was drawn, and the page itself re-checks before it
+ * renders — so hiding the item is a courtesy to the sidebar, never the control.
+ */
+export function visibleNav(nav: NavItem[], grants: { canManageComplaints?: boolean }): NavItem[] {
+  return nav.filter((item) => {
+    const gate = GRANTED_ITEMS[item.href];
+    if (!gate) return true;
+
+    return gate === "complaints" ? Boolean(grants.canManageComplaints) : true;
+  });
+}
 
 export function isActiveRoute(pathname: string, item: NavItem): boolean {
   return item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);

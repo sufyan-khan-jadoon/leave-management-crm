@@ -44,6 +44,7 @@ export const adminPermissionsSchema = z
     canEmailAdmins: z.boolean().optional(),
     canViewAdminRecords: z.boolean().optional(),
     canMarkAttendance: z.boolean().optional(),
+    canManageComplaints: z.boolean().optional(),
   })
   .refine(
     (value) => Object.values(value).some((granted) => granted !== undefined),

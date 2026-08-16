@@ -3,7 +3,7 @@ import type { Role } from "@prisma/client";
 import { appConfig } from "@/lib/env";
 import { ordinal } from "@/lib/attendance-policy";
 import { MAX_LOGIN_ATTEMPTS, MONTHLY_LEAVE_ALLOWANCE, OTP_TTL_MINUTES } from "@/lib/constants";
-import { formatDate, formatDateRange } from "@/lib/date";
+import { formatDate, formatDateRange, formatDateTime } from "@/lib/date";
 
 type Template = { subject: string; html: string; text: string };
 
@@ -622,5 +622,62 @@ export function accountStatusTemplate(name: string, suspended: boolean): Templat
     text: suspended
       ? `Hi ${name}, your ${BRAND} account has been suspended. Contact HR for details.`
       : `Hi ${name}, your ${BRAND} account has been reactivated. Sign in at ${appConfig.url}/login.`,
+  };
+}
+
+/**
+ * The letter an employee gets when their complaint is answered.
+ *
+ * Sent **once per complaint, ever** — not once per resolution. The guarantee is
+ * not in here: `complaintRepository.claimResolutionNotice` takes an
+ * unrepeatable claim in the database before this is even built, which is what
+ * makes resolving, reopening and resolving again produce one message. See
+ * `complaint.service.ts`.
+ *
+ * The address it goes to is looked up from the complaint's own `employee`
+ * relation, never taken from whoever resolved it. An administrator typing a
+ * recipient would be an administrator able to redirect somebody else's
+ * grievance, so there is no field for one anywhere in the feature.
+ *
+ * `resolution` is the administrator's own words, escaped like every other value
+ * here — `customEmailTemplate` is the single exception in this file, and it
+ * earns it by running an allowlist first. Newlines become breaks so a resolution
+ * written as paragraphs does not arrive as one run-on line.
+ */
+export function complaintResolvedTemplate(options: {
+  name: string;
+  /** The short reference an employee can quote back. See `complaintReference`. */
+  reference: string;
+  subject: string;
+  resolution: string;
+  resolvedAt: Date;
+  /** Who closed it. Named because a decision with nobody behind it invites a reply. */
+  resolvedByName: string | null;
+}): Template {
+  const when = formatDateTime(options.resolvedAt);
+
+  const rows: Array<[string, string]> = [
+    ["Complaint", options.reference],
+    ["Subject", options.subject],
+    ["Status", "Resolved"],
+    ["Resolved on", when],
+  ];
+
+  if (options.resolvedByName) rows.push(["Resolved by", options.resolvedByName]);
+
+  return {
+    subject: `Your complaint has been resolved — ${options.subject}`,
+    html: layout(
+      "Your complaint has been resolved",
+      `<p>Hello ${esc(options.name)},</p>
+       <p>Your complaint has been reviewed and marked as <strong>resolved</strong>. The details are below, along with what was decided.</p>
+       ${detailTable(rows)}
+       <p style="margin:0 0 8px;font-weight:700;color:${C.darkGreen};">What was decided</p>
+       <div style="background:${C.panel};border:1px solid ${C.border};border-left:4px solid ${C.green};border-radius:12px;padding:16px 18px;font-size:15px;line-height:1.65;color:${C.black};">${esc(options.resolution).replace(/\n/g, "<br />")}</div>
+       <p>If you feel this has not been dealt with fully, reply to your administrator or raise a new complaint and reference ${esc(options.reference)}.</p>
+       <p style="color:${C.muted};">Thank you for raising it,<br />${BRAND}</p>`,
+      { label: "View your complaints", url: `${appConfig.url}/complaints` },
+    ),
+    text: `Hello ${options.name},\n\nYour complaint has been reviewed and marked as resolved.\n\nComplaint: ${options.reference}\nSubject: ${options.subject}\nStatus: Resolved\nResolved on: ${when}${options.resolvedByName ? `\nResolved by: ${options.resolvedByName}` : ""}\n\nWhat was decided:\n${options.resolution}\n\nIf you feel this has not been dealt with fully, reply to your administrator or raise a new complaint and reference ${options.reference}.\n\nView your complaints: ${appConfig.url}/complaints\n\nThank you for raising it,\n${BRAND}`,
   };
 }

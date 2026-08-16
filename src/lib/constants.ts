@@ -109,6 +109,44 @@ export const MAX_EMAIL_ATTACHMENT_BYTES = 4 * 1024 * 1024;
  */
 export const MAX_EMAIL_RECIPIENTS = 500;
 
+/** Enough to name a problem in a table row without being truncated. */
+export const MAX_COMPLAINT_SUBJECT_LENGTH = 150;
+
+/**
+ * How long a complaint, and its answer, may be.
+ *
+ * Both are plain text rather than the composer's HTML, so this bounds what
+ * somebody actually typed rather than markup inflating it — which is why it is a
+ * fraction of `MAX_EMAIL_BODY_LENGTH` and still far more room than anybody uses.
+ * The resolution shares the bound because it is quoted verbatim into an email,
+ * and a limit the admin screen accepted but the letter could not carry would be
+ * discovered only after the complaint had already been closed.
+ */
+export const MAX_COMPLAINT_BODY_LENGTH = 5_000;
+
+/** Working notes an employee never sees. Bounded for the same reason as the rest. */
+export const MAX_COMPLAINT_NOTES_LENGTH = 5_000;
+
+/** How many files may be attached to one complaint. */
+export const MAX_COMPLAINT_ATTACHMENTS = 3;
+
+/**
+ * The whole attachment budget for one complaint, across every file on it.
+ *
+ * **Far smaller than the email budget, and for a different reason.** An email
+ * attachment is a buffer that lives for one request and goes with it; this one
+ * is a row in Postgres that lives for as long as the complaint does, so the cost
+ * is storage rather than a moment of memory. It follows `profilePhoto`, which is
+ * the project's existing answer to file storage — a data URL, capped, with no
+ * object store to stand up for local development.
+ *
+ * Counted **after** base64 encoding, unlike `MAX_EMAIL_ATTACHMENT_BYTES`, since
+ * what lands in the column is the encoded string and that is what actually costs
+ * anything. A 1 MB photo therefore arrives as roughly 1.37 MB of data URL, which
+ * is why this is not a number to compare against what a file browser reports.
+ */
+export const MAX_COMPLAINT_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+
 /**
  * Where the office is. The single source of truth for attendance — nothing else
  * in the codebase names a coordinate.
@@ -188,6 +226,7 @@ export const ROUTES = {
   dashboard: "/dashboard",
   leaves: "/leaves",
   newLeave: "/leaves/new",
+  complaints: "/complaints",
   profile: "/profile",
   adminLogin: "/admin/login",
   adminRegister: "/admin/register",
@@ -200,6 +239,7 @@ export const ROUTES = {
   adminReports: "/admin/reports",
   adminAssistant: "/admin/assistant",
   adminEmails: "/admin/emails",
+  adminComplaints: "/admin/complaints",
   adminAccess: "/admin/access",
   attendance: "/attendance",
 } as const;

@@ -9,6 +9,7 @@ import {
   accountStatusTemplate,
   adminDecisionTemplate,
   attendanceWarningTemplate,
+  complaintResolvedTemplate,
   customEmailTemplate,
   emailVerifiedTemplate,
   invitationTemplate,
@@ -213,5 +214,28 @@ export const emailService = {
 
   sendAccountStatusChanged(to: string, name: string, suspended: boolean) {
     return send(to, accountStatusTemplate(name, suspended));
+  },
+
+  /**
+   * Tells somebody their complaint has been answered.
+   *
+   * `to` comes from the complaint's own employee relation and nowhere else — see
+   * `complaint.service.ts`. Returns whether the mailer accepted it, like every
+   * other send here, and the caller records that rather than assuming it: a
+   * complaint whose letter never arrived is exactly the one somebody will come
+   * asking about.
+   */
+  sendComplaintResolved(
+    to: string,
+    options: {
+      name: string;
+      reference: string;
+      subject: string;
+      resolution: string;
+      resolvedAt: Date;
+      resolvedByName: string | null;
+    },
+  ) {
+    return send(to, complaintResolvedTemplate(options));
   },
 };

@@ -16,6 +16,7 @@ export const employeeSelect = {
   canEmailAdmins: true,
   canViewAdminRecords: true,
   canMarkAttendance: true,
+  canManageComplaints: true,
   lockedAt: true,
   phone: true,
   department: true,
@@ -213,6 +214,14 @@ export const employeeRepository = {
     return prisma.employee.update({
       where: { id },
       data: { canEmailAdmins },
+      select: employeeSelect,
+    });
+  },
+
+  setComplaintPermission(id: string, canManageComplaints: boolean): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { canManageComplaints },
       select: employeeSelect,
     });
   },

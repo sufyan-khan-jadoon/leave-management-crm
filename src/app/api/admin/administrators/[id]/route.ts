@@ -1,6 +1,7 @@
 import { handleRoute, ok, parseBody } from "@/lib/api";
 import { requireSuperAdmin } from "@/lib/auth/guards";
 import { attendanceService } from "@/services/attendance.service";
+import { complaintService } from "@/services/complaint.service";
 import { customEmailService } from "@/services/custom-email.service";
 import { holidayService } from "@/services/holiday.service";
 import { invitationService } from "@/services/invitation.service";
@@ -46,6 +47,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     if (permissions.canMarkAttendance !== undefined) {
       updated = await attendanceService.setMarkPermission(id, permissions.canMarkAttendance);
+    }
+
+    if (permissions.canManageComplaints !== undefined) {
+      updated = await complaintService.setPermission(id, permissions.canManageComplaints);
     }
 
     return ok(updated);

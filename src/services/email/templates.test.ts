@@ -20,6 +20,7 @@ import {
   accountStatusTemplate,
   adminDecisionTemplate,
   attendanceWarningTemplate,
+  complaintResolvedTemplate,
   emailVerifiedTemplate,
   invitationTemplate,
   leaveApprovedTemplate,
@@ -92,6 +93,14 @@ const templates = {
   profileUpdated: profileUpdatedTemplate("Ayesha Khan", "an administrator"),
   accountSuspended: accountStatusTemplate("Ayesha Khan", true),
   accountReactivated: accountStatusTemplate("Ayesha Khan", false),
+  complaintResolved: complaintResolvedTemplate({
+    name: "Ayesha Khan",
+    reference: "ZV-8F3K2A9C",
+    subject: "Air conditioning is broken",
+    resolution: "Facilities replaced the compressor on Friday.\nIt has been running since.",
+    resolvedAt: new Date("2026-08-16T09:30:00.000Z"),
+    resolvedByName: "System Administrator",
+  }),
 };
 
 const entries = Object.entries(templates);
@@ -288,5 +297,51 @@ describe("the office-closed announcement words itself for the day it is sent", (
     for (const template of [templates.officeClosed, templates.officeClosedToday]) {
       expect(template.text).toContain("Friday, August 14, 2026");
     }
+  });
+});
+
+describe("the complaint resolution letter", () => {
+  const { subject, html, text } = templates.complaintResolved;
+
+  it("carries the complaint's identity, so a reply can be matched to it", () => {
+    for (const part of [html, text]) {
+      expect(part).toContain("ZV-8F3K2A9C");
+      expect(part).toContain("Air conditioning is broken");
+    }
+
+    expect(subject).toContain("Air conditioning is broken");
+  });
+
+  it("quotes the resolution in both parts", () => {
+    // The plain-text half is the one nobody looks at until a client refuses
+    // HTML, which is exactly when a missing resolution would matter most.
+    for (const part of [html, text]) {
+      expect(part).toContain("Facilities replaced the compressor on Friday.");
+    }
+  });
+
+  it("keeps the paragraphs a resolution was written with", () => {
+    // A multi-line resolution arriving as one run-on line is the difference
+    // between a decision somebody can read and a wall of text.
+    expect(html).toContain("Friday.<br />It has been running since.");
+  });
+
+  it("names who resolved it and when, on the company's clock", () => {
+    for (const part of [html, text]) {
+      expect(part).toContain("System Administrator");
+      // 09:30 UTC is 2:30 PM in Asia/Karachi, which is the wall clock the
+      // employee and the administrator share.
+      expect(part).toContain("2:30 PM");
+    }
+  });
+
+  it("says it is resolved, and never says rejected", () => {
+    expect(html).toContain("resolved");
+    for (const part of [subject, html, text]) expect(part.toLowerCase()).not.toContain("rejected");
+  });
+
+  it("points at the employee's own complaints screen", () => {
+    expect(html).toContain("/complaints");
+    expect(text).toContain("/complaints");
   });
 });

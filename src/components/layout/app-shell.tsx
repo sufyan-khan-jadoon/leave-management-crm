@@ -8,7 +8,13 @@ import { Menu, X } from "lucide-react";
 import { ZovenciaLogo } from "@/components/layout/zovencia-logo";
 import { GlobalSearch } from "@/components/layout/global-search";
 import { UserMenu } from "@/components/layout/user-menu";
-import { ADMIN_NAV, EMPLOYEE_NAV, SUPER_ADMIN_NAV, isActiveRoute } from "@/components/layout/nav-config";
+import {
+  ADMIN_NAV,
+  EMPLOYEE_NAV,
+  SUPER_ADMIN_NAV,
+  isActiveRoute,
+  visibleNav,
+} from "@/components/layout/nav-config";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +25,13 @@ type AppShellProps = {
   user: { name: string; email: string; image?: string | null };
   isAdmin: boolean;
   isSuperAdmin?: boolean;
+  /**
+   * Whether this account may read complaints, resolved by the layout from the
+   * database rather than from the session — so a withdrawn grant takes the nav
+   * item away on the next load rather than when a week-old token expires. It
+   * only decides what is *drawn*: the endpoint and the page both re-check.
+   */
+  canManageComplaints?: boolean;
   appName: string;
   children: React.ReactNode;
 };
@@ -34,10 +47,19 @@ type AppShellProps = {
  * client boundary. Selecting from `isAdmin` keeps the icons inside the client
  * bundle where they belong.
  */
-export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, children }: AppShellProps) {
+export function AppShell({
+  user,
+  isAdmin,
+  isSuperAdmin = false,
+  canManageComplaints = false,
+  appName,
+  children,
+}: AppShellProps) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const nav = isSuperAdmin ? SUPER_ADMIN_NAV : isAdmin ? ADMIN_NAV : EMPLOYEE_NAV;
+  const nav = visibleNav(isSuperAdmin ? SUPER_ADMIN_NAV : isAdmin ? ADMIN_NAV : EMPLOYEE_NAV, {
+    canManageComplaints,
+  });
 
   return (
     <div className="app-aurora min-h-dvh">

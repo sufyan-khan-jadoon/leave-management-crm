@@ -87,6 +87,29 @@ enum InvitationStatus {
   ACCEPTED
 }
 
+/// Where a complaint has got to.
+///
+/// Deliberately unlike `LeaveStatus`, whose PENDING and REJECTED are write-dead
+/// because the allowance decides and nobody approves. A complaint is the
+/// opposite kind of thing: it is a person asking to be heard, so every one of
+/// these is reachable and a human decides which.
+///
+/// PENDING is where one lands. UNDER_REVIEW says somebody has picked it up, and
+/// exists so an employee watching the screen can tell "nobody has looked yet"
+/// from "somebody is on it" — the single most common question about a complaint.
+/// RESOLVED and REJECTED are the two outcomes, and both owe the employee an
+/// explanation, which is why `resolution` is required for either.
+///
+/// None of them is terminal. A complaint reopened after being resolved is an
+/// ordinary thing to need, so the transitions are open and the *email* is what
+/// is made once-only — see `Complaint.resolutionNoticeClaimedAt`.
+enum ComplaintStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  REJECTED
+}
+
 /// Who a custom email was addressed to.
 ///
 /// This is the permission boundary, not merely a label. INDIVIDUAL and EMPLOYEES
@@ -275,6 +298,28 @@ model Employee {
   /// Read from the database on every attempt, like the other four.
   canMarkAttendance Boolean @default(false)
 
+  /// Whether this administrator may read and act on employee complaints.
+  ///
+  /// The seventh delegable right, and the one guarding the most sensitive
+  /// reading in the system: a complaint is somebody reporting a problem about
+  /// their workplace, often about a named colleague, written in the expectation
+  /// that only the people who can act on it will see it. Being an administrator
+  /// is not by itself a reason to read that, which is why it is off by default
+  /// and granted per account by the super admin.
+  ///
+  /// Unlike `canSendEmails` or `canManageHolidays`, there is **no ungranted
+  /// half**. Those two leave a screen somebody may look at and not use; here
+  /// looking *is* the privilege, so an administrator without this reaches no
+  /// complaint, no count and no list — and the nav item is not rendered at all.
+  ///
+  /// It carries the writes with it rather than splitting reading from resolving.
+  /// An administrator trusted to read a complaint is trusted to answer it, and a
+  /// second grant would mean somebody able to read every grievance in the
+  /// company and do nothing about any of them.
+  ///
+  /// Read from the database on every request, like the other six.
+  canManageComplaints Boolean @default(false)
+
   /// Consecutive failed sign-ins since the last time the password was proven.
   /// Reset by a correct password, by verifying the address, or by a reset.
   failedLoginAttempts Int @default(0)
@@ -322,8 +367,8 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  profileLockedBy   Employee?  @relation("ProfileLockedBy", fields: [profileLockedById], references: [id], onDelete: SetNull)
-  profilesLocked    Employee[] @relation("ProfileLockedBy")
+  profileLockedBy Employee?  @relation("ProfileLockedBy", fields: [profileLockedById], references: [id], onDelete: SetNull)
+  profilesLocked  Employee[] @relation("ProfileLockedBy")
 
   leaves             Leave[]
   attendance         Attendance[]
@@ -331,11 +376,13 @@ model Employee {
   attendanceWarnings AttendanceWarning[]
   policiesUpdated    AttendancePolicy[]  @relation("AttendancePolicyAuthor")
   otpCodes           OtpCode[]
-  invitationsSent    Invitation[] @relation("InvitationIssuer")
-  invitationAccepted Invitation?  @relation("InvitationAcceptor")
-  holidaysDeclared   Holiday[]    @relation("HolidayAuthor")
-  emailsSent         EmailDispatch[] @relation("EmailSender")
-  emailsReceived     EmailDispatch[] @relation("EmailRecipient")
+  invitationsSent    Invitation[]        @relation("InvitationIssuer")
+  invitationAccepted Invitation?         @relation("InvitationAcceptor")
+  holidaysDeclared   Holiday[]           @relation("HolidayAuthor")
+  emailsSent         EmailDispatch[]     @relation("EmailSender")
+  emailsReceived     EmailDispatch[]     @relation("EmailRecipient")
+  complaints         Complaint[]         @relation("ComplaintAuthor")
+  complaintsResolved Complaint[]         @relation("ComplaintResolver")
 
   @@index([department])
   @@index([status])
@@ -444,8 +491,8 @@ model Holiday {
   /// timezone on the day before, which is a different moment in UTC. For a
   /// closure declared for today it is the moment of declaring, since there is no
   /// day before left to wait for.
-  notice     HolidayNotice @default(SCHEDULED)
-  noticeDueAt DateTime?
+  notice       HolidayNotice @default(SCHEDULED)
+  noticeDueAt  DateTime?
   noticeSentAt DateTime?
 
   createdAt DateTime @default(now())
@@ -534,7 +581,7 @@ model AttendancePolicy {
   /// Off switch. The rules stay configured; nothing is sent while this is false.
   warningsEnabled Boolean @default(true)
 
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime  @updatedAt
   updatedById String?
   updatedBy   Employee? @relation("AttendancePolicyAuthor", fields: [updatedById], references: [id], onDelete: SetNull)
 
@@ -689,4 +736,110 @@ model Attendance {
   @@unique([employeeId, date])
   @@index([date])
   @@map("attendance")
+}
+
+/// One employee raising a problem, and what was done about it.
+///
+/// The employee is the `employeeId` relation and nothing else. Their name and
+/// address are **not** copied onto the row, deliberately unlike
+/// `EmailDispatch.recipientNames`, which does copy them: that field records who
+/// was told something at a moment in time, where a rename must not rewrite
+/// history. This is a live case somebody is still working, so the current name
+/// and the current address are the right answers — and the address in particular
+/// has to be looked up rather than stored, because the resolution email must
+/// reach whoever the account belongs to now.
+///
+/// Cascade on delete: a complaint is about the person who wrote it, so removing
+/// the account removes the complaint with it. That is the opposite of
+/// `EmailDispatch`, which is Restrict — an audit record of what somebody sent
+/// the company must outlive them, while a grievance nobody can follow up is only
+/// a copy of somebody's private words with no one left to act on it.
+model Complaint {
+  id          String          @id @default(cuid())
+  employeeId  String
+  subject     String
+  description String
+  status      ComplaintStatus @default(PENDING)
+
+  /// What was decided, written by whoever closed it. Shown to the employee, so
+  /// it is required for RESOLVED and REJECTED alike — an outcome with no words
+  /// against it is the thing that generates the next complaint.
+  resolution String?
+
+  /// Admin-only working notes. **Never** selected into anything an employee can
+  /// reach: `employeeComplaintSelect` omits it, which is the same mechanism
+  /// `employeeSelect` uses to omit the password hash. Don't add it there.
+  internalNotes String?
+
+  /// `SetNull` rather than Cascade, matching `Attendance.markedBy`: deleting the
+  /// administrator who resolved something must not delete the resolution, nor
+  /// the complaint it belongs to.
+  resolvedById String?
+  resolvedBy   Employee? @relation("ComplaintResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  resolvedAt   DateTime?
+
+  /// The claim that stops a second resolution email, and the proof one arrived.
+  ///
+  /// Two columns rather than one because they answer different questions, and
+  /// this is the same split `Holiday.notice`/`noticeSentAt` and
+  /// `AttendanceWarning.claim`/`sentAt` already make. `claimedAt` is written
+  /// **before** a word is sent, by a conditional update that exactly one caller
+  /// can win — so a double-submitted request, a refreshed page, or two admins
+  /// resolving at once produce one email. `sentAt` is written only once the
+  /// mailer accepted it.
+  ///
+  /// Claimed with `sentAt` still null therefore means *tried and failed*, which
+  /// is a state the admin screen reports rather than hides. It is deliberately
+  /// **not** retried: mail is fire-and-forget everywhere here, and a retry that
+  /// cannot tell "never sent" from "sent, then the write failed" is how somebody
+  /// gets the same letter twice.
+  ///
+  /// Neither is cleared when a complaint is reopened. That is what makes
+  /// resolving, unresolving and resolving again send exactly one email.
+  resolutionNoticeClaimedAt DateTime?
+  resolutionNoticeSentAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee    Employee              @relation("ComplaintAuthor", fields: [employeeId], references: [id], onDelete: Cascade)
+  attachments ComplaintAttachment[]
+
+  @@index([employeeId, createdAt])
+  @@index([status])
+  @@index([createdAt])
+  @@map("complaints")
+}
+
+/// A file an employee attached to a complaint.
+///
+/// A table of its own rather than a column on `Complaint`, and that is the whole
+/// point: the bytes live somewhere the list query never touches. `complaintSelect`
+/// takes the filename and size to show a paperclip; only opening one complaint
+/// fetches `data`. A blob on the parent row would be dragged into every page of
+/// the admin table by every `findMany` that forgot to exclude it.
+///
+/// Stored as a data URL, which is the project's existing answer to file storage —
+/// the same one `profilePhoto` uses, and for the same stated reason: no object
+/// store to stand up for local development. The cap is enforced in
+/// `complaint.schema.ts`.
+model ComplaintAttachment {
+  id          String @id @default(cuid())
+  complaintId String
+  filename    String
+  contentType String
+
+  /// Bytes as reported by the parsed data URL, so a list can show a size
+  /// without decoding the payload.
+  size Int
+
+  /// The `data:` URL itself. Selected only when one complaint is opened.
+  data String
+
+  createdAt DateTime @default(now())
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  @@index([complaintId])
+  @@map("complaint_attachments")
 }

@@ -1682,6 +1682,157 @@ message referring to a document with no sign that anything came with it. Deliver
 fire-and-forget: a host that refuses a file is an ordinary failed delivery and reads as `FAILED`,
 with the wording pointed at the attachment rather than at the mail settings.
 
+## Complaints — the one screen a grant makes disappear
+
+An employee raises something; an administrator who holds `canManageComplaints` reads it, records what
+was decided, and closes it; the employee is emailed once. `canManageComplaints` is the **seventh
+delegable right**, off by default, granted per administrator by the super admin, read from the row on
+every request like the other six.
+
+**It is the only grant that removes a nav item.** Every other permission-gated screen here stays on
+screen and explains itself — "Send email", "Working days" and "Reports" all have a useful ungranted
+state, and this file argues elsewhere that an item which silently vanishes reads as a broken sidebar.
+Complaints invert that: reading them *is* the privilege, so the ungranted version would be a page
+whose only content is its own refusal. `visibleNav` filters it out, `/admin/complaints` redirects,
+and `/api/admin/complaints` answers 403. **All three, because a page is as reachable as an
+endpoint** — the lesson `staff/[id]/page.tsx` records, where the server-rendered profile had no
+seniority check while the endpoint beside it did.
+
+The grant is resolved in the admin **layout** from the database, not from the session, so withdrawing
+it takes the item off the sidebar on the next load rather than when a week-old token expires. That is
+rendering; the page and the endpoint are the control.
+
+**Reading and resolving are one grant, deliberately not two.** An administrator trusted to read a
+grievance is trusted to answer it, and splitting them would produce somebody able to read every
+complaint in the company and act on none of them.
+
+### What an employee can and cannot reach
+
+`/api/complaints` is scoped to the session id with **no way to widen it** — there is no `employeeId`
+parameter to leave off, deliberately unlike `/api/leaves` where an admin who omits it gets the whole
+roster. `myComplaintQuerySchema` has no such field at all, and a test asserts its absence: if that
+ever starts failing, the endpoint has gained a way to ask about somebody else.
+
+There is **no `PATCH` or `DELETE` on `/api/complaints/[id]`**, and the absence of the verb is the
+enforcement. An employee cannot move their own complaint's status (that would be resolving your own
+grievance), cannot withdraw it, and cannot edit what they wrote after an administrator has read and
+acted on it.
+
+**`internalNotes` is kept out by a select, not by a filter.** `employeeComplaintSelect` omits it, the
+same mechanism `employeeSelect` uses for the password hash — a filter in a service can be forgotten
+by the next caller, a column that was never read cannot leak. The two email-notice timestamps are
+omitted for a different reason: whether the letter reached them is a fact for the administrator who
+has to do something about it.
+
+Ownership is the **query**, never a comparison after the fact. `findOwnedBy(id, employeeId)` means
+there is no row to forget to check; fetching by id and then comparing works right up until somebody
+drops the second half, and the failure mode is one employee reading another's grievance. A complaint
+belonging to somebody else is reported as *not found*, so the endpoint cannot enumerate ids.
+
+Complaints are open to administrators too, like leave — an admin is an `Employee` with the same
+workplace problems, and the alternative is telling the group most likely to be affected by a senior
+colleague that they have nowhere to report it.
+
+### The status lifecycle, and why nothing is terminal
+
+`PENDING → UNDER_REVIEW → RESOLVED | REJECTED`, and **every transition between two different statuses
+is allowed**. The obvious design — resolved and rejected as terminal — breaks the case that actually
+happens: a complaint closed by mistake, or one whose problem came back. Refusing that would leave the
+row permanently wrong with nothing able to correct it.
+
+What *is* refused is the **no-op**. Setting a complaint to the status it already holds is a
+`ConflictError`, which is what stops a double-submitted resolution rewriting `resolvedAt` and
+re-crediting the decision. It is the cheap half of the once-only defence, not the whole of it.
+
+**Both closing statuses require words.** Only the resolution email was specified, so demanding text
+for a rejection is a judgement — but a complaint refused with nothing said about why is precisely
+what produces the next complaint, and the employee sees the field either way. It is checked against
+the resolution that would be *stored after* the change rather than against what was sent, so
+re-closing a complaint that already carries one is fine while closing a fresh one with nothing said
+is refused. The schema cannot make that distinction; it never sees the row.
+
+`src/lib/complaint-status.ts` holds all of it, Prisma-free so it reads and tests alone exactly as
+`geo.ts`, `working-days.ts` and `email-audience.ts` do. `complaint-status.test.ts` enumerates all
+sixteen ordered pairs rather than testing by example.
+
+### One letter per complaint, ever
+
+The guarantee is **not** in the status rules. `shouldNotifyResolution` answers only "is this an
+arrival at RESOLVED" and deliberately returns true again after a reopen; what makes the cycle send
+one email is `complaintRepository.claimResolutionNotice`, a conditional `updateMany` on
+`resolutionNoticeClaimedAt: null` that exactly one caller can win. Same mechanism as
+`holidayRepository.claimNotice` and `attendanceWarningRepository.claim`, and here for the same
+reason: claiming *after* sending would leave a crash in between looking identical to a complaint
+nobody had touched. Verified by racing eight concurrent resolutions — one email, one winner.
+
+**The claim is never cleared.** That is what makes resolve → reopen → resolve send nothing the second
+time, and it is why the once-only property survives a refresh, a double submit and two administrators
+working the same row.
+
+`resolutionNoticeSentAt` is written only once the mailer accepted it, so **claimed with sent still
+null means tried and failed** — a state the roster surfaces in the row rather than hiding, since
+nobody opens a resolved complaint to check. It is deliberately **not retried**, for the reason
+`AttendanceWarning` gives: a retry that cannot tell "never sent" from "sent, then the write failed"
+is how somebody gets the same letter twice.
+
+A delivery failure is **reported, not thrown**. The complaint is resolved — that write already
+happened and is correct — so throwing would report a success as an error and invite somebody to press
+the button again. `update` returns a `notification` of `sent | failed | already-sent | null` and the
+screen words each differently.
+
+**The recipient is the complaint's own author, read from the database.** Never a field on the
+request, never the actor, never anything an administrator typed — resolving somebody's grievance must
+not be a way to redirect the answer to it. There is no field for a recipient anywhere in the feature.
+
+**`update` re-reads the row after sending, and that fixed a real defect.** The first version returned
+the row fetched *before* the notice fields were written, so the response to the very request that
+sent the letter reported `resolutionNoticeClaimedAt: null` — and the admin row reads exactly those
+two columns to decide whether to show "email failed". It announced a failure for a message that had
+just gone out, and self-corrected on the next reload, which is the worst kind of wrong. Caught by
+driving it; one extra query, only on the resolve path.
+
+### Attachments are rows, not files
+
+There is no object storage in this project. Complaint attachments follow `profilePhoto` — a **data
+URL**, capped, with the cap counted **after** base64 encoding since that is the string that lands in
+the column. `MAX_COMPLAINT_ATTACHMENT_BYTES` is therefore not a number to compare against what a file
+browser reports.
+
+They are a **table of their own**, and that is the point: `complaintSelect` takes the filename,
+type and size to show a paperclip, and the bytes are fetched only when one file is opened. A blob on
+the parent row would be dragged into every page of the admin table by every `findMany` that forgot to
+exclude it.
+
+The content type is derived from the payload the schema validated rather than taken as a field, so
+the two cannot disagree — the argument `email-attachments.ts` makes for deriving from the extension
+instead of believing `file.type`. An **allowlist**: images and PDFs. SVG is absent because it is a
+document that can carry script, and this string is rendered back to an administrator.
+
+`/api/complaints/attachments/[id]` re-derives the permission **from the complaint**, never from the
+attachment id, so an id is not a bearer token for evidence somebody filed in a grievance.
+
+### The reference
+
+`complaintReference` derives `ZV-XXXXXXXX` from the cuid — never stored, so there is no second
+identifier to keep in step. The **last** eight characters, because a cuid's leading characters encode
+its timestamp and are near-identical for rows created in the same session, which is the one thing a
+reference must not be. It is not unique by construction and nothing looks anybody up by it; every
+lookup is still by id. **Don't turn it into a key.**
+
+### Verified
+
+718 unit tests (47 status/reference, 33 schema, and the resolution letter joining the 244-assertion
+template suite, so it inherits every branding, palette and letterhead invariant). Then **107
+end-to-end checks against the real database with the mailer stubbed**, crossing the Zod schemas: the
+filing and its stored fields, an employee refused another's complaint and another's attachment, the
+ungranted administrator refused all four surfaces, an employee refused the admin surface and refused
+resolving their own, search by subject/description/author, the employee/status/date filters, both
+sort orders, notes saved and invisible to the author, closing without words refused twice, the
+resolution stored with its actor and moment, the letter reaching the author's registered address with
+the right subject and text, no second letter on re-resolve or on reopen-and-resolve, eight concurrent
+resolutions producing one, a failed delivery reported and not retried, rejection sending nothing, the
+grant withdrawn biting on the next call with no new session, and the tiles summing.
+
 ## The logo — one component, three files
 
 The official artwork lives in `public/brand/` and is copied in **byte for byte** from the supplied

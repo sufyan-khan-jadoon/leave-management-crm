@@ -334,6 +334,68 @@ export type EmailDispatchView = {
   recipientNames: string[];
 };
 
+/** Where a complaint has got to. Mirrors the Prisma enum. */
+export type ComplaintStatusView = "PENDING" | "UNDER_REVIEW" | "RESOLVED" | "REJECTED";
+
+/** A file on a complaint, without its bytes. Fetched separately when opened. */
+export type ComplaintAttachmentView = {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+};
+
+/**
+ * A complaint as its author sees it.
+ *
+ * `internalNotes` is absent from this type as it is absent from
+ * `employeeComplaintSelect` — the notes are an administrator's working thoughts
+ * about somebody's grievance and never reach them. Keeping the two shapes apart
+ * means a component handed an employee's complaint cannot render a field it was
+ * never given.
+ */
+export type MyComplaintView = {
+  id: string;
+  subject: string;
+  description: string;
+  status: ComplaintStatusView;
+  resolution: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  employeeId: string;
+  resolvedBy: { id: string; name: string } | null;
+  attachments: ComplaintAttachmentView[];
+};
+
+/** The same complaint as somebody managing it sees it. */
+export type ComplaintView = MyComplaintView & {
+  internalNotes: string | null;
+  employee: {
+    id: string;
+    name: string;
+    email: string;
+    department: string | null;
+    position: string | null;
+  };
+  resolvedBy: { id: string; name: string; email: string } | null;
+  /**
+   * Claimed with `sent` still null means the letter was attempted and failed.
+   * The admin screen reports that rather than hiding it — see `Complaint`.
+   */
+  resolutionNoticeClaimedAt: string | null;
+  resolutionNoticeSentAt: string | null;
+};
+
+/** The tiles above the admin table. Whole-board figures, never the current page. */
+export type ComplaintCountsView = {
+  total: number;
+  pending: number;
+  underReview: number;
+  resolved: number;
+  rejected: number;
+};
+
 export type PaginatedAttendance = { items: AttendanceView[]; pagination: Pagination };
 
 export type Pagination = {

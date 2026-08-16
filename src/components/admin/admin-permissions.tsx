@@ -6,6 +6,7 @@ import {
   Mail,
   MailWarning,
   MapPinCheck,
+  MessageSquareWarning,
   ShieldCheck,
   UserPlus,
   Users,
@@ -28,6 +29,7 @@ export type Administrator = {
   canEmailAdmins: boolean;
   canViewAdminRecords: boolean;
   canMarkAttendance: boolean;
+  canManageComplaints: boolean;
 };
 
 /** One delegable right, described once and rendered for every administrator. */
@@ -38,7 +40,8 @@ type Grant = {
     | "canSendEmails"
     | "canEmailAdmins"
     | "canViewAdminRecords"
-    | "canMarkAttendance";
+    | "canMarkAttendance"
+    | "canManageComplaints";
   icon: LucideIcon;
   label: string;
   on: string;
@@ -116,6 +119,18 @@ const GRANTS: Grant[] = [
     granted: "can now record attendance by hand",
     revoked: "can no longer record attendance by hand",
   },
+  {
+    key: "canManageComplaints",
+    icon: MessageSquareWarning,
+    label: "Manage employee complaints",
+    // The only grant here whose screen disappears entirely without it, and the
+    // wording says so — an administrator wondering where the Complaints item
+    // went should be able to find the answer on this panel.
+    on: "Can read every complaint and resolve them",
+    off: "Cannot see complaints at all",
+    granted: "can now read and resolve employee complaints",
+    revoked: "can no longer see employee complaints",
+  },
 ];
 
 /**
@@ -162,9 +177,10 @@ export function AdminPermissions({
         <CardDescription>
           Administrators cannot onboard anyone, close the office, send email or report on
           administrators as a group until you allow it. Writing to the employees and writing to the
-          other administrators are separate switches, so neither arrives with the other. Inviting
-          other administrators stays with you either way, as does emailing the whole organisation at
-          once, and managing administrator accounts on Staff.
+          other administrators are separate switches, so neither arrives with the other, and
+          complaints are hidden from an administrator&apos;s sidebar entirely until you grant them.
+          Inviting other administrators stays with you either way, as does emailing the whole
+          organisation at once, and managing administrator accounts on Staff.
         </CardDescription>
       </CardHeader>
       <CardContent>
