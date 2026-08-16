@@ -66,22 +66,21 @@ export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, childre
       >
         <div className="flex h-16 items-center justify-between px-4">
           {/*
-            The full logo rather than the mark beside the product name: the
-            sidebar is a fixed 16.5rem whenever it is visible, so there is room
-            for the wordmark, and the wordmark already says ZOVENCIA — printing
-            `appName` next to it would read "ZOVENCIA ZOVENCIA PRESENCE". The
-            product name keeps its place in the footer below.
+            The **mark** beside the product name, not the full logo. The full
+            artwork already spells ZOVENCIA, so setting `appName` next to it
+            would read "ZOVENCIA ZOVENCIA PRESENCE"; the standalone Z is the
+            compact brand mark and carries the lockup without the stutter.
 
-            `surface="dark"` because this panel is a dark green slab in *both*
-            themes; a theme-aware logo here would go black-on-black in light
-            mode. See `ZovenciaLogo`.
+            No `surface` is needed here even though the panel is a dark green
+            slab in both themes — the mark is one file on every ground. The name
+            beside it inherits `--sidebar-foreground` from `glass-sidebar`.
           */}
           <Link
             href={nav[0]?.href ?? "/"}
-            className="flex min-w-0 items-center rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/35"
-            aria-label={`${appName} home`}
+            className="focus-visible:ring-ring/35 flex min-w-0 items-center gap-2.5 rounded-md font-semibold tracking-[-0.015em] outline-none focus-visible:ring-[3px]"
           >
-            <ZovenciaLogo variant="full" surface="dark" priority />
+            <ZovenciaLogo priority />
+            <span className="truncate text-[0.9375rem]">{appName}</span>
           </Link>
 
           <Button

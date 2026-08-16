@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { auth } from "@/lib/auth/auth";
 import { ROUTES } from "@/lib/constants";
 import { isAdminRole } from "@/lib/enums";
+import { appConfig } from "@/lib/env";
 import { employeeService } from "@/services/employee.service";
 import { serializeEmployee } from "@/lib/serialize";
 
@@ -24,7 +25,10 @@ export default async function ProfileSetupPage() {
   return (
     <div className="app-aurora flex min-h-dvh flex-col">
       <header className="flex items-center justify-between px-5 py-4 sm:px-7 sm:py-5">
-        <ZovenciaLogo variant="full" priority />
+        <span className="flex items-center gap-2.5 font-semibold tracking-[-0.015em]">
+          <ZovenciaLogo priority />
+          {appConfig.name}
+        </span>
         <ThemeToggle />
       </header>
 

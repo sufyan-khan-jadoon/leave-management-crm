@@ -1634,11 +1634,24 @@ Neither image carries `aria-hidden`. `hidden` is `display:none`, which already t
 of the accessibility tree, so exactly one "Zovencia" is exposed at a time. Marking the second one
 hidden reads correctly in light mode and leaves dark mode with a logo no screen reader can see.
 
-**`surface="dark"` is the sidebar's exception, and it is not a way round the rule.** `--sidebar` is
-the same dark green in the light palette as in the dark one — the panel does not follow the theme —
-so a theme-aware logo there would put a black wordmark on a near-black slab in light mode. The rule
-is about contrast, and on a surface that does not follow the theme, following the theme is what
-breaks it.
+**The chrome pairs the mark with the product name; the full logo is for brand moments.** The sidebar,
+the sign-in header and the onboarding header all render `variant="mark"` beside `appName`, because the
+full artwork already spells ZOVENCIA and setting the name next to it reads "ZOVENCIA ZOVENCIA
+PRESENCE". The landing page — the front door, and the one screen that is branding rather than
+chrome — carries `variant="full"` at `lg`. That split is deliberate: the product is *Zovencia
+Presence*, and only the mark leaves room to say so.
+
+It also means the mark does most of the work, which is why it is the variant with no theme behaviour
+to get wrong: one file, both themes, and the name beside it is ordinary text that recolours with
+everything else.
+
+**`surface="dark"` exists for the trap it prevents, not for a caller it currently has.** `--sidebar`
+is the same dark green in the light palette as in the dark one — that panel does not follow the theme
+— so a `variant="full"` dropped into the sidebar would put a black wordmark on a near-black slab in
+light mode. The prop is how that is said out loud. Nothing passes it today because the sidebar uses
+the mark; **keep it** rather than deleting it as unused, and reach for it the moment a full logo goes
+anywhere that is dark in both themes. The rule is about contrast, and on a surface that does not
+follow the theme, following the theme is what breaks it.
 
 **`ASSETS` carries each file's measured geometry, and that is load-bearing.** The three exports have
 very different transparent padding: the black wordmark's artwork fills 88% of its file's height, the
