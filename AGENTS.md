@@ -1634,24 +1634,37 @@ Neither image carries `aria-hidden`. `hidden` is `display:none`, which already t
 of the accessibility tree, so exactly one "Zovencia" is exposed at a time. Marking the second one
 hidden reads correctly in light mode and leaves dark mode with a logo no screen reader can see.
 
-**The chrome pairs the mark with the product name; the full logo is for brand moments.** The sidebar,
-the sign-in header and the onboarding header all render `variant="mark"` beside `appName`, because the
-full artwork already spells ZOVENCIA and setting the name next to it reads "ZOVENCIA ZOVENCIA
-PRESENCE". The landing page — the front door, and the one screen that is branding rather than
-chrome — carries `variant="full"` at `lg`. That split is deliberate: the product is *Zovencia
-Presence*, and only the mark leaves room to say so.
+**Two lockups, and which one a surface gets depends on how much room it has.**
 
-It also means the mark does most of the work, which is why it is the variant with no theme behaviour
-to get wrong: one file, both themes, and the name beside it is ordinary text that recolours with
-everything else.
+- **The sidebar** renders the full white wordmark *as the word ZOVENCIA*, with only what the product
+  name adds to it — PRESENCE — set as text beside it. `productSuffix` in `brand.ts` derives that
+  remainder from `appName` rather than hard-coding it, so changing `APP_NAME` cannot leave the panel
+  printing "PRESENCE" next to a wordmark that no longer agrees with it.
+- **The sign-in and onboarding headers** pair `variant="mark"` with the whole of `appName`. They have
+  no fixed width to design against and the mark is the compact form.
+- **The landing page** carries `variant="full"` at `lg`, alone. It is the front door, and the one
+  screen that is branding rather than chrome.
 
-**`surface="dark"` exists for the trap it prevents, not for a caller it currently has.** `--sidebar`
-is the same dark green in the light palette as in the dark one — that panel does not follow the theme
-— so a `variant="full"` dropped into the sidebar would put a black wordmark on a near-black slab in
-light mode. The prop is how that is said out loud. Nothing passes it today because the sidebar uses
-the mark; **keep it** rather than deleting it as unused, and reach for it the moment a full logo goes
-anywhere that is dark in both themes. The rule is about contrast, and on a surface that does not
-follow the theme, following the theme is what breaks it.
+Nothing anywhere sets the full wordmark beside the *whole* app name — that reads "ZOVENCIA ZOVENCIA
+PRESENCE", which is what the mark-plus-name lockup exists to avoid.
+
+**`surface="dark"` is what makes the sidebar lockup legible.** `--sidebar` is the same dark green in
+the light palette as in the dark one — that panel does not follow the theme — so a theme-aware logo
+there would put a black wordmark on a near-black slab in light mode. The rule is about contrast, and
+on a surface that does not follow the theme, following the theme is what breaks it.
+
+**The sidebar logo is nudged up 2px, and the number is measured rather than eyeballed.** The Z glyph
+is taller than the lettering beside it, so the wordmark sits low inside its own file: its optical
+centre is 43.5 of 352 art-pixels below the artwork's centre. Centring the file therefore leaves
+ZOVENCIA about 3px below PRESENCE's baseline, which at a 16px lockup reads as a mistake. 2px brings
+the two optical centres within a third of a pixel and the baselines within one — verified by
+screenshotting at 4x device scale and measuring the rendered letterforms.
+
+That correction lives at the **call site**, not in `ZovenciaLogo`, and deliberately: the right amount
+depends on the baseline and cap height of the text beside it, which the logo component has no way to
+know. It is a fact about this lockup rather than about the asset. `size="xs"` exists for the same
+lockup — it matches the artwork to the cap height of the copy, and is the only size the full wordmark
+plus PRESENCE fits a 16.5rem panel at (108px + 8px + 78px = 194px of 232px usable).
 
 **`ASSETS` carries each file's measured geometry, and that is load-bearing.** The three exports have
 very different transparent padding: the black wordmark's artwork fills 88% of its file's height, the

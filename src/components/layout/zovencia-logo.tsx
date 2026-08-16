@@ -74,6 +74,16 @@ function sizeFor(asset: Asset, artHeight: number) {
  * the landing page cannot each settle on their own idea of the right size.
  */
 const ART_HEIGHT = {
+  /**
+   * The logo standing in for a **word** in a line of text.
+   *
+   * Sized to the cap height of the copy beside it rather than to the line, so
+   * `full` reads as the word ZOVENCIA in a sentence rather than as a picture
+   * dropped into one. It is the only size the full wordmark fits the sidebar
+   * at: at `sm` the artwork alone is 135px, and with the product name after it
+   * that overruns a 16.5rem panel.
+   */
+  xs: 16,
   /** Beside a hamburger, or anywhere the chrome is already tight. */
   sm: 20,
   /** The default: sidebar headers, sign-in headers. */

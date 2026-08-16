@@ -24,6 +24,26 @@ export const BRAND_NAME = "Zovencia";
 export const BRAND_TAGLINE = "Attendance & Workforce Management";
 
 /**
+ * What the product name adds to the brand — "PRESENCE" out of "ZOVENCIA PRESENCE".
+ *
+ * For the one lockup where the **logo renders the brand word itself** and only
+ * the remainder is set as text. Derived rather than hard-coded, so the sidebar
+ * cannot end up printing "PRESENCE" beside the wordmark after somebody changes
+ * `APP_NAME` to something else entirely.
+ *
+ * A name that does not start with the brand is returned whole: that is a
+ * configuration nobody here anticipated, and showing all of it beside the logo
+ * is the reading least likely to hide something.
+ */
+export function productSuffix(appName: string): string {
+  const trimmed = appName.trim();
+
+  return trimmed.toLowerCase().startsWith(BRAND_NAME.toLowerCase())
+    ? trimmed.slice(BRAND_NAME.length).trim()
+    : trimmed;
+}
+
+/**
  * The Zovencia palette, as a document renderer needs it.
  *
  * The same four colours the screens and the email templates are built from, and

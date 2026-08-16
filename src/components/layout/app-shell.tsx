@@ -12,6 +12,7 @@ import { ADMIN_NAV, EMPLOYEE_NAV, SUPER_ADMIN_NAV, isActiveRoute } from "@/compo
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { productSuffix } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 type AppShellProps = {
@@ -66,21 +67,47 @@ export function AppShell({ user, isAdmin, isSuperAdmin = false, appName, childre
       >
         <div className="flex h-16 items-center justify-between px-4">
           {/*
-            The **mark** beside the product name, not the full logo. The full
-            artwork already spells ZOVENCIA, so setting `appName` next to it
-            would read "ZOVENCIA ZOVENCIA PRESENCE"; the standalone Z is the
-            compact brand mark and carries the lockup without the stutter.
+            The full wordmark stands in for the word ZOVENCIA, and only what the
+            product name adds to it — PRESENCE — is set as text. So the artwork
+            spells the brand and nothing repeats it; `productSuffix` derives the
+            remainder from `appName` rather than hard-coding a word the env var
+            could contradict.
 
-            No `surface` is needed here even though the panel is a dark green
-            slab in both themes — the mark is one file on every ground. The name
-            beside it inherits `--sidebar-foreground` from `glass-sidebar`.
+            `surface="dark"` because this panel is a dark green slab in *both*
+            themes: `--sidebar` is the same token in the light palette as in the
+            dark one, so a theme-aware logo here would go black-on-black in
+            light mode. The text beside it needs no such care — it inherits
+            `--sidebar-foreground` from `glass-sidebar`.
+
+            `size="xs"` matches the artwork to the cap height of the text, so
+            the two read as one line. Larger overruns the 16.5rem panel once
+            PRESENCE is beside it.
           */}
           <Link
             href={nav[0]?.href ?? "/"}
-            className="focus-visible:ring-ring/35 flex min-w-0 items-center gap-2.5 rounded-md font-semibold tracking-[-0.015em] outline-none focus-visible:ring-[3px]"
+            className="focus-visible:ring-ring/35 flex min-w-0 items-center gap-2 rounded-md font-semibold tracking-[-0.015em] outline-none focus-visible:ring-[3px]"
           >
-            <ZovenciaLogo priority />
-            <span className="truncate text-[0.9375rem]">{appName}</span>
+            {/*
+              Nudged up 2px. The Z glyph is taller than the lettering beside it,
+              so the wordmark sits low in its own file — centring the artwork
+              leaves ZOVENCIA about 3px below PRESENCE's baseline, which on a
+              16px lockup reads as a typo. Measured at 4x device scale; 2px puts
+              the two optical centres within a third of a pixel and the
+              baselines within one.
+
+              Corrected here rather than inside `ZovenciaLogo` because the right
+              amount depends on the baseline of the text beside it, which the
+              logo component cannot know — it is a fact about this lockup, not
+              about the asset.
+            */}
+            <ZovenciaLogo
+              variant="full"
+              surface="dark"
+              size="xs"
+              priority
+              className="-top-0.5"
+            />
+            <span className="truncate text-[0.9375rem]">{productSuffix(appName)}</span>
           </Link>
 
           <Button
