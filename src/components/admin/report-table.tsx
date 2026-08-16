@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { friendlyTimeLabel } from "@/lib/attendance-policy";
 import { formatDate, formatTimeInAppZone } from "@/lib/date";
 import { describeLateness } from "@/lib/lateness";
+import { roleLabel } from "@/lib/report-labels";
 import type { ReportRecordTypeView, ReportView } from "@/types";
 
 const RECORD_TYPE_BADGE = {
@@ -102,13 +103,7 @@ export function ReportTable({
                 </TableCell>
 
                 <TableCell>
-                  <Badge variant="outline">
-                    {row.role === "EMPLOYEE"
-                      ? "Employee"
-                      : row.role === "ADMIN"
-                        ? "Administrator"
-                        : "Super admin"}
-                  </Badge>
+                  <Badge variant="outline">{roleLabel(row.role)}</Badge>
                 </TableCell>
 
                 <TableCell>

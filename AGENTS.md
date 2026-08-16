@@ -955,15 +955,63 @@ stop existing when their account did. `SUPER_ADMIN` is counted with the administ
 `rolesInPopulation` counts them in every report; an account in neither population would vanish from
 its own organisation's figures.
 
-#### The export
+#### The exports — three files, one document
 
-`/api/admin/reports/export` re-posts **the same body through the same service call** with only the
-page size opened up (`generateAll`), refinements included, so the file cannot hold rows the screen did
-not nor leave out rows it did. `report-csv.ts` is pure and free of Next, so it is driven with a real
-report rather than only through an HTTP call, and the route keeps the two things only a route can do —
-the guard and the response. `escapeCsvCell` moved to `src/lib/csv.ts` when the third export arrived:
-two identical copies were tolerable, a third would have made the formula-injection guard something you
-have to remember to bring with you.
+A report downloads as **Excel, PDF or CSV**, and all three re-post **the same body through the same
+service call** with only the page size opened up (`generateAll`), refinements included, so no file can
+hold rows the screen did not nor leave out rows it did. `exportReport` in `src/lib/report-export.ts`
+is where the guard, the schema, the service call and the branded document happen **once**; a route is
+left holding its own format and nothing else. Three routes each repeating that plumbing is three
+places for one of them to quietly stop honouring a filter.
+
+**`report-document.ts` is the seam, and it is the whole of the consistency argument.** It turns a
+`ReportResult` into headings, labels, columns and cells, and the three renderers — `report-csv.ts`,
+`report-xlsx.ts`, `report-pdf.ts` — are three views of *it*. A spreadsheet and a PDF built
+independently would be two more implementations of a report that already exists, and they would
+disagree long before anybody noticed, in the copies that get archived and mailed around where nothing
+can be checked against the screen. It is pure and free of Prisma and of Next, so it is driven with a
+real report rather than only through an HTTP call, and **it never recomputes anything** — every figure
+is one `report.service.ts` put on the report.
+
+The columns follow the **record types the report holds**, exactly as `ReportSummary` and `ReportTable`
+do on screen: a leave-only report carries no check-in columns, and no `Absent: 0` line appears in a
+report that never asked about absence. That rule lives in the document once, so the screen and the
+three files cannot answer it differently. `roleLabel` and `dayStatusLabel` moved into
+`report-labels.ts` for the same reason — a file reading `ON_LEAVE` beside a screen reading "On leave"
+is one report described twice.
+
+**Branding is a literal, not `appConfig.name`.** `src/lib/brand.ts` holds `Zovencia` and the tagline,
+for the reason `services/email/templates.ts` gives about the letterhead: the app name is an
+environment variable, and a stale `APP_NAME` would put the wrong company on a document somebody
+archives — the same place as an email, where the mistake cannot be recovered because the file has
+already left. Filenames are `Zovencia_Report_2026-08-16` or `Zovencia_Report_2026-08-01_to_2026-08-16`,
+one stem across all three formats, ISO-dated so a folder of them sorts.
+
+**Excel is three sheets**, because that is what a spreadsheet is for: sorting, filtering and totalling
+do not work with a summary block sitting above the header row. The header is frozen and carries the
+autofilter. Figures that are *wholly* a number are written **as numbers** — a column of counts stored
+as text cannot be summed and Excel flags every cell of it — while `42 m` and `5:00 PM` stay text,
+because a number with its unit stripped off is a different fact. A leading `=` is stored as a string,
+not a formula; the CSV's `escapeCsvCell` still neutralises it there, where it would otherwise execute.
+
+**The PDF measures its columns rather than guessing them.** The document's `width` is a character
+count, which is exactly what Excel wants and says nothing about millimetres at 7pt: scaling it
+directly broke `2026-08-18` into `2026-08` / `-18` and `Administrator` into `Administrat` / `or`. So
+`measureColumns` asks jsPDF for the width of each column's widest *unbreakable token* and its widest
+whole cell, guarantees the first and shares the remainder in proportion to the second — free text
+absorbs the shortfall, dates and enum values stay intact. The letterhead and footer are drawn once per
+page through a `Set` of decorated pages, since every table on a page fires autoTable's hook.
+
+**`MAX_PDF_DETAIL_ROWS` bounds the medium, not the report**, which is why only the PDF has one.
+Rendering is worse than linear — 500 rows 0.6s, 2,000 rows 1.9s, 5,000 rows 7.4s — and `vercel.json`
+sets no `maxDuration`, so a big report would arrive as a timeout with nothing to say why. Above the
+cap the records stop and a note says so; the totals, the coverage and every individual summary still
+describe the whole report, so a capped PDF is a complete report that stops listing rather than a
+partial one. Raise it only alongside `maxDuration`, and re-measure.
+
+`escapeCsvCell` moved to `src/lib/csv.ts` when the third export arrived: two identical copies were
+tolerable, a third would have made the formula-injection guard something you have to remember to bring
+with you.
 
 Both report endpoints are **`POST` that write nothing**. A period in one of three shapes, a people
 selection, up to two hundred ids and a set of record types is past what a query string reliably
@@ -980,6 +1028,20 @@ removing a working day and its withdrawal restoring the day exactly, pages that 
 disagree about the total, an empty period reading `NO_RECORD` rather than accusing everybody, a future
 period accusing nobody, the CSV holding every row the report did, and every table counted before and
 after to prove nothing was written.
+
+The three exports were verified the same way and **against an isolated schema**, not the live one — a
+scratch Postgres schema built from the datamodel, seeded with a real August (on-time and late
+check-ins, a hand-recorded correction, absences, approved leave, a declared closure, a mid-period
+joiner and a suspended account), driven, then dropped. 567 checks: every people mode, every period
+shape, every record-type combination and the search/role/status refinements, each producing three
+files whose headers, totals and coverage match the screen's payload figure for figure; every detail
+row agreeing across the UI, the CSV and the workbook on date, name, record type, status and lateness;
+the hand-recorded row keeping its recorder and its blank distance beside a geofenced row keeping its
+distance; the closure appearing in no record and counted as a closure instead; a formula-shaped leave
+reason neutralised in the CSV and inert in the workbook; the PDF branded, paginated and breaking
+nothing mid-word; a suspended account out of the bulk selection and in when named; an employee id
+posted as an admin selection reporting on nobody; and all three routes refusing an anonymous caller,
+an employee, an administrator without `canViewAdminRecords`, and a payload carrying its own totals.
 
 **What this system does not record, and what the report therefore does not invent.** There is no
 check-out time on `Attendance` and no leave *type* on `Leave` — so there is no "hours worked" column

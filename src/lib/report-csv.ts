@@ -1,29 +1,22 @@
 /**
- * A report, as a spreadsheet.
+ * A report document, as a spreadsheet-shaped grid of text.
  *
- * Pure, and free of Prisma and of Next: it takes a report that has already been
- * generated and returns rows of strings, so it can be driven with a real report
- * and read on its own — the same shape `report-period.ts` and `report-labels.ts`
- * beside it take. The route is left holding the two things only a route can do,
- * which are the guard and the response.
+ * The thinnest of the three renderers: it takes the document
+ * `report-document.ts` already built and lays it out as rows of strings, because
+ * CSV has no styling to apply and no pages to break. Everything it prints —
+ * every heading, column, figure and note — was decided there, which is what
+ * makes this file, the workbook and the PDF three views of one report rather
+ * than three reports.
  *
- * **It never recomputes anything.** Every figure written out is one the service
- * put on the report; a formatter that added its own arithmetic would be a second
- * answer landing in the copy that gets archived, where nothing can be checked
- * against the screen it came from.
+ * Pure, and free of Prisma and of Next, so it can be driven with a real document
+ * and read on its own. The route is left holding the two things only a route can
+ * do, which are the guard and the response.
+ *
+ * **It never recomputes anything.** A formatter that added its own arithmetic
+ * would be a second answer landing in the copy that gets archived, where nothing
+ * can be checked against the screen it came from.
  */
-import { friendlyTimeLabel } from "@/lib/attendance-policy";
-import { formatDateTime, formatTimeInAppZone, toIsoDate } from "@/lib/date";
-import { formatDistance } from "@/lib/geo";
-import {
-  describePeopleSelection,
-  describeRecordTypes,
-  describeReportRefinements,
-} from "@/lib/report-labels";
-import type { ReportResult, ReportRow, ReportTotals } from "@/services/report.service";
-
-/** What is narrowing the report beyond its period, people and record types. */
-export type ReportCsvRefinements = Parameters<typeof describeReportRefinements>[0];
+import type { ReportDocument, ReportFieldEntry, ReportTable } from "@/lib/report-document";
 
 /**
  * The whole file: an identifying header, the overall summary, one line per
@@ -31,145 +24,51 @@ export type ReportCsvRefinements = Parameters<typeof describeReportRefinements>[
  *
  * It leads with the report's identity because a CSV outlives the screen — a bare
  * grid of dates cannot say what question it answered, and this is the copy that
- * gets mailed around and filed.
+ * gets mailed around and filed. The brand leads that, so a file found in a
+ * folder a year later still says who produced it.
  */
-export function reportToCsvRows(
-  report: ReportResult,
-  organisation: string,
-  refinements: ReportCsvRefinements,
-): string[][] {
-  const described = describeReportRefinements(refinements);
-
+export function reportDocumentToCsvRows(document: ReportDocument): string[][] {
   return [
-    [organisation.toUpperCase()],
-    ["Attendance, absence and leave report"],
+    [document.brand.toUpperCase()],
+    [document.title],
     [],
-    ["Period", report.periodLabel],
-    ["People", describePeopleSelection(report.people, report.peopleCount)],
-    ["Records", describeRecordTypes(report.recordTypes)],
-    // Only when something is actually narrowing. A line reading "Filters: none"
-    // is something to read past on every export for the sake of the few where it
-    // says anything.
-    ...(described.length > 0 ? [["Filters", described.join("; ")]] : []),
-    ["Generated", formatDateTime(report.generatedAt)],
+    ...document.identity.map(pair),
     [],
 
     ["OVERALL SUMMARY"],
-    // Labelled "per person" because it is not a sum: 22 working days is a
-    // property of the calendar, and adding it across eleven people to report 242
-    // is a number nobody asked for and everybody misreads.
-    ["Working days in period (per person)", String(report.coverage.workingDays)],
-    ["Days off in period (per person)", String(report.coverage.daysOff)],
-    ["Office closures in period", String(report.coverage.closedDays)],
-    ["People covered", String(report.peopleCount)],
-    ...totalsRows(report.totals),
+    ...document.summary.map(pair),
+    ...(document.notes.length > 0 ? [[], ["NOTES"], ...document.notes.map((note) => [note])] : []),
     [],
 
-    ["INDIVIDUAL SUMMARIES"],
-    [
-      "Name",
-      "Email",
-      "Role",
-      "Department",
-      "Working days",
-      "Days off",
-      "Present",
-      "Absent",
-      "Leave",
-      "Late",
-      "Minutes late",
-      "Joined during period",
-    ],
-    ...report.summaries.map((summary) => [
-      summary.employee.name,
-      summary.employee.email,
-      summary.employee.role,
-      summary.employee.department ?? "",
-      String(summary.coverage.workingDays),
-      String(summary.coverage.daysOff),
-      String(summary.totals.present),
-      String(summary.totals.absent),
-      String(summary.totals.onLeave),
-      String(summary.totals.late),
-      String(summary.totals.lateMinutes),
-      summary.joinedDuringPeriod ? toIsoDate(summary.joinedDuringPeriod) : "",
-    ]),
+    ...tableRows(document.individuals),
     [],
-
-    ["DETAILED RECORDS"],
-    [
-      "Date",
-      "Name",
-      "Email",
-      "Role",
-      "Department",
-      "Record type",
-      "Status",
-      "Check-in",
-      "Late (minutes)",
-      // The deadline as well as the figure, because a spreadsheet outlives the
-      // setting: "15" alone becomes unreadable the day somebody moves the
-      // cutoff, and this is the column an argument about timekeeping is had
-      // over. The attendance export already follows the same reasoning.
-      "Late measured from",
-      "Distance",
-      // A hand-recorded day stays distinguishable from a proved one here above
-      // all, since this is the copy that gets archived — the geofence is the
-      // whole difference, and a blank distance with a name beside it is what
-      // says which happened.
-      "Recorded by",
-      "Recorded reason",
-      "Leave status",
-      "Leave reason",
-    ],
-    ...report.rows.map(detailRow),
+    ...tableRows(document.records),
   ];
 }
 
 /**
- * The totals, written as label/value pairs rather than as a header and a row.
+ * A section title, its header row and its rows — or the title and the reason
+ * there is nothing under it.
  *
- * A summary block read by a person, not a table read by a machine: pairs stay
+ * An empty table printed as a bare header reads as a file that failed to write;
+ * naming why it is empty is the difference between an answer and a blank.
+ */
+function tableRows(table: ReportTable): string[][] {
+  return [
+    [table.title.toUpperCase()],
+    ...(table.rows.length === 0
+      ? [[table.emptyNote]]
+      : [table.columns.map((column) => column.header), ...table.rows]),
+  ];
+}
+
+/**
+ * A label and its value on one line, rather than a header row and a value row.
+ *
+ * A summary block is read by a person, not parsed by a machine: pairs stay
  * legible when a line is added and do not have to be scrolled sideways to match
  * a number to its name.
  */
-function totalsRows(totals: ReportTotals): string[][] {
-  return [
-    ["Records", String(totals.records)],
-    ["Present days", String(totals.present)],
-    ["Absent days", String(totals.absent)],
-    ["Leave days", String(totals.onLeave)],
-    ["Late arrivals", String(totals.late)],
-    ["Total minutes late", String(totals.lateMinutes)],
-  ];
-}
-
-function detailRow(row: ReportRow): string[] {
-  return [
-    toIsoDate(row.date),
-    row.name,
-    row.email,
-    row.role,
-    row.department ?? "",
-    row.recordType,
-    row.status,
-    // The arrival time on the company's clock, not a UTC instant: this file is
-    // read by people who were in that office, and a timestamp five hours off is
-    // the sort of thing that gets argued about rather than noticed.
-    row.checkInAt ? formatTimeInAppZone(row.checkInAt) : "",
-    row.checkInAt ? String(row.lateMinutes) : "",
-    row.lateBasisMinutes !== null ? friendlyTimeLabel(row.lateBasisMinutes) : "",
-    // Never a fabricated zero — a null distance means nobody measured one, and
-    // `Recorded by` beside it is what happened instead.
-    row.distanceMeters !== null ? formatDistance(row.distanceMeters) : "",
-    row.markedBy?.name ?? "",
-    row.markedReason ?? "",
-    row.leaveStatus ?? "",
-    row.leaveReason ?? "",
-  ];
-}
-
-/** The organisation's name, as a filename can carry it. */
-export function organisationSlug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "report";
+function pair(entry: ReportFieldEntry): string[] {
+  return [entry.label, entry.value];
 }

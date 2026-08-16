@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
-  Download,
   FileBarChart,
+  FileSpreadsheet,
+  FileText,
   Printer,
   RotateCcw,
   Search,
   ShieldAlert,
   Sparkles,
+  Table2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -77,6 +79,67 @@ const MONTHS = Array.from({ length: 12 }, (_, index) => ({
     new Date(Date.UTC(2000, index, 1)),
   ),
 }));
+
+/**
+ * The three files a generated report can become.
+ *
+ * One route each rather than a format field, and — the part that matters here —
+ * **the same request body posted to all three**. Every one of them re-runs the
+ * report through `reportService.generateAll` and renders the document
+ * `report-document.ts` builds, so the spreadsheet, the PDF and the CSV hold
+ * exactly the rows on screen and describe them in exactly the same words. A file
+ * assembled in the browser from what happens to be rendered would be a second
+ * implementation of a report that already exists — and it would be page one of
+ * it, since the table is paged on the server.
+ *
+ * The fallback names are only reached if the response arrives without a
+ * `Content-Disposition`, which the routes always set; the branded, dated name
+ * comes from the server so every copy of one report is named identically.
+ */
+const EXPORT_FORMATS = {
+  xlsx: {
+    label: "Export Excel",
+    path: "/api/admin/reports/export/xlsx",
+    icon: FileSpreadsheet,
+    fallback: "Zovencia_Report.xlsx",
+  },
+  pdf: {
+    label: "Download PDF",
+    path: "/api/admin/reports/export/pdf",
+    icon: FileText,
+    fallback: "Zovencia_Report.pdf",
+  },
+  csv: {
+    label: "Export CSV",
+    path: "/api/admin/reports/export",
+    icon: Table2,
+    fallback: "Zovencia_Report.csv",
+  },
+} as const;
+
+type ExportFormat = keyof typeof EXPORT_FORMATS;
+
+const EXPORT_ORDER: ExportFormat[] = ["xlsx", "pdf", "csv"];
+
+/**
+ * Hands a downloaded blob to the browser under the name the server chose.
+ *
+ * The object URL is released on the next tick rather than immediately: revoking
+ * it in the same turn as the click races the download in some browsers, and the
+ * file that fails to arrive gives no error to catch.
+ */
+function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
 
 /**
  * What a generated report was generated *from*.
@@ -160,7 +223,16 @@ export function ReportBuilder({
   const [basis, setBasis] = useState<ReportBasis | null>(null);
   const [report, setReport] = useState<ReportView | null>(null);
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  /**
+   * Which file is being built, or nothing.
+   *
+   * A format rather than a boolean, so the button somebody pressed is the one
+   * that spins — and so a second press of *any* of the three is refused while
+   * one is in flight. A large report is a real wait, and three overlapping
+   * exports of it is three full generations on the server for one file somebody
+   * wanted.
+   */
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -309,14 +381,18 @@ export function ReportBuilder({
     setFieldErrors({});
   }
 
-  async function download() {
-    if (!basis) return;
-    setExporting(true);
+  async function download(format: ExportFormat) {
+    // Refused rather than queued while another file is being built, which is what
+    // makes a double click harmless — see `exporting`.
+    if (!basis || exporting) return;
+
+    const target = EXPORT_FORMATS[format];
+    setExporting(format);
 
     try {
       // The same body the report was generated from, refinements included, so
       // the file cannot hold rows the screen did not — nor leave out rows it did.
-      const response = await fetch("/api/admin/reports/export", {
+      const response = await fetch(target.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -333,18 +409,15 @@ export function ReportBuilder({
       if (!response.ok) throw new Error("Export failed");
 
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
+      const filename =
+        response.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] ?? target.fallback;
 
-      link.href = url;
-      link.download =
-        response.headers.get("Content-Disposition")?.match(/filename="(.+)"/)?.[1] ?? "report.csv";
-      link.click();
-      URL.revokeObjectURL(url);
+      saveBlob(blob, filename);
+      toast.success(`${filename} downloaded.`);
     } catch {
       toast.error("Couldn't export that report. Please try again.");
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   }
 
@@ -559,20 +632,6 @@ export function ReportBuilder({
               Reset filters
             </Button>
 
-            {report && (
-              <>
-                <Button variant="outline" onClick={() => window.print()} disabled={loading}>
-                  <Printer className="size-4" />
-                  Print
-                </Button>
-
-                <Button variant="outline" onClick={download} loading={exporting} disabled={loading}>
-                  <Download className="size-4" />
-                  Export CSV
-                </Button>
-              </>
-            )}
-
             {draftProblem && <p className="text-muted-foreground text-sm">{draftProblem}</p>}
           </div>
 
@@ -635,6 +694,48 @@ export function ReportBuilder({
                 <p className="text-muted-foreground text-xs">
                   Generated {formatDateTime(report.generatedAt)}
                 </p>
+              </div>
+
+              {/*
+                The exports sit with the report rather than with the filters that
+                produced it, because that is the thing being taken away — and
+                because what they carry is the report *as it now stands*, the
+                search and status refinements below included, not the draft in
+                the panel above. Hidden until a report exists for the same
+                reason: there is nothing to export before then.
+              */}
+              <div className="no-print flex flex-wrap items-center gap-2">
+                {EXPORT_ORDER.map((format) => {
+                  const option = EXPORT_FORMATS[format];
+                  const Icon = option.icon;
+
+                  return (
+                    <Button
+                      key={format}
+                      variant={format === "csv" ? "ghost" : "outline"}
+                      size="sm"
+                      onClick={() => void download(format)}
+                      loading={exporting === format}
+                      // Every one of them is disabled while any is in flight, so
+                      // a second click cannot start a second full generation of
+                      // the same report.
+                      disabled={loading || exporting !== null}
+                    >
+                      <Icon className="size-4" />
+                      {option.label}
+                    </Button>
+                  );
+                })}
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => window.print()}
+                  disabled={loading || exporting !== null}
+                >
+                  <Printer className="size-4" />
+                  Print
+                </Button>
               </div>
 
               {isNarrowed && (

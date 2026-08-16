@@ -42,6 +42,38 @@ export function recordTypeLabel(type: ReportRecordType): string {
 }
 
 /**
+ * A role, as the screens say it.
+ *
+ * Here rather than as a ternary at each call site, because the exports need it
+ * too and `SUPER_ADMIN` printed raw into a document somebody circulates is
+ * jargon leaking out of a schema.
+ */
+export function roleLabel(role: string): string {
+  if (role === "EMPLOYEE") return "Employee";
+  if (role === "ADMIN") return "Administrator";
+  return "Super admin";
+}
+
+/**
+ * A day's verdict, as the roster's own badge says it.
+ *
+ * Only the three a report can hold: `recordTypeOf` maps everything else to
+ * nothing, because a closure and a weekly day off are the *absence* of a record
+ * and are counted in the coverage instead. The wording matches
+ * `AttendanceStatusBadge` deliberately — a spreadsheet reading `ON_LEAVE` beside
+ * a screen reading "On leave" is the same report described twice.
+ */
+const DAY_STATUS_LABELS: Record<string, string> = {
+  PRESENT: "Present",
+  ABSENT: "Absent",
+  ON_LEAVE: "On leave",
+};
+
+export function dayStatusLabel(status: string): string {
+  return DAY_STATUS_LABELS[status] ?? status;
+}
+
+/**
  * "All", or the chosen types in a fixed order.
  *
  * The complete set reads as **All** rather than as three names, which is the

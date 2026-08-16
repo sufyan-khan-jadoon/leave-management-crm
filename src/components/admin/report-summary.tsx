@@ -17,6 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDate } from "@/lib/date";
 import { describeLateness } from "@/lib/lateness";
+import { roleLabel } from "@/lib/report-labels";
 import { initialsOf } from "@/lib/utils";
 import type { ReportRecordTypeView, ReportView } from "@/types";
 
@@ -203,13 +204,7 @@ export function ReportSummary({ report }: { report: ReportView }) {
 
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <Badge variant="outline">
-                            {summary.employee.role === "EMPLOYEE"
-                              ? "Employee"
-                              : summary.employee.role === "ADMIN"
-                                ? "Administrator"
-                                : "Super admin"}
-                          </Badge>
+                          <Badge variant="outline">{roleLabel(summary.employee.role)}</Badge>
                           {summary.employee.status !== "ACTIVE" && (
                             <Badge variant="warning">Suspended</Badge>
                           )}
