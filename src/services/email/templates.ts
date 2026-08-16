@@ -58,6 +58,88 @@ function esc(value: string): string {
 }
 
 /**
+ * The two official logos, as mail can carry them.
+ *
+ * **Absolute URLs off `appConfig.url`**, which is the mechanism the CTA buttons
+ * in these same templates already depend on — a recipient's client fetches
+ * these over the public internet and can reach nothing relative, nothing local
+ * and nothing behind auth. If `NEXTAUTH_URL` is wrong in an environment then
+ * every link in every message is wrong with it, so this adds no new dependency.
+ *
+ * They point at `public/brand/email/`, which holds the official artwork with
+ * the transparent margin trimmed off, scaled to twice its display size. Nothing
+ * is cropped, recoloured or redrawn — the trim removes empty space so a `width`
+ * attribute means what it says, since email HTML cannot let an image overhang
+ * its box the way the app's CSS does, and 2x keeps it sharp on a phone. It also
+ * takes the pair from 314KB to 11KB, and every message carries them.
+ *
+ * `width`/`height` are given as attributes **and** inline: Outlook renders
+ * through Word and honours the attribute, Gmail honours the style.
+ */
+const LOGO = {
+  mark: {
+    src: `${appConfig.url}/brand/email/zovencia-mark.png`,
+    width: 45,
+    height: 44,
+    alt: `${BRAND} logo`,
+  },
+  full: {
+    src: `${appConfig.url}/brand/email/zovencia-full-black.png`,
+    width: 150,
+    height: 22,
+    alt: BRAND,
+  },
+} as const;
+
+/**
+ * One logo, styled so a client that blocks images still reads as the brand.
+ *
+ * **`height:auto` inline, `height` as an attribute.** Pinning the height in CSS
+ * as well looks tidier and is wrong: Gmail hides images by default for a sender
+ * the recipient has not written to, and a box frozen at 22px crops the alt text
+ * to a sliced half-word — verified, it renders as a broken letterhead rather
+ * than as a name. Left to grow, the alt text sets in the brand's own weight and
+ * reads. The attribute stays because Word sizes from it, and with the file
+ * exported at exactly twice its display width the two agree.
+ */
+function logoImg({ src, width, height, alt }: (typeof LOGO)[keyof typeof LOGO]): string {
+  return `<img src="${src}" width="${width}" height="${height}" alt="${esc(alt)}" style="display:block;width:${width}px;max-width:${width}px;height:auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;color:${C.black};font-family:${FONT};font-size:10px;line-height:1.35;font-weight:700;" />`;
+}
+
+/**
+ * The letterhead: the brand green band, with the standalone Z at one end of it
+ * and the full wordmark at the other.
+ *
+ * Written once and poured into every message by `layout`, so all nineteen
+ * templates inherit it and none of them holds a copy that could drift.
+ *
+ * **The logos sit on white inside the green band, and that is a measurement
+ * rather than a preference.** The Z is a gradient running from the brand green
+ * to near-black, so against a `#0AEA0A` field 15.2% of its ink is the colour of
+ * the ground behind it and the mark renders visibly eaten; the full logo loses
+ * 3.9% the same way, all of it in its Z. On white both lose nothing. Keeping
+ * the band green and giving the artwork the surface it was drawn for is the
+ * only arrangement that serves both, short of altering a logo — which is not
+ * ours to do.
+ *
+ * The right-hand logo is right-aligned by a nested `align="right"` table rather
+ * than by `margin-left:auto` or `text-align`, that being the one technique Word
+ * honours.
+ */
+function brandHeader(): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;background:${C.white};border-radius:12px;border-collapse:separate;">
+                  <tr>
+                    <td class="zv-brand" align="left" valign="middle" style="padding:14px 18px;">${logoImg(LOGO.mark)}</td>
+                    <td class="zv-brand" align="right" valign="middle" style="padding:14px 18px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="right" style="border-collapse:collapse;">
+                        <tr><td style="line-height:0;font-size:0;">${logoImg(LOGO.full)}</td></tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>`;
+}
+
+/**
  * A label/value table, as the invitation, leave and closure notices all use.
  *
  * Extracted so the three of them cannot drift apart: the borders and the label
@@ -115,7 +197,11 @@ function layout(heading: string, body: string, cta?: { label: string; url: strin
     <style>
       @media only screen and (max-width: 600px) {
         .zv-pad { padding: 24px 20px !important; }
-        .zv-head { padding: 20px !important; }
+        .zv-head { padding: 14px !important; }
+        /* The letterhead already fits 320px; this only buys back breathing
+           room at the very narrowest, and a client that drops the <style>
+           block loses nothing it needed. */
+        .zv-brand { padding: 12px 14px !important; }
       }
     </style>
   </head>
@@ -125,8 +211,8 @@ function layout(heading: string, body: string, cta?: { label: string; url: strin
         <td align="center">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;background:${C.white};border-radius:16px;overflow:hidden;border:1px solid ${C.border};border-collapse:separate;">
             <tr>
-              <td class="zv-head" style="background:${C.green};padding:24px 32px;border-radius:16px 16px 0 0;">
-                <span style="color:${C.black};font-size:22px;font-weight:700;letter-spacing:-0.3px;font-family:${FONT};">${BRAND}</span>
+              <td class="zv-head" style="background:${C.green};padding:20px 24px;border-radius:16px 16px 0 0;">
+                ${brandHeader()}
               </td>
             </tr>
             <tr>

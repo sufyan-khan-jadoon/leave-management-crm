@@ -97,9 +97,29 @@ const templates = {
 const entries = Object.entries(templates);
 
 describe.each(entries)("%s", (_name, template) => {
-  it("is branded Zovencia in the header and the footer", () => {
-    // Twice: the green header bar and the footer signature.
-    expect(template.html.match(/>Zovencia</g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  it("carries both official logos in the letterhead", () => {
+    // The header used to set the word Zovencia in bold; it now carries the two
+    // supplied assets. Asserted by filename so a template cannot quietly go
+    // back to typing the brand, and so the *black* wordmark is pinned — the
+    // white one is unreadable on the green band and on a white panel alike.
+    expect(template.html).toContain("/brand/email/zovencia-mark.png");
+    expect(template.html).toContain("/brand/email/zovencia-full-black.png");
+    expect(template.html).not.toContain("zovencia-full-white.png");
+  });
+
+  it("addresses those logos absolutely, since a recipient has no site to be relative to", () => {
+    for (const src of template.html.match(/<img[^>]+src="([^"]+)"/g) ?? []) {
+      expect(src).toMatch(/src="https?:\/\//);
+    }
+  });
+
+  it("names the logos for a client that blocks images", () => {
+    expect(template.html).toContain('alt="Zovencia logo"');
+    expect(template.html).toContain('alt="Zovencia"');
+  });
+
+  it("still signs off as Zovencia in the footer", () => {
+    expect(template.html).toMatch(/>Zovencia</);
   });
 
   it("carries the exact brand green", () => {
@@ -223,8 +243,13 @@ describe("user-supplied values are still escaped", () => {
       closesToday: false,
     });
 
-    expect(template.html).not.toContain("<img");
-    expect(template.html).toContain("&lt;img");
+    // The letterhead legitimately carries two <img> tags now, so "no <img>
+    // anywhere" is no longer the invariant. What must hold is narrower and
+    // truer: the injected one survives only as escaped text, no attribute of
+    // it is ever parsed, and the only real images are the two logos.
+    expect(template.html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+    expect(template.html).not.toMatch(/onerror\s*=\s*"/);
+    expect(template.html.match(/<img /g) ?? []).toHaveLength(2);
   });
 });
 

@@ -1683,10 +1683,41 @@ mark: the transparent margin trimmed, re-padded square, resized. That is a platf
 favicon has to be square and the source is 1.41:1 — and it changes no artwork. The scaffold
 `favicon.ico` that shipped with `create-next-app` is gone.
 
-Email templates are deliberately **not** given the logo. They are signed with the word "Zovencia" as
-a literal, and an image in an email means either an absolute URL to this deployment — which
-`AGENTS.md` already forbids hardcoding, and which breaks the moment the domain moves — or a CID
-attachment on every message. The word survives both.
+### The letterhead on outgoing mail
+
+Every message carries the two logos: the standalone Z at one end of the green band and the full
+**black** wordmark at the other. `brandHeader()` in `services/email/templates.ts` is the only place
+that markup exists and `layout()` pours it into all nineteen templates, so none of them holds a copy
+to fall out of step — and `templates.ts` is the only file in the codebase that builds email HTML at
+all, verified.
+
+**The logos sit on white inside the green band, and that is a measurement rather than a taste.** The
+Z is a gradient running from the brand green to near-black, so against `#0AEA0A` **15.2% of its ink
+is the colour of the ground behind it** and the mark renders visibly eaten; the full logo loses 3.9%
+the same way, all of it in its Z. On white both lose nothing. Keeping the band green and giving the
+artwork the surface it was drawn for is the only arrangement that serves both — the alternative is
+altering a logo, which is not ours to do. Don't "clean this up" by dropping the logos straight onto
+the green.
+
+**The white wordmark is never used in mail**, and a test pins it. Mail has no theme to follow: the
+band is green and the panel is white in every client, so black is the only wordmark that reads.
+
+Images are addressed by **absolute URL off `appConfig.url`** — the mechanism the CTA buttons in these
+same templates already depend on, since a recipient's client can reach nothing relative and nothing
+local. They point at `public/brand/email/`, which holds the artwork with its transparent margin
+trimmed and scaled to twice display size: nothing cropped or recoloured, but email HTML cannot let an
+image overhang its box the way the app's CSS does, so the padding has to come off for a `width`
+attribute to mean what it says. It also takes the pair from 314KB to 11KB on every message.
+
+**`height` is an attribute and `height:auto` is the style, and the split matters.** Pinning the
+height in CSS too looks tidier and breaks the case that actually happens: Gmail hides images by
+default for a sender the recipient has never written to, and a box frozen at 22px crops the alt text
+to a sliced half-word — a letterhead that reads as broken rather than as a name. Left to grow, the
+alt sets in the brand's weight and reads "Zovencia". The attribute stays because Word sizes from it.
+Verified with images blocked, not only with them loaded.
+
+The footer stays the word "Zovencia" as a literal — the header carries the branding, and a second
+logo under it is repetition.
 
 ## Brand colour — the FILL vs INK rule
 
