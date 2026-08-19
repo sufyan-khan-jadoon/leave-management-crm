@@ -135,7 +135,16 @@ async function callGroq(system: string, turns: ChatTurn[]): Promise<string> {
       body: JSON.stringify({
         model: env.GROQ_MODEL,
         temperature: 0,
-        max_tokens: 400,
+        // Sized from measurement, and bounded from both sides. A reasoning model
+        // spends this budget before it emits a character, and a reply truncated
+        // mid-object is not an error but an unbalanced brace that
+        // `extractJsonObject` rejects — burning the retry and surfacing as
+        // "temporarily unavailable". But Groq reserves `prompt + max_tokens`
+        // against the tokens-per-minute quota, so over-provisioning buys that
+        // safety with 429s instead. Measured against the real prompts: peak
+        // completion 155 tokens, of which 96 reasoning. 600 is ~4x the peak and
+        // still leaves the free tier's 8k/min ~2.5 requests.
+        max_tokens: 600,
         // Syntax-level JSON only. Groq enforces a schema just on the gpt-oss
         // models, so the shape is validated with Zod instead — that keeps any
         // model swappable through GROQ_MODEL without touching this call.

@@ -14,7 +14,7 @@ const serverSchema = z.object({
   NEXTAUTH_URL: z.string().url().default("http://localhost:3000"),
 
   GROQ_API_KEY: z.string().min(1, "GROQ_API_KEY is required"),
-  GROQ_MODEL: z.string().default("llama-3.1-8b-instant"),
+  GROQ_MODEL: z.string().default("openai/gpt-oss-20b"),
 
   EMAIL_HOST: z.string().min(1),
   EMAIL_PORT: z.coerce.number().int().positive().default(587),

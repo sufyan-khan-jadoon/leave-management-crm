@@ -110,7 +110,7 @@ Every variable is validated at runtime by `src/lib/env.ts`; a missing or malform
 | `NEXTAUTH_SECRET` | ✅ | Session signing key, **32+ characters** |
 | `NEXTAUTH_URL` | ✅ | App base URL (`http://localhost:3000` locally) |
 | `GROQ_API_KEY` | ✅ | Free key from [Groq Console](https://console.groq.com/keys) — no credit card |
-| `GROQ_MODEL` | — | Defaults to `llama-3.1-8b-instant` |
+| `GROQ_MODEL` | — | Defaults to `openai/gpt-oss-20b`. Groq retires models without notice — check it is still listed at `https://api.groq.com/openai/v1/models` |
 | `EMAIL_HOST` | ✅ | SMTP host — `smtp.hostinger.com` for the Zovencia mailbox |
 | `EMAIL_PORT` | — | Defaults to `587`; use `465` for implicit TLS |
 | `EMAIL_SECURE` | — | `"true"` for port 465 |
@@ -593,7 +593,15 @@ npm start
 
 **`The AI service is not configured correctly`** — a 401/403 from Groq. Confirm `GROQ_API_KEY` is set and still active in the [Groq Console](https://console.groq.com/keys).
 
-**`The AI assistant is busy right now`** — a 429. The free tier allows 30 requests/minute and 14,400/day on `llama-3.1-8b-instant`; a retired or mistyped `GROQ_MODEL` also returns an error here.
+**`The AI assistant is busy right now`** — a 429, the free tier's rate limit. Wait and retry.
+
+**`The AI assistant is temporarily unavailable`** — every Groq status that isn't 401/403/429, and in practice this almost always means **a retired `GROQ_MODEL`**, not an outage. Groq removes models without notice and answers with 404 `model_not_found`, which reads as a service fault because the message is a catch-all. Check the pin against the live catalogue before looking anywhere else:
+
+```bash
+curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
+```
+
+`llama-3.1-8b-instant` was the original pin and no longer exists. The server log line `[ai] Groq request rejected:` carries Groq's own wording.
 
 **`I couldn't understand that request`** — the model returned unusable JSON twice. Rephrase with a clearer date, e.g. "I need leave on Friday because I have university exams."
 
