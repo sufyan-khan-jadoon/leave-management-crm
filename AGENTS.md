@@ -1833,6 +1833,190 @@ the right subject and text, no second letter on re-resolve or on reopen-and-reso
 resolutions producing one, a failed delivery reported and not retried, rejection sending nothing, the
 grant withdrawn biting on the next call with no new session, and the tiles summing.
 
+## Remote work — days that are exempt rather than absent
+
+An administrator puts somebody on remote work for a stretch of days; those days become
+**attendance-exempt**. Not present, not absent, not leave. Nothing is written to `attendance` or
+`leaves` when a period is assigned and nothing is deleted when one is revoked — the exemption is
+derived from `remote_work_assignments` on every read, exactly as absence and closures are, so
+shortening or revoking a period puts the days straight back on the register with nothing to migrate.
+`canManageRemoteWork` is the **eighth delegable right**, off by default, read from the row on every
+request like the other seven.
+
+**Almost none of the rule lives in `remote-work.service.ts`.** `describeDay` returns `REMOTE`, in the
+one place every other day status is decided, and the roster, the warning sweep, the assistant, the
+report and the three exports inherit it for free. Nothing in the sweep had to learn about remote work
+to stop chasing remote people: it writes only to rows the roster calls `ABSENT`, and these are not.
+That is the whole return on absence being derived in one place — **don't add a second check anywhere.**
+
+### The one coverage predicate
+
+`startDate <= day AND (endDate IS NULL OR endDate >= day)`, written twice and only twice:
+`coversDate` in `src/lib/remote-work.ts` for the in-memory walks, and `coveringDay`/`coveringRange`
+in the repository for SQL. `buildHistories` applies `coversDate` over rows the SQL already selected,
+so the two are checked against each other on every cell of every report rather than only where
+somebody remembered to.
+
+`src/lib/remote-work.ts` is free of Prisma so it reads and tests alone exactly as `geo.ts`,
+`working-days.ts`, `lateness.ts` and `holiday-notice.ts` do; `remote-work.test.ts` pins every
+duration, both month-boundary clamps, the leap year, the empty range and the overlap edges, and
+passes under `TZ=America/New_York`.
+
+**`endDate` null means until revoked** — an open period, not a missing value. A far-future sentinel
+was the alternative and every comparison in the codebase would have had to know the number.
+
+**There is no `status` column.** Active, scheduled, ended and revoked are all readable off the three
+dates against today, and a stored copy would need a sweep to keep honest — the argument
+`InvitationStatus` makes for having no "expired" and `AttendanceStatus` for having no `ABSENT`. There
+is no sweep, so a period that ended last night would sit at ACTIVE until somebody ran one.
+`SCHEDULED` is a fourth state beyond the three the brief named, and it earns its place: "Tomorrow"
+and a range starting next week exist and are not yet in force, and calling either ACTIVE would be a
+lie on the screen an administrator opens to find out who is remote *today*.
+
+### Where REMOTE sits in `describeDay`, and why
+
+`PRESENT` → `CLOSED` → `NON_WORKING` → `ON_LEAVE` → **`REMOTE`** → `UPCOMING` → `ABSENT`/`NO_RECORD`.
+
+- **A check-in outranks it.** Somebody arranged to work from home who nonetheless walked in *was
+  there*, the building proved it, and nothing is taken from them for it. This is also why
+  `markPresent` does **not** refuse a remote employee: remote decides who is *expected*, not who is
+  *permitted*, and refusing would have the system calling a fact it could verify a mistake. What it
+  never becomes is a requirement — `MarkAttendanceCard` shows the button under an explanation rather
+  than as a bare duty.
+- **A closure outranks it.** The office being shut is a fact about the whole company's calendar; a
+  day read as REMOTE for some people and CLOSED for the rest would be one date with two accounts of
+  it.
+- **Leave outranks it**, and this is the ordering worth arguing. Somebody remote for August who
+  booked the 25th off is *not working* on the 25th, and the leave is the fact that cost them a day of
+  allowance. Reading it as REMOTE would hide a charge already paid. `planLeave` refuses *new* leave
+  inside a remote period, so this only ever arises for leave booked first — exactly the case where
+  the employee's own booking should win.
+- **It outranks the future**, matching the closure: a period arranged for next week is already
+  declared about those days, and "remote" answers more than "hasn't happened yet".
+
+`dayHoldsRecord` is deliberately unchanged: a remote assignment is not evidence that the day was
+being watched, so an otherwise empty day still reads `NO_RECORD` for everybody else rather than
+`ABSENT`. Don't add remote to it to make a tile look better.
+
+### Revoking keeps the days already served
+
+`revocationEndDate` truncates `endDate` to **today** rather than erasing the row, so the fortnight
+somebody has genuinely worked from home stays exempt and only the future returns to the register.
+Deleting instead would retroactively mark every one of those days absent, which is the false record
+this whole feature exists to prevent — §4's "do not retroactively generate false attendance records",
+enforced by arithmetic rather than by remembering.
+
+A period revoked **before it started** is closed to an *empty range*: `endDate` lands one day before
+`startDate`, and the coverage predicate then matches nothing at all. That is the honest shape for an
+instruction that never took effect, and it is why nothing in the database constrains
+`endDate >= startDate` — that rule belongs to *input*, and `remote-work.schema.ts` enforces it there.
+Revoking never lengthens anything: an already-finished period keeps the end it had.
+
+The revocation is **claimed** with a conditional `updateMany` on `revokedAt: null`, the same
+mechanism `holidayRepository.claimNotice` and `complaintRepository.claimResolutionNotice` use, so two
+administrators pressing the button at once produce one audit event and one letter.
+
+Coverage queries **include** revoked rows — that is the point of truncating rather than deleting.
+Overlap queries **exclude** them, because a period somebody called off is not a conflict with a new
+one however its dates read.
+
+### Overlaps, leave and backdating
+
+**Overlapping live periods are refused, not merged.** Two rows covering one day would make "is this
+person remote" a question with two answers, and merging silently would leave an administrator who
+meant to *move* a period having *extended* it. The refusal names the period in the way and points at
+the two things that resolve it.
+
+**Approved leave inside a new period is reported, never overridden.** Those days stay booked and stay
+charged, per the ordering above. Refusing the assignment would force an administrator to cancel
+somebody's leave in order to arrange their remote month; absorbing it silently would hand back
+allowance nobody asked for. `assign` returns `leaveDatesInPeriod` and the dialog says so.
+
+**Backdating is allowed**, and it is the counterpart of `markPresentFor`: "she was working from home
+all last week" turns days that read `ABSENT` into days that read `REMOTE`, which is a correction
+somebody genuinely needs. It cannot overwrite anything proved — a check-in still outranks it — and
+every such edit is on the audit trail with both periods on it. It does **not** unsend warning letters
+already delivered; nothing can.
+
+A **revoked** period cannot be edited: it is the record of an arrangement that was called off, and
+editing it would make the audit trail describe something that never ran. An **ended** one can, for
+the backdating reason above. Moving the dates makes the type `CUSTOM`, because that is what a
+hand-picked pair of dates is — keeping "One week" on a period dragged three days out would leave the
+label contradicting the dates beside it.
+
+### Who may arrange whose
+
+`assertMayArrangeFor` is **`assertMayCorrect`'s shape, not `assertMayManage`'s**, for the reason
+attendance corrections take that shape: this writes an arrangement about somebody's working days and
+touches nothing about their account, so a granted administrator reaches `EMPLOYEE` and `ADMIN` alike.
+Two refusals, both load-bearing: **nobody arranges their own** — aimed at yourself it is a way to
+mark yourself permanently exempt without ever going in, the geofence defeated rather than excepted —
+and **nobody arranges the super admin's**, itself included.
+
+`requireActive` is the whole difference between the two callers of `resolveTarget`. Assigning demands
+an active account; editing and revoking do not, because otherwise suspending somebody would strand
+their live arrangement, unable to be ended by anybody and still counted among the people working
+remotely.
+
+**Reading is not the grant.** Every administrator sees who is remote — the attendance roster beside
+it already shows them, and knowing whether a colleague is expected in the office is ordinary
+people-management. The screen is read-only without `canManageRemoteWork` rather than hidden, which is
+what makes it unlike Complaints. The **population** filter is a third question again and answers to
+`canViewAdminRecords` through `populationService`, exactly as it does on the roster.
+
+### The report denominator
+
+`ReportCoverage` gained `remoteDays` and `attendanceEligibleDays`, which is `workingDays` minus
+`remoteDays` — §12's arithmetic, derived once in `report.service.ts` so the screen, the PDF, the
+workbook and the CSV cannot arrive at four denominators for one report. **Remote days stay inside
+`workingDays`**: they are days the organisation works and this person worked, and taking them out
+there would leave "22 working days in August" reading differently for two people in one report.
+
+`remoteDays` is the one coverage figure that is a fact about the period *and the person* rather than
+about the period alone, so `ReportResult.coverage` reports the first subject's and the individual
+summaries each report their own. The screen and the exports label it accordingly and show the pair
+whenever **anybody** in the report holds a remote day — not only when the record type was ticked,
+because the sum is wrong either way and hiding it does not make it right.
+
+`REMOTE` is a `ReportRecordType`, unlike `CLOSED` and `NON_WORKING`: a remote day is a day somebody
+worked and the system can name it, where a weekend is a day nobody was asked to. It prints as a row
+reading **Remote**, which is §19's requirement — a file archived and mailed around saying "Absent"
+for a day somebody worked from home is the mistake this feature exists to stop, and unlike a screen
+there is nothing beside it to check against.
+
+### The audit trail is a table, and that is the exception
+
+`RemoteWorkEvent` breaks this codebase's habit of keeping an audit on the row itself, which
+`Attendance.markedById` makes the case for. That argument holds precisely because a check-in is never
+amended — one row per person per day, and nothing changes it. A remote period is the opposite kind of
+thing: its dates are edited and then it is revoked, so the row can only describe its present state
+and the period it used to cover would be lost with every edit. Both periods are copied in by value,
+the same argument `EmailDispatch.recipientNames` and `AttendanceWarning.consecutiveMissed` make.
+
+Three letters, all fire-and-forget and all **reported rather than thrown** — `assign`, `update` and
+`revoke` return `emailSent` so the administrator can notice a message that never left, exactly as the
+invitation panel does. Every one of them says in as many words that **attendance is not required**,
+because a person told only "you are remote from Monday" still does not know whether to keep marking
+themselves present, and guessing wrong reads as the system being broken. The update letter names both
+the old and the new period; a changed reason sends nothing, since a corrected typo is not news. The
+revocation letter names **the day attendance resumes**, which is not the day of the revocation and
+differs whenever a period is called off before it started.
+
+### Verified
+
+826 unit tests: 38 pinning the pure rules, 22 pinning the wire contract — including that a fixed
+duration carrying its own dates is refused rather than ignored, since those dates are the server's to
+resolve against the company's calendar day and a browser a day out would otherwise book a week
+starting yesterday — and four remote-work letters joining the 292-assertion template suite, so they
+inherit every branding, palette and letterhead invariant. `npm run typecheck`, `npm run lint` and
+`npm run build` all clean.
+
+**What has not been driven against a live database**: the end-to-end passes the other features here
+record — the permission boundaries against real rows, the eight-worker revocation race, a real roster
+flipping ABSENT→REMOTE, the warning sweep skipping a remote employee. Those need a database and
+secrets; the migration below has not been applied anywhere. Treat the runtime behaviour as reasoned
+and typechecked rather than as observed.
+
 ## The logo — one component, three files
 
 The official artwork lives in `public/brand/` and is copied in **byte for byte** from the supplied

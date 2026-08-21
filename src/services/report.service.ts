@@ -83,6 +83,17 @@ export type ReportTotals = {
   present: number;
   absent: number;
   onLeave: number;
+  /**
+   * Days worked away from the office under an arranged period.
+   *
+   * A column beside `present` and `absent` rather than inside either, because a
+   * remote day is neither: nobody was expected in and nobody failed to appear.
+   * It is excluded from the attendance denominator — see
+   * `ReportCoverage.attendanceEligibleDays` — which is the whole of §12's
+   * arithmetic, and the reason 16 present out of 22 working days with 5 remote
+   * reads as 16/17 rather than 16/22.
+   */
+  remote: number;
   /** Present, and past the deadline. A **subset of `present`** — see the roster. */
   late: number;
   lateMinutes: number;
@@ -115,6 +126,29 @@ export type ReportCoverage = {
   noRecordDays: number;
   /** Working days still to come, which nobody can yet have missed. */
   upcomingDays: number;
+  /**
+   * Working days this person spent on an arranged remote period.
+   *
+   * Unlike every other figure here, this one is **not** a fact about the period
+   * alone — it is a fact about the period *and this person*, since two people in
+   * one report can hold different arrangements. It sits in coverage rather than
+   * in totals because that is where the denominator is computed, and because it
+   * describes the calendar available to somebody rather than what they did with
+   * it. `ReportResult.coverage` therefore reports the *first* subject's remote
+   * days and the individual summaries each report their own; the screen labels
+   * the whole-report tile accordingly.
+   */
+  remoteDays: number;
+  /**
+   * Working days this person could have been marked present or absent on.
+   *
+   * **`workingDays` minus `remoteDays`, and the point of the whole feature.**
+   * §12's worked example: 22 working days, 5 remote, 17 eligible, 16 present,
+   * 1 absent — never 16 out of 22 with 6 absent. Derived rather than stored, and
+   * derived here rather than at each call site, so the screen, the PDF, the
+   * workbook and the CSV cannot arrive at four denominators for one report.
+   */
+  attendanceEligibleDays: number;
 };
 
 /** One person's section of the report. */
@@ -284,6 +318,12 @@ function recordTypeOf(status: AttendanceDayStatus): ReportRecordType | null {
       return "ABSENT";
     case "ON_LEAVE":
       return "LEAVE";
+    // A record, unlike the four that fall through below: a remote day is a day
+    // somebody worked and the system can name it. What it is *not* is a day they
+    // could have been absent from, which is `attendanceEligibleDays`' business
+    // rather than this function's.
+    case "REMOTE":
+      return "REMOTE";
     default:
       return null;
   }
@@ -296,14 +336,23 @@ function coverageOf(days: DayRecord[]): ReportCoverage {
 
   const closedDays = count((status) => status === "CLOSED");
   const weeklyOff = count((status) => status === "NON_WORKING");
+  const remoteDays = count((status) => status === "REMOTE");
+  const workingDays = days.length - closedDays - weeklyOff;
 
   return {
     calendarDays: days.length,
-    workingDays: days.length - closedDays - weeklyOff,
+    // Remote days stay *inside* `workingDays`, deliberately. They are days the
+    // organisation works and this person worked; what they are not is days the
+    // attendance register applies to, which is the next line's business. Taking
+    // them out here would leave "22 working days in August" reading differently
+    // for two people in the same report, which is not what that number means.
+    workingDays,
     daysOff: closedDays + weeklyOff,
     closedDays,
     noRecordDays: count((status) => status === "NO_RECORD"),
     upcomingDays: count((status) => status === "UPCOMING"),
+    remoteDays,
+    attendanceEligibleDays: workingDays - remoteDays,
   };
 }
 
@@ -314,6 +363,7 @@ function totalsOf(rows: ReportRow[]): ReportTotals {
     present: rows.filter((row) => row.status === "PRESENT").length,
     absent: rows.filter((row) => row.status === "ABSENT").length,
     onLeave: rows.filter((row) => row.status === "ON_LEAVE").length,
+    remote: rows.filter((row) => row.status === "REMOTE").length,
     late: rows.filter((row) => row.lateMinutes > 0).length,
     lateMinutes: rows.reduce((sum, row) => sum + row.lateMinutes, 0),
   };
@@ -595,5 +645,7 @@ function emptyCoverage(period: ReportPeriod): ReportCoverage {
     closedDays: 0,
     noRecordDays: 0,
     upcomingDays: 0,
+    remoteDays: 0,
+    attendanceEligibleDays: 0,
   };
 }

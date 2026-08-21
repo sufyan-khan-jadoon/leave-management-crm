@@ -19,6 +19,9 @@ import {
   passwordChangedTemplate,
   passwordResetOtpTemplate,
   profileUpdatedTemplate,
+  remoteWorkAssignedTemplate,
+  remoteWorkRevokedTemplate,
+  remoteWorkUpdatedTemplate,
   welcomeTemplate,
 } from "@/services/email/templates";
 
@@ -206,6 +209,50 @@ export const emailService = {
       }),
       options.attachments,
     );
+  },
+
+  /**
+   * The three remote-work letters.
+   *
+   * Each returns whether the mailer accepted it, like every other send here, and
+   * `remote-work.service.ts` reports that back to the administrator rather than
+   * assuming it — an assignment the person was never told about is the whole of
+   * the problem, and the administrator is the only one able to notice, exactly
+   * as with an invitation nobody received.
+   */
+  sendRemoteWorkAssigned(
+    to: string,
+    options: {
+      name: string;
+      period: string;
+      dayCount: number | null;
+      reason: string;
+      assignedByName: string;
+      permanent: boolean;
+    },
+  ) {
+    return send(to, remoteWorkAssignedTemplate(options));
+  },
+
+  sendRemoteWorkUpdated(
+    to: string,
+    options: {
+      name: string;
+      previousPeriod: string;
+      period: string;
+      reason: string;
+      changedByName: string;
+      permanent: boolean;
+    },
+  ) {
+    return send(to, remoteWorkUpdatedTemplate(options));
+  },
+
+  sendRemoteWorkRevoked(
+    to: string,
+    options: { name: string; period: string; resumesOn: Date; reason: string | null; revokedByName: string },
+  ) {
+    return send(to, remoteWorkRevokedTemplate(options));
   },
 
   sendProfileUpdated(to: string, name: string, changedBy: "you" | "an administrator") {

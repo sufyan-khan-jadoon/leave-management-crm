@@ -103,6 +103,15 @@ export type AttendanceDayStatus =
   | "ON_LEAVE"
   | "CLOSED"
   | "NON_WORKING"
+  /**
+   * Working away from the office under an arranged remote period.
+   *
+   * Attendance-exempt: not present, not absent, not leave. It costs nothing from
+   * an allowance, is never chased by the warning sweep, and is dropped out of
+   * the attendance denominator in every report rather than counted as a day
+   * somebody failed to appear.
+   */
+  | "REMOTE"
   | "ABSENT"
   /** A working day holding no check-in and no leave for anybody — see `dayHoldsRecord`. */
   | "NO_RECORD"
@@ -117,6 +126,83 @@ export type AttendanceTodayView = {
   /** Minutes after midnight, on the company's clock. */
   cutoffMinutes: number;
   isWorkingDay: boolean;
+  /**
+   * The remote period covering today, when there is one.
+   *
+   * Present even while `canMark` is true: remote decides who is *expected*, not
+   * who is *permitted*, so somebody who comes into the office anyway can still
+   * check in — the card uses this to say attendance is not required rather than
+   * to hide the button.
+   */
+  remote: { periodLabel: string; reason: string; permanent: boolean } | null;
+};
+
+/** How a remote period was asked for. Mirrors the Prisma enum. */
+export type RemoteWorkTypeView = "TODAY" | "TOMORROW" | "WEEK" | "MONTH" | "CUSTOM" | "UNTIL_REVOKED";
+
+/**
+ * Where a period stands. Derived on the server from its dates against the
+ * company's calendar day — never stored, and never recomputed in the browser,
+ * whose clock has no say in what a period covers.
+ */
+export type RemoteWorkStateView = "ACTIVE" | "SCHEDULED" | "EXPIRED" | "REVOKED";
+
+/** What happened to an arrangement. Mirrors the Prisma enum. */
+export type RemoteWorkActionView = "ASSIGNED" | "MODIFIED" | "REVOKED";
+
+export type RemoteWorkView = {
+  id: string;
+  employeeId: string;
+  startDate: string;
+  /** Null means until revoked — an open period, not a missing value. */
+  endDate: string | null;
+  type: RemoteWorkTypeView;
+  reason: string;
+  state: RemoteWorkStateView;
+  /** Calendar days covered, or null for an open-ended arrangement. */
+  dayCount: number | null;
+  /** The period as one phrase, worded on the server so mail and screen agree. */
+  periodLabel: string;
+  revokedAt: string | null;
+  revokeReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  employee: {
+    id: string;
+    name: string;
+    email: string;
+    role: Role;
+    department: string | null;
+    position: string | null;
+    profilePhoto: string | null;
+  };
+  assignedBy: { id: string; name: string; email: string };
+  revokedBy: { id: string; name: string } | null;
+};
+
+/** One line of an arrangement's audit trail. */
+export type RemoteWorkEventView = {
+  id: string;
+  assignmentId: string;
+  employeeId: string;
+  action: RemoteWorkActionView;
+  previousStart: string | null;
+  previousEnd: string | null;
+  newStart: string | null;
+  newEnd: string | null;
+  reason: string | null;
+  createdAt: string;
+  /** Null when the administrator's account has since been deleted. */
+  actor: { id: string; name: string } | null;
+};
+
+export type RemoteWorkListView = {
+  items: RemoteWorkView[];
+  pagination: Pagination;
+  /** People remote today, not rows — see `remoteWorkService.list`. */
+  summary: { activeToday: number; scheduled: number; untilRevoked: number };
+  /** Whether to offer the assign form. Mirrors the server check, never replaces it. */
+  canManage: boolean;
 };
 
 /** The company's attendance rules, as the super admin's panel receives them. */
@@ -161,8 +247,20 @@ export type AttendanceRosterView = {
   isWorkingDay: boolean;
   items: AttendanceRosterEntry[];
   pagination: Pagination;
-  /** `late` is a subset of `present`, never a column beside it. */
-  summary: { expected: number; present: number; absent: number; onLeave: number; late: number };
+  /**
+   * `late` is a subset of `present`, never a column beside it. `remote` is a
+   * column beside them — those people are exempt from the register rather than
+   * a kind of present or absent — and is still counted inside `expected`, so the
+   * tiles sum.
+   */
+  summary: {
+    expected: number;
+    present: number;
+    absent: number;
+    onLeave: number;
+    remote: number;
+    late: number;
+  };
   /** Whether to offer "Mark present". Mirrors the server check, never replaces it. */
   canMarkAttendance: boolean;
   /** The deadline lateness is judged against, for the mark dialog's preview. */
@@ -196,7 +294,7 @@ export type AttendanceRosterView = {
  * adds anything up, which is why there is no shape here for a client-side total
  * to live in.
  */
-export type ReportRecordTypeView = "ATTENDANCE" | "ABSENT" | "LEAVE";
+export type ReportRecordTypeView = "ATTENDANCE" | "ABSENT" | "LEAVE" | "REMOTE";
 
 export type PeopleSelectionView =
   | "SELECTED_EMPLOYEES"
@@ -234,6 +332,8 @@ export type ReportTotalsView = {
   present: number;
   absent: number;
   onLeave: number;
+  /** Days worked away from the office — neither present nor absent. */
+  remote: number;
   /** Present, and past the deadline. A subset of `present`, never beside it. */
   late: number;
   lateMinutes: number;
@@ -247,6 +347,13 @@ export type ReportCoverageView = {
   closedDays: number;
   noRecordDays: number;
   upcomingDays: number;
+  /** Working days spent on an arranged remote period — still inside `workingDays`. */
+  remoteDays: number;
+  /**
+   * `workingDays` minus `remoteDays` — the denominator any attendance
+   * percentage taken from this report has to use.
+   */
+  attendanceEligibleDays: number;
 };
 
 export type ReportPersonSummaryView = {
@@ -461,6 +568,8 @@ export type AdminDashboardView = {
     present: number;
     absent: number;
     onLeave: number;
+    /** Exempt from the register today under an arranged remote period. */
+    remote: number;
     officeClosed: boolean;
   };
 };

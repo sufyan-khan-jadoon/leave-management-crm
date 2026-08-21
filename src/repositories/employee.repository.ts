@@ -17,6 +17,7 @@ export const employeeSelect = {
   canViewAdminRecords: true,
   canMarkAttendance: true,
   canManageComplaints: true,
+  canManageRemoteWork: true,
   lockedAt: true,
   phone: true,
   department: true,
@@ -258,6 +259,14 @@ export const employeeRepository = {
     return prisma.employee.update({
       where: { id },
       data: { canMarkAttendance },
+      select: employeeSelect,
+    });
+  },
+
+  setRemoteWorkPermission(id: string, canManageRemoteWork: boolean): Promise<EmployeeDto> {
+    return prisma.employee.update({
+      where: { id },
+      data: { canManageRemoteWork },
       select: employeeSelect,
     });
   },

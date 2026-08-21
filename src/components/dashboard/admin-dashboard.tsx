@@ -8,6 +8,7 @@ import {
   CalendarDays,
   CalendarOff,
   CheckCircle2,
+  House,
   MapPin,
   Shield,
   TrendingUp,
@@ -199,7 +200,18 @@ export function AdminDashboard({
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/*
+              Four tiles rather than three once anybody is remote, and three
+              again when nobody is. A permanent "Remote: 0" on a dashboard for a
+              company that has never used the feature is clutter, which §15 asks
+              this screen not to add; a company that has people working from home
+              today needs to see it beside the absences or the two do not add up.
+            */}
+            <div
+              className={
+                attendanceToday.remote > 0 ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-4" : "grid gap-3 sm:grid-cols-3"
+              }
+            >
               <StatCard
                 label="Present"
                 value={attendanceToday.present}
@@ -221,6 +233,15 @@ export function AdminDashboard({
                 tone="warning"
                 hint="Approved leave today"
               />
+              {attendanceToday.remote > 0 && (
+                <StatCard
+                  label="Remote"
+                  value={attendanceToday.remote}
+                  icon={House}
+                  tone="warning"
+                  hint="Attendance not required"
+                />
+              )}
             </div>
           </CardContent>
         </Card>

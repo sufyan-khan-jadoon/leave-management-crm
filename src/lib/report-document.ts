@@ -127,7 +127,7 @@ export function buildReportDocument(
   report: ReportResult,
   refinements: ReportRefinements,
 ): ReportDocument {
-  const shows = (type: "ATTENDANCE" | "ABSENT" | "LEAVE") => report.recordTypes.includes(type);
+  const shows = (type: "ATTENDANCE" | "ABSENT" | "LEAVE" | "REMOTE") => report.recordTypes.includes(type);
   const described = describeReportRefinements(refinements);
 
   return {
@@ -154,7 +154,7 @@ export function buildReportDocument(
   };
 }
 
-type Shows = (type: "ATTENDANCE" | "ABSENT" | "LEAVE") => boolean;
+type Shows = (type: "ATTENDANCE" | "ABSENT" | "LEAVE" | "REMOTE") => boolean;
 
 /**
  * What the whole report adds up to.
@@ -166,15 +166,36 @@ type Shows = (type: "ATTENDANCE" | "ABSENT" | "LEAVE") => boolean;
 function summaryEntries(report: ReportResult, shows: Shows): ReportFieldEntry[] {
   const totals: ReportTotals = report.totals;
 
+  // Whether the report holds any remote day at all, rather than whether the
+  // record type was ticked. A month with nobody remote should not carry a line
+  // reading "0" and a denominator identical to the working days above it —
+  // that is the `Absent: 0` problem this file already refuses elsewhere.
+  const anyRemote = report.coverage.remoteDays > 0 || totals.remote > 0;
+
   return [
     { label: "Working days in period (per person)", value: String(report.coverage.workingDays) },
     { label: "Days off in period (per person)", value: String(report.coverage.daysOff) },
     { label: "Office closures in period", value: String(report.coverage.closedDays) },
+    ...(anyRemote
+      ? [
+          // §12's arithmetic, printed rather than left to be inferred. The
+          // eligible figure is the denominator every attendance percentage taken
+          // from this file has to use — 16 of 17, not 16 of 22 — and stating it
+          // beside the remote count is what stops somebody recomputing it wrongly
+          // from the working days above.
+          { label: "Remote days in period (first person)", value: String(report.coverage.remoteDays) },
+          {
+            label: "Attendance-eligible days (working days minus remote)",
+            value: String(report.coverage.attendanceEligibleDays),
+          },
+        ]
+      : []),
     { label: "People covered", value: String(report.peopleCount) },
     { label: "Records", value: String(totals.records) },
     ...(shows("ATTENDANCE") ? [{ label: "Present days", value: String(totals.present) }] : []),
     ...(shows("ABSENT") ? [{ label: "Absent days", value: String(totals.absent) }] : []),
     ...(shows("LEAVE") ? [{ label: "Leave days", value: String(totals.onLeave) }] : []),
+    ...(shows("REMOTE") ? [{ label: "Remote days", value: String(totals.remote) }] : []),
     ...(shows("ATTENDANCE")
       ? [
           // Named as a share of the present days rather than as a total beside
@@ -203,6 +224,12 @@ function notesFor(report: ReportResult): string[] {
     );
   }
 
+  if (report.coverage.remoteDays > 0 || report.totals.remote > 0) {
+    notes.push(
+      "Remote days are days worked away from the office under an arranged period. They are exempt from attendance: nobody is present or absent for them and they cost no leave, so any attendance percentage taken from this report must be measured against the attendance-eligible days rather than the working days.",
+    );
+  }
+
   if (report.missingSelections.length > 0) {
     notes.push(
       `${report.missingSelections.length} of the people selected are no longer available to report on — their accounts may have been deleted, or they may not belong to the population this report covers. They are not included.`,
@@ -213,6 +240,13 @@ function notesFor(report: ReportResult): string[] {
 }
 
 function individualsTable(summaries: ReportPersonSummary[], shows: Shows): ReportTable {
+  // Remote coverage is the one figure here that genuinely differs per person, so
+  // the columns appear whenever *anybody* in the report holds a remote day —
+  // not only when the record type was ticked. Somebody reading a row that says
+  // "22 working days, 16 present, 1 absent" is owed the five that make those
+  // numbers add up.
+  const anyRemote = summaries.some((summary) => summary.coverage.remoteDays > 0);
+
   const columns: ReportColumn[] = [
     { header: "Name", align: "left", width: 24 },
     { header: "Email", align: "left", width: 28 },
@@ -220,6 +254,7 @@ function individualsTable(summaries: ReportPersonSummary[], shows: Shows): Repor
     { header: "Department", align: "left", width: 18 },
     { header: "Working days", align: "right", width: 13 },
     { header: "Days off", align: "right", width: 10 },
+    ...(anyRemote ? [right("Remote", 10), right("Eligible", 10)] : []),
     ...(shows("ATTENDANCE") ? [right("Present", 10)] : []),
     ...(shows("ABSENT") ? [right("Absent", 10)] : []),
     ...(shows("LEAVE") ? [right("Leave", 10)] : []),
@@ -237,6 +272,9 @@ function individualsTable(summaries: ReportPersonSummary[], shows: Shows): Repor
       summary.employee.department ?? "",
       String(summary.coverage.workingDays),
       String(summary.coverage.daysOff),
+      ...(anyRemote
+        ? [String(summary.coverage.remoteDays), String(summary.coverage.attendanceEligibleDays)]
+        : []),
       ...(shows("ATTENDANCE") ? [String(summary.totals.present)] : []),
       ...(shows("ABSENT") ? [String(summary.totals.absent)] : []),
       ...(shows("LEAVE") ? [String(summary.totals.onLeave)] : []),

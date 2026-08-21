@@ -55,18 +55,25 @@ export function isExplicitSelection(selection: PeopleSelection): boolean {
 /**
  * What kind of record a row is.
  *
- * The three the report can produce, and deliberately **not** an
- * `AttendanceDayStatus`: those are seven values describing what a day amounted
+ * The four the report can produce, and deliberately **not** an
+ * `AttendanceDayStatus`: those are eight values describing what a day amounted
  * to, and four of them (`CLOSED`, `NON_WORKING`, `NO_RECORD`, `UPCOMING`) are
  * not records at all — they are the absence of one, said precisely. This is the
  * filter an administrator actually reaches for, and `report.service.ts` maps it
  * onto those statuses rather than duplicating them.
  *
- * There is no `ALL` literal. "All" is the three of them selected, which is what
- * the screen shows when the set is complete — a fourth value meaning "the other
- * three" would be a second way to say one thing, and the two would drift.
+ * `REMOTE` **is** a record, unlike those four, and that is the distinction worth
+ * holding onto: a remote day is a day somebody worked, which the system knows
+ * about and can name, where a weekend is a day nobody was asked to. It is
+ * exempt from the attendance *denominator* — see `ReportCoverage` — and still
+ * printed as a row, because "Aug 21: Remote" is exactly what §19 asks an export
+ * to say instead of "Absent".
+ *
+ * There is no `ALL` literal. "All" is the four of them selected, which is what
+ * the screen shows when the set is complete — a fifth value meaning "the other
+ * four" would be a second way to say one thing, and the two would drift.
  */
-export const REPORT_RECORD_TYPES = ["ATTENDANCE", "ABSENT", "LEAVE"] as const;
+export const REPORT_RECORD_TYPES = ["ATTENDANCE", "ABSENT", "LEAVE", "REMOTE"] as const;
 
 export type ReportRecordType = (typeof REPORT_RECORD_TYPES)[number];
 
@@ -122,7 +129,7 @@ const reportFields = {
    * `LATE` is not a status — it is present *and* past the deadline, exactly as
    * on the attendance roster, and it is applied as that.
    */
-  status: z.enum(["ALL", "PRESENT", "LATE", "ABSENT", "ON_LEAVE"]).default("ALL"),
+  status: z.enum(["ALL", "PRESENT", "LATE", "ABSENT", "ON_LEAVE", "REMOTE"]).default("ALL"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(25),
 };

@@ -9,6 +9,7 @@ import {
   Clock,
   Download,
   Eye,
+  House,
   MapPin,
   Search,
   SlidersHorizontal,
@@ -65,6 +66,9 @@ const STATUS_FILTERS = [
   { value: "LATE", label: "Late" },
   { value: "ABSENT", label: "Absent" },
   { value: "ON_LEAVE", label: "On leave" },
+  // A real day status, unlike LATE above: these people are exempt from the
+  // register rather than a narrowing of somebody already on it.
+  { value: "REMOTE", label: "Remote" },
   { value: "NO_RECORD", label: "No record" },
 ] as const;
 
@@ -288,9 +292,9 @@ export function AttendanceManager({
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {loading || !summary ? (
-          Array.from({ length: 5 }, (_, index) => <StatCardSkeleton key={index} />)
+          Array.from({ length: 6 }, (_, index) => <StatCardSkeleton key={index} />)
         ) : (
           <>
             <StatCard label="Expected in" value={summary.expected} icon={Users} tone="neutral" />
@@ -308,6 +312,13 @@ export function AttendanceManager({
             />
             <StatCard label="Absent" value={summary.absent} icon={XCircle} tone="destructive" />
             <StatCard label="On leave" value={summary.onLeave} icon={CalendarOff} tone="warning" />
+            {/*
+              A tile beside Present and Absent rather than folded into either,
+              because a remote day is neither — and, unlike Late, it *is* a
+              column of its own: these people are counted once, in Expected and
+              here, so the four outcome tiles still sum to the headcount.
+            */}
+            <StatCard label="Remote" value={summary.remote} icon={House} tone="warning" />
           </>
         )}
       </div>
@@ -505,6 +516,10 @@ export function AttendanceManager({
             summary !== undefined &&
             summary.present === 0 &&
             summary.onLeave === 0 &&
+            // Withheld once anybody is remote, because then the claim below is
+            // false: those rows read Remote rather than No record, and a note
+            // saying "everyone" would be describing a table it can see is mixed.
+            summary.remote === 0 &&
             entries.length > 0 && (
               <div className="glass-inset text-muted-foreground flex items-center gap-2 rounded-xl p-3 text-sm">
                 <CircleDashed className="size-4 shrink-0" aria-hidden />

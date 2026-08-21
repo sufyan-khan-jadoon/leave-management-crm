@@ -20,6 +20,7 @@ import {
   type DayScope,
 } from "@/lib/date";
 import { minutesLate } from "@/lib/lateness";
+import { coversDate, describeRemotePeriod } from "@/lib/remote-work";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { isSuperAdminRole, rolesInPopulation } from "@/lib/enums";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@/lib/errors";
@@ -35,6 +36,10 @@ import {
 import { attendanceWarningRepository } from "@/repositories/attendance-warning.repository";
 import { holidayRepository } from "@/repositories/holiday.repository";
 import { leaveRepository } from "@/repositories/leave.repository";
+import {
+  remoteWorkRepository,
+  type RemoteCoverage,
+} from "@/repositories/remote-work.repository";
 import { attendancePolicyService } from "@/services/attendance-policy.service";
 import { populationService, type PopulationActor } from "@/services/population.service";
 import type {
@@ -62,7 +67,19 @@ export type AttendanceDayStatus =
   | "CLOSED"
   /** Outside the ordinary working week — a weekend, for most companies. */
   | "NON_WORKING"
-  /** A working day, not on leave, and no check-in. */
+  /**
+   * Working away from the office under an arranged remote period.
+   *
+   * **Attendance-exempt, and that is the whole of it.** Not a softer word for
+   * present and not a kind of leave: nobody is expected in, nothing is deducted
+   * from an allowance, no warning letter can reach them for it, and every report
+   * drops the day out of the attendance denominator rather than counting it as
+   * one they failed to appear on. Derived from `remote_work_assignments` on
+   * every read exactly as absence and closures are, so shortening or revoking a
+   * period puts the days straight back with nothing to migrate.
+   */
+  | "REMOTE"
+  /** A working day, not on leave, not remote, and no check-in. */
   | "ABSENT"
   /**
    * A working day the system holds nothing whatsoever about.
@@ -105,6 +122,16 @@ export type AttendanceSummary = {
   absent: number;
   onLeave: number;
   /**
+   * Working away from the office under an arranged period.
+   *
+   * A column of its own beside `present` and `absent` rather than folded into
+   * either, because it is neither: these people are exempt from the register for
+   * the day. `expected` still counts them — they are on the roster, and a
+   * headcount that quietly shrank when somebody went remote would leave the
+   * tiles failing to sum.
+   */
+  remote: number;
+  /**
    * Present, but past the deadline. A **subset of `present`**, not a fifth
    * column beside it — somebody late was still there, and adding this to the
    * others would count them twice and make the tiles overshoot the headcount.
@@ -124,6 +151,15 @@ export type TodayState = {
   cutoffMinutes: number;
   /** False on a weekend: still markable, simply not expected or chased. */
   isWorkingDay: boolean;
+  /**
+   * The remote period covering today, when there is one.
+   *
+   * Carried so the screen can say *which* arrangement is in force and until
+   * when, rather than only that attendance is not required — "remote until 31
+   * August" is the answer somebody is actually looking for, and without it they
+   * have nowhere to check whether it has been extended.
+   */
+  remote: { periodLabel: string; reason: string; permanent: boolean } | null;
 };
 
 export type MarkResult = {
@@ -415,6 +451,15 @@ function refusalFor(status: AttendanceDayStatus, date: Date): string | null {
     case "ON_LEAVE":
       return "This person was on approved leave that day. Recording them present would take a day back off their allowance without their asking — cancel the leave first if they actually came in.";
 
+    // Refused rather than allowed, and the reason is the point of the status.
+    // A remote day is attendance-exempt: nobody is marked absent for it and
+    // nobody is chased about it, so there is no wrong record here to correct.
+    // Writing one would assert that somebody who was arranged to work from home
+    // stood in the building, which is exactly the claim there is no reason to
+    // accept — and it would do it by hand, past the geofence.
+    case "REMOTE":
+      return `This person was working remotely on ${toIsoDate(date)}, so no attendance is expected and nobody is marked absent for it. If they actually came in, they can still check in from the office themselves; if the arrangement is wrong, shorten or revoke the remote period.`;
+
     case "UPCOMING":
       return "That day has not happened yet, so there is nothing to correct.";
 
@@ -458,16 +503,21 @@ async function buildRoster(
 ): Promise<{ date: Date; officeClosed: boolean; isWorkingDay: boolean; entries: RosterEntry[] }> {
   const isFuture = date.getTime() > todayUtc().getTime();
 
-  const [members, records, officeClosed, onLeaveIds, policy] = await Promise.all([
+  const [members, records, officeClosed, onLeaveIds, remoteIds, policy] = await Promise.all([
     employeeRepository.listAttendanceRoster(filters),
     attendanceRepository.listOnDate(date),
     officeClosedOn(date),
     leaveRepository.employeeIdsOnApprovedLeave(date),
+    // Company-wide and unfiltered, exactly like the two queries above it: who is
+    // remote is a fact about people, and asking it once per roster rather than
+    // once per row keeps this to one extra query however large the office is.
+    remoteWorkRepository.employeeIdsRemoteOn(date),
     attendancePolicyService.get(),
   ]);
 
   const byEmployee = new Map(records.map((record) => [record.employeeId, record]));
   const onLeave = new Set(onLeaveIds);
+  const remote = new Set(remoteIds);
   const workingDay = isWorkingWeekday(date, policy.workingDays);
 
   // Both counts are company-wide — `listOnDate` and `employeeIdsOnApprovedLeave`
@@ -486,6 +536,7 @@ async function buildRoster(
         officeClosed,
         isWorkingDay: workingDay,
         onLeave: onLeave.has(employee.id),
+        isRemote: remote.has(employee.id),
         isFuture,
         holdsRecord,
       }),
@@ -514,10 +565,14 @@ async function buildHistories(
 
   const today = todayUtc();
 
-  const [checkIns, leaves, closures, recordedDates, leaveDates, policy] = await Promise.all([
+  const [checkIns, leaves, closures, remoteSpans, recordedDates, leaveDates, policy] = await Promise.all([
     attendanceRepository.listRowsForEmployeesBetween(employeeIds, from, to),
     leaveRepository.approvedForEmployeesBetween(employeeIds, from, to),
     holidayRepository.closedDatesBetween(from, addUtcDays(to, 1)),
+    // Fetched as intervals rather than expanded into dates, because an
+    // open-ended period has no end to expand to. One query for the whole
+    // rectangle, like every other read here.
+    remoteWorkRepository.coveringBetween(employeeIds, from, to),
     attendanceRepository.datesWithCheckInsBetween(from, to),
     leaveRepository.datesWithApprovedLeaveBetween(from, to),
     attendancePolicyService.get(),
@@ -529,6 +584,14 @@ async function buildHistories(
   const onLeave = new Set(leaves.map((row) => key(row.employeeId, row.leaveDate)));
   const closed = new Set(closures.map(toIsoDate));
   const recorded = new Set([...recordedDates, ...leaveDates].map(toIsoDate));
+
+  // Grouped per person so the day walk below tests a handful of intervals rather
+  // than scanning the whole company's arrangements once per cell.
+  const remoteByPerson = new Map<string, RemoteCoverage[]>();
+
+  for (const span of remoteSpans) {
+    remoteByPerson.set(span.employeeId, [...(remoteByPerson.get(span.employeeId) ?? []), span]);
+  }
 
   // The calendar is walked once and the weekday judged once per day rather than
   // once per person per day: the answer cannot differ between two people, and an
@@ -546,6 +609,8 @@ async function buildHistories(
   }
 
   for (const employeeId of employeeIds) {
+    const spans = remoteByPerson.get(employeeId) ?? [];
+
     histories.set(
       employeeId,
       calendar.map((day) => {
@@ -559,6 +624,10 @@ async function buildHistories(
             officeClosed: closed.has(day.iso),
             isWorkingDay: day.isWorkingDay,
             onLeave: onLeave.has(key(employeeId, day.date)),
+            // `coversDate` is the same pure rule the SQL predicate mirrors, so
+            // the two are checked against each other on every cell of every
+            // report rather than only where somebody remembered to.
+            isRemote: spans.some((span) => coversDate(span, day.date)),
             isFuture: day.isFuture,
             holdsRecord: recorded.has(day.iso),
           }),
@@ -576,6 +645,7 @@ function summarise(entries: RosterEntry[]): AttendanceSummary {
     present: entries.filter((entry) => entry.status === "PRESENT").length,
     absent: entries.filter((entry) => entry.status === "ABSENT").length,
     onLeave: entries.filter((entry) => entry.status === "ON_LEAVE").length,
+    remote: entries.filter((entry) => entry.status === "REMOTE").length,
     // Counted off the rows rather than tracked separately, so it cannot disagree
     // with the figure each row displays.
     late: entries.filter((entry) => lateMinutesOf(entry.attendance) > 0).length,
@@ -600,6 +670,8 @@ function describeDay(options: {
   officeClosed: boolean;
   isWorkingDay: boolean;
   onLeave: boolean;
+  /** Covered by an arranged remote-work period — see `AttendanceDayStatus`. */
+  isRemote: boolean;
   isFuture: boolean;
   /** Whether anybody at all checked in or booked leave — see `dayHoldsRecord`. */
   holdsRecord: boolean;
@@ -607,17 +679,42 @@ function describeDay(options: {
   // Order matters. A check-in that exists is a fact about the day and outranks
   // anything derived — including a closure declared afterwards, which would
   // otherwise erase the record of somebody who did come in.
+  //
+  // It outranks a remote period too, and deliberately: somebody arranged to work
+  // from home who nonetheless walked into the office and checked in *was there*,
+  // and the building is the stronger evidence. Nothing is taken from them for
+  // it — remote costs nothing either way.
   if (options.attendance) return "PRESENT";
 
   // A declared closure before the ordinary week, because it is the more specific
   // fact: "closed for Eid" tells you more than "it's a Sunday".
+  //
+  // Above remote as well. A closure is a fact about the whole company's calendar
+  // and outranks any individual arrangement — on a day the office is shut,
+  // "working remotely" is not the interesting thing about the date, and reading
+  // it that way for some people and CLOSED for the rest would split one day's
+  // roster into two accounts of it.
   if (options.officeClosed) return "CLOSED";
 
   // Then the week itself. Ahead of leave, because a day off booked across a
-  // weekend costs nobody anything and reads oddly as "on leave".
+  // weekend costs nobody anything and reads oddly as "on leave" — and ahead of
+  // remote for the same reason, since nobody works a Sunday remotely either.
   if (!options.isWorkingDay) return "NON_WORKING";
 
+  // Leave above remote, which is the one ordering here worth arguing. Somebody
+  // remote for August who booked the 25th off is *not working* on the 25th — the
+  // leave is the more specific fact about the person, and it is the one that
+  // cost them a day of allowance. Reading it as REMOTE would hide a charge they
+  // have already paid. `planLeave` refuses new leave inside a remote period, so
+  // this only arises for leave booked first, which is exactly the case where the
+  // employee's own booking should win.
   if (options.onLeave) return "ON_LEAVE";
+
+  // Remote is judged **above** the future, matching the closure two lines up: a
+  // period arranged for next week is a fact already declared about those days,
+  // and "remote" answers more than "hasn't happened yet".
+  if (options.isRemote) return "REMOTE";
+
   if (options.isFuture) return "UPCOMING";
 
   // Last, because it is the weakest thing known about the day: any of the facts
@@ -864,10 +961,11 @@ export const attendanceService = {
   async todayFor(employeeId: string): Promise<TodayState> {
     const date = todayUtc();
 
-    const [attendance, officeClosed, onLeaveIds, checkIns, policy] = await Promise.all([
+    const [attendance, officeClosed, onLeaveIds, remoteAssignment, checkIns, policy] = await Promise.all([
       attendanceRepository.findByEmployeeAndDate(employeeId, date),
       officeClosedOn(date),
       leaveRepository.employeeIdsOnApprovedLeave(date),
+      remoteWorkRepository.findCoveringDay(employeeId, date),
       // Company-wide, exactly as the roster counts it — one extra count so this
       // screen and the admin screen cannot describe the same morning differently.
       attendanceRepository.countOnDate(date),
@@ -882,6 +980,7 @@ export const attendanceService = {
       officeClosed,
       isWorkingDay,
       onLeave,
+      isRemote: remoteAssignment !== null,
       isFuture: false,
       holdsRecord: dayHoldsRecord(checkIns, onLeaveIds.length),
     });
@@ -902,10 +1001,27 @@ export const attendanceService = {
       // working week governs who is expected and who gets warned, not who is
       // permitted to check in — somebody who comes in on a Saturday should be
       // able to record it, and simply is not chased for missing it.
+      //
+      // **A remote day is not blocked either, for exactly that reason.** Remote
+      // decides who is *expected*, not who is *permitted*: somebody arranged to
+      // work from home who nonetheless walks into the office was there, the
+      // geofence can prove it, and refusing them would have the system calling a
+      // fact it could verify a mistake. The check-in then outranks the remote
+      // status in `describeDay` and the day reads PRESENT, which is true. What
+      // it never becomes is a requirement — nothing chases them for skipping it,
+      // and `remote` below is what lets the card say so instead of showing a
+      // bare button.
       canMark: !attendance && !officeClosed && !onLeave,
       blockedReason,
       cutoffMinutes: policy.cutoffMinutes,
       isWorkingDay,
+      remote: remoteAssignment
+        ? {
+            periodLabel: describeRemotePeriod(remoteAssignment),
+            reason: remoteAssignment.reason,
+            permanent: remoteAssignment.endDate === null,
+          }
+        : null,
     };
   },
 

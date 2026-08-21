@@ -2,7 +2,9 @@ import type { AttendanceDto } from "@/repositories/attendance.repository";
 import type { EmployeeDto } from "@/repositories/employee.repository";
 import type { HolidayDto } from "@/repositories/holiday.repository";
 import type { LeaveWithEmployeeDto } from "@/repositories/leave.repository";
+import type { RemoteWorkEventDto } from "@/repositories/remote-work.repository";
 import { lateMinutesOf, type TodayState } from "@/services/attendance.service";
+import type { RemoteWorkAssignmentView } from "@/services/remote-work.service";
 import type { ReportResult } from "@/services/report.service";
 import type {
   AttendanceTodayView,
@@ -11,6 +13,8 @@ import type {
   HolidayView,
   LeaveWithEmployeeView,
   MonthlyTrendPoint,
+  RemoteWorkEventView,
+  RemoteWorkView,
   ReportView,
 } from "@/types";
 
@@ -39,6 +43,51 @@ export function serializeHoliday(holiday: HolidayDto): HolidayView {
     noticeSentAt: holiday.noticeSentAt?.toISOString() ?? null,
     createdAt: holiday.createdAt.toISOString(),
     updatedAt: holiday.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * A remote-work arrangement for the client.
+ *
+ * `state`, `dayCount` and `periodLabel` are passed through rather than
+ * recomputed here — they were derived once in `remote-work.service.ts` against
+ * the company's calendar day, and re-deriving on the way out would give the
+ * browser's clock a say in what a period covers.
+ */
+export function serializeRemoteWork(assignment: RemoteWorkAssignmentView): RemoteWorkView {
+  return {
+    id: assignment.id,
+    employeeId: assignment.employeeId,
+    startDate: assignment.startDate.toISOString(),
+    endDate: assignment.endDate?.toISOString() ?? null,
+    type: assignment.type,
+    reason: assignment.reason,
+    state: assignment.state,
+    dayCount: assignment.dayCount,
+    periodLabel: assignment.periodLabel,
+    revokedAt: assignment.revokedAt?.toISOString() ?? null,
+    revokeReason: assignment.revokeReason,
+    createdAt: assignment.createdAt.toISOString(),
+    updatedAt: assignment.updatedAt.toISOString(),
+    employee: assignment.employee,
+    assignedBy: assignment.assignedBy,
+    revokedBy: assignment.revokedBy,
+  };
+}
+
+export function serializeRemoteWorkEvent(event: RemoteWorkEventDto): RemoteWorkEventView {
+  return {
+    id: event.id,
+    assignmentId: event.assignmentId,
+    employeeId: event.employeeId,
+    action: event.action,
+    previousStart: event.previousStart?.toISOString() ?? null,
+    previousEnd: event.previousEnd?.toISOString() ?? null,
+    newStart: event.newStart?.toISOString() ?? null,
+    newEnd: event.newEnd?.toISOString() ?? null,
+    reason: event.reason,
+    createdAt: event.createdAt.toISOString(),
+    actor: event.actor,
   };
 }
 
@@ -73,6 +122,7 @@ export function serializeAttendanceToday(today: TodayState): AttendanceTodayView
     blockedReason: today.blockedReason,
     cutoffMinutes: today.cutoffMinutes,
     isWorkingDay: today.isWorkingDay,
+    remote: today.remote,
   };
 }
 

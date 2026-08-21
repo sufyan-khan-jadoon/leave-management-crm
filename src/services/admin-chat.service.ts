@@ -107,6 +107,11 @@ const STATUS_WORD: Record<AttendanceDayStatus, string> = {
   PRESENT: "Present",
   ABSENT: "Absent",
   ON_LEAVE: "On leave",
+  // Named as the working arrangement it is rather than as a kind of presence.
+  // An administrator asking "was she in on Tuesday" deserves "she was working
+  // remotely" — not "present", since she was not in the building, and not
+  // "absent", which would accuse her of missing a day she was exempt from.
+  REMOTE: "Working remotely",
   CLOSED: "Office closed",
   NON_WORKING: "Non-working day",
   NO_RECORD: "No record",

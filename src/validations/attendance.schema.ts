@@ -56,7 +56,9 @@ export const attendanceRosterQuerySchema = z.object({
    * tiles double-count. Narrowing to it here means "present, and past the
    * deadline", and the service applies it as exactly that.
    */
-  status: z.enum(["ALL", "PRESENT", "LATE", "ABSENT", "ON_LEAVE", "NO_RECORD"]).default("ALL"),
+  status: z
+    .enum(["ALL", "PRESENT", "LATE", "ABSENT", "ON_LEAVE", "REMOTE", "NO_RECORD"])
+    .default("ALL"),
   /**
    * Which population to show — everybody, the employees, or the administrators.
    *

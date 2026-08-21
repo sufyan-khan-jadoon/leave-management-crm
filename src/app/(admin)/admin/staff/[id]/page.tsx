@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { EmployeeWorkStatus } from "@/components/admin/employee-work-status";
 import { PageHeader } from "@/components/layout/page-header";
 import { initialsOf } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -115,6 +116,21 @@ export default async function AdminEmployeeDetailPage({ params }: { params: Prom
         </Card>
 
         <div className="space-y-4 lg:col-span-2">
+          {/*
+            Above the leave figures rather than below them, because it changes
+            how they should be read: somebody permanently remote has an
+            attendance record that means something different from everybody
+            else's, and finding that out after scrolling past the numbers is
+            finding it out too late.
+
+            A client component fetching for itself rather than a value resolved
+            here, so `canManage` and the rows arrive from the same call the
+            management screen uses — see `EmployeeWorkStatus`.
+          */}
+          <EmployeeWorkStatus
+            employee={{ id: employee.id, name: employee.name, email: employee.email }}
+          />
+
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <StatCard
               label="Remaining"

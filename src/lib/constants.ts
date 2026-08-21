@@ -109,6 +109,29 @@ export const MAX_EMAIL_ATTACHMENT_BYTES = 4 * 1024 * 1024;
  */
 export const MAX_EMAIL_RECIPIENTS = 500;
 
+/**
+ * How long the note on a remote-work period may be.
+ *
+ * Required rather than optional — an exemption from the attendance register
+ * with nothing said about it is the record somebody has to reconstruct from
+ * memory a quarter later — but short, because it is a line in a table rather
+ * than a case file. "Working from home while the Lahore office is being fitted
+ * out" is the shape of it; a complaint's five thousand characters are not.
+ */
+export const MAX_REMOTE_WORK_REASON_LENGTH = 300;
+
+/**
+ * The longest remote period an administrator may set an end date for.
+ *
+ * A guard against a slipped digit in the year field turning "until the 15th"
+ * into two decades of exemption, and nothing more principled than that — the
+ * genuinely indefinite case has its own type, `UNTIL_REVOKED`, which is
+ * deliberately not bounded by this. Somebody who means "forever" should say so
+ * rather than reach it by typing a large number, because the two are revoked in
+ * the same way but read very differently on the management screen.
+ */
+export const MAX_REMOTE_WORK_RANGE_DAYS = 731;
+
 /** Enough to name a problem in a table row without being truncated. */
 export const MAX_COMPLAINT_SUBJECT_LENGTH = 150;
 
@@ -240,6 +263,7 @@ export const ROUTES = {
   adminAssistant: "/admin/assistant",
   adminEmails: "/admin/emails",
   adminComplaints: "/admin/complaints",
+  adminRemoteWork: "/admin/remote-work",
   adminAccess: "/admin/access",
   attendance: "/attendance",
 } as const;

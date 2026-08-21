@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   CalendarOff,
+  House,
   Mail,
   MailWarning,
   MapPinCheck,
@@ -30,6 +31,7 @@ export type Administrator = {
   canViewAdminRecords: boolean;
   canMarkAttendance: boolean;
   canManageComplaints: boolean;
+  canManageRemoteWork: boolean;
 };
 
 /** One delegable right, described once and rendered for every administrator. */
@@ -41,7 +43,8 @@ type Grant = {
     | "canEmailAdmins"
     | "canViewAdminRecords"
     | "canMarkAttendance"
-    | "canManageComplaints";
+    | "canManageComplaints"
+    | "canManageRemoteWork";
   icon: LucideIcon;
   label: string;
   on: string;
@@ -130,6 +133,21 @@ const GRANTS: Grant[] = [
     off: "Cannot see complaints at all",
     granted: "can now read and resolve employee complaints",
     revoked: "can no longer see employee complaints",
+  },
+  {
+    key: "canManageRemoteWork",
+    icon: House,
+    label: "Arrange remote work",
+    // Says out loud what a remote period actually does, because "remote work"
+    // on its own reads as a scheduling convenience. It is the one grant here
+    // that takes somebody off the attendance register entirely — no present, no
+    // absent, no warning letters — which is a stronger thing than recording a
+    // single day by hand, and an administrator deciding whether to hand it over
+    // should not have to infer that.
+    on: "Can exempt people from attendance for a period, or indefinitely",
+    off: "Cannot arrange remote work",
+    granted: "can now arrange remote work",
+    revoked: "can no longer arrange remote work",
   },
 ];
 

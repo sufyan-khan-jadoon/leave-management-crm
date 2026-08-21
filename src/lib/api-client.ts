@@ -72,7 +72,19 @@ export const apiClient = {
   patch: <T>(path: string, payload?: unknown) =>
     request<T>(path, { method: "PATCH", body: payload === undefined ? undefined : JSON.stringify(payload) }),
 
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  /**
+   * `payload` is optional and usually omitted — a DELETE names its target in the
+   * path. It exists for the one case where the *act* carries a note with it:
+   * revoking a remote-work period takes an optional reason, which belongs on the
+   * audit trail rather than in the address. Left undefined the request goes out
+   * with no body at all, which is what every other caller wants and what the
+   * routes read as "nothing said".
+   */
+  delete: <T>(path: string, payload?: unknown) =>
+    request<T>(path, {
+      method: "DELETE",
+      body: payload === undefined ? undefined : JSON.stringify(payload),
+    }),
 };
 
 /** Builds a query string, omitting empty values. */

@@ -1,4 +1,4 @@
-import { CalendarOff, CheckCircle2, CircleDashed, Clock, Coffee, Palmtree, XCircle } from "lucide-react";
+import { CalendarOff, CheckCircle2, CircleDashed, Clock, Coffee, House, Palmtree, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import type { AttendanceDayStatus } from "@/types";
@@ -6,6 +6,14 @@ import type { AttendanceDayStatus } from "@/types";
 const CONFIG = {
   PRESENT: { label: "Present", variant: "success", Icon: CheckCircle2 },
   ON_LEAVE: { label: "On leave", variant: "secondary", Icon: Palmtree },
+  // `warning` rather than `success` or `secondary`, and the choice is about
+  // being *distinguishable* rather than about approval. Green is what "present"
+  // means on this screen, so a remote day dressed in it would read as somebody
+  // who came in; the muted grey is what every not-a-working-day status wears,
+  // and remote is the opposite of those — it is a day somebody is working.
+  // Amber is the one remaining tier in the palette, and it carries no verdict:
+  // nothing is held against a remote day.
+  REMOTE: { label: "Remote", variant: "warning", Icon: House },
   CLOSED: { label: "Office closed", variant: "secondary", Icon: CalendarOff },
   NON_WORKING: { label: "Non-working day", variant: "secondary", Icon: Coffee },
   ABSENT: { label: "Absent", variant: "destructive", Icon: XCircle },

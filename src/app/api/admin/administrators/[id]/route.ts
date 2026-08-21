@@ -6,6 +6,7 @@ import { customEmailService } from "@/services/custom-email.service";
 import { holidayService } from "@/services/holiday.service";
 import { invitationService } from "@/services/invitation.service";
 import { populationService } from "@/services/population.service";
+import { remoteWorkService } from "@/services/remote-work.service";
 import { adminPermissionsSchema } from "@/validations/invitation.schema";
 
 /**
@@ -51,6 +52,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     if (permissions.canManageComplaints !== undefined) {
       updated = await complaintService.setPermission(id, permissions.canManageComplaints);
+    }
+
+    if (permissions.canManageRemoteWork !== undefined) {
+      updated = await remoteWorkService.setPermission(id, permissions.canManageRemoteWork);
     }
 
     return ok(updated);

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CircleDashed,
   Clock,
+  House,
   Palmtree,
   XCircle,
 } from "lucide-react";
@@ -36,6 +37,11 @@ import type { ReportRecordTypeView, ReportView } from "@/types";
  */
 export function ReportSummary({ report }: { report: ReportView }) {
   const shows = (type: ReportRecordTypeView) => report.recordTypes.includes(type);
+
+  // Whether the period actually holds any remote day for anybody, which is a
+  // different question from whether the record type was asked for — see the
+  // eligible-days note below.
+  const anyRemote = report.summaries.some((summary) => summary.coverage.remoteDays > 0);
 
   return (
     <div className="space-y-4">
@@ -99,7 +105,37 @@ export function ReportSummary({ report }: { report: ReportView }) {
         {shows("LEAVE") && (
           <StatCard label="Leave days" value={report.totals.onLeave} icon={Palmtree} tone="warning" />
         )}
+
+        {shows("REMOTE") && (
+          <StatCard label="Remote days" value={report.totals.remote} icon={House} tone="warning" />
+        )}
       </div>
+
+      {/*
+        §12's arithmetic, stated rather than left to be worked out. The tiles
+        above give present and absent; without this line somebody reads them
+        against "Working days" and gets the wrong denominator — 16 of 22 rather
+        than 16 of 17. Shown whenever the period actually holds a remote day, not
+        only when the record type was ticked, because the sum is wrong either way
+        and hiding it does not make it right.
+      */}
+      {report.coverage.remoteDays > 0 && (
+        <div className="glass-inset text-muted-foreground flex items-start gap-2 rounded-xl p-3 text-sm">
+          <House className="text-warning-ink mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            <span className="text-foreground font-medium">
+              {report.coverage.attendanceEligibleDays} attendance-eligible{" "}
+              {report.coverage.attendanceEligibleDays === 1 ? "day" : "days"}
+            </span>{" "}
+            — {report.coverage.workingDays} working{" "}
+            {report.coverage.workingDays === 1 ? "day" : "days"} less{" "}
+            {report.coverage.remoteDays} spent working remotely. Remote days are exempt from
+            attendance: nobody is present or absent for them and they cost no leave, so any
+            attendance percentage should be measured against this figure rather than the working
+            days.
+          </p>
+        </div>
+      )}
 
       {/*
         A period holding nothing, said out loud rather than left as a run of
@@ -159,6 +195,15 @@ export function ReportSummary({ report }: { report: ReportView }) {
                     <TableHead className="pl-4 sm:pl-6">Person</TableHead>
                     <TableHead>Role</TableHead>
                     <TableHead className="text-right">Working days</TableHead>
+                    {/*
+                      Shown whenever anybody in the report holds a remote day,
+                      not only when the record type was ticked — this is the pair
+                      of numbers that makes "22 working days, 16 present, 1
+                      absent" add up, and a reader owed them is owed them either
+                      way. The exports apply the same rule.
+                    */}
+                    {anyRemote && <TableHead className="text-right">Remote</TableHead>}
+                    {anyRemote && <TableHead className="text-right">Eligible</TableHead>}
                     {shows("ATTENDANCE") && <TableHead className="text-right">Present</TableHead>}
                     {shows("ABSENT") && <TableHead className="text-right">Absent</TableHead>}
                     {shows("LEAVE") && <TableHead className="text-right">Leave</TableHead>}
@@ -214,6 +259,17 @@ export function ReportSummary({ report }: { report: ReportView }) {
                       <TableCell className="text-right tabular-nums">
                         {summary.coverage.workingDays}
                       </TableCell>
+
+                      {anyRemote && (
+                        <TableCell className="text-right tabular-nums">
+                          {summary.coverage.remoteDays}
+                        </TableCell>
+                      )}
+                      {anyRemote && (
+                        <TableCell className="text-right tabular-nums">
+                          {summary.coverage.attendanceEligibleDays}
+                        </TableCell>
+                      )}
 
                       {shows("ATTENDANCE") && (
                         <TableCell className="text-right tabular-nums">{summary.totals.present}</TableCell>

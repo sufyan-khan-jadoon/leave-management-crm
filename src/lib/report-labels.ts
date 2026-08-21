@@ -25,6 +25,7 @@ const RECORD_TYPE_LABELS: Record<ReportRecordType, string> = {
   ATTENDANCE: "Attendance",
   ABSENT: "Absent",
   LEAVE: "Leave",
+  REMOTE: "Remote",
 };
 
 /** "All employees", or "Selected employees (4)" once a report has resolved them. */
@@ -67,6 +68,11 @@ const DAY_STATUS_LABELS: Record<string, string> = {
   PRESENT: "Present",
   ABSENT: "Absent",
   ON_LEAVE: "On leave",
+  // The word §19 asks an export to print for these days. A file archived and
+  // mailed around reading "Absent" for a day somebody worked from home is the
+  // exact mistake this feature exists to stop, and unlike a screen there is
+  // nothing beside it to check against.
+  REMOTE: "Remote",
 };
 
 export function dayStatusLabel(status: string): string {
@@ -100,6 +106,7 @@ const STATUS_LABELS: Record<string, string> = {
   LATE: "Late",
   ABSENT: "Absent",
   ON_LEAVE: "On leave",
+  REMOTE: "Remote",
 };
 
 /**
@@ -113,7 +120,7 @@ const STATUS_LABELS: Record<string, string> = {
 export function describeReportRefinements(refinements: {
   search?: string;
   role: "ALL" | "EMPLOYEE" | "ADMIN";
-  status: "ALL" | "PRESENT" | "LATE" | "ABSENT" | "ON_LEAVE";
+  status: "ALL" | "PRESENT" | "LATE" | "ABSENT" | "ON_LEAVE" | "REMOTE";
 }): string[] {
   const described: string[] = [];
 

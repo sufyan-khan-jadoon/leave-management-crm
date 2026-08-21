@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarOff, CheckCircle2, Clock, LocateFixed, MapPin } from "lucide-react";
+import { CalendarOff, CheckCircle2, Clock, House, LocateFixed, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import { AttendanceStatusBadge } from "@/components/shared/attendance-status-badge";
@@ -155,6 +155,55 @@ export function MarkAttendanceCard({ today, onMarked }: Props) {
                 <p className="text-muted-foreground">
                   You are marked present for today. This was recorded without the location check
                   {attendance.reason ? `: ${attendance.reason}` : "."}
+                </p>
+              </>
+            )}
+          </div>
+        ) : today.remote ? (
+          /*
+            §16's employee view: remote is stated as an arrangement, with the
+            period and the one consequence that matters — nothing is required of
+            them today.
+
+            The button stays, below the notice rather than instead of it, and
+            that is deliberate. Remote decides who is *expected*, not who is
+            *permitted*: somebody who comes into the office anyway can prove it
+            with the geofence like anybody else, and hiding the control would
+            have the screen refusing a fact the server would happily accept.
+            What changes is the framing — an optional action under an
+            explanation, rather than a bare button implying a duty.
+          */
+          <div className="space-y-3">
+            <div className="glass-inset space-y-1.5 rounded-xl p-4 text-sm">
+              <p className="flex items-center gap-2 font-medium">
+                <House className="text-warning-ink size-4" aria-hidden />
+                {today.remote.permanent ? "Remote — until revoked" : `Remote · ${today.remote.periodLabel}`}
+              </p>
+              <p className="text-muted-foreground">
+                {today.remote.permanent
+                  ? "Attendance tracking is switched off for you until an administrator revokes this. "
+                  : "Attendance is not required for this period. "}
+                These days are not counted as present, absent or leave, and they cost you nothing from
+                your leave allowance.
+              </p>
+              <p className="text-muted-foreground text-xs">Reason on record: {today.remote.reason}</p>
+            </div>
+
+            {today.canMark && (
+              <>
+                <Button
+                  onClick={() => void markPresent()}
+                  loading={phase !== "idle"}
+                  variant="outline"
+                  size="lg"
+                >
+                  {phase === "idle" && <LocateFixed className="size-4" />}
+                  {phase === "idle" ? "Came in anyway? Mark present" : PHASE_LABEL[phase]}
+                </Button>
+
+                <p className="text-muted-foreground text-xs">
+                  Optional. If you are at the office you can still record the day; nobody is chased for
+                  skipping it.
                 </p>
               </>
             )}

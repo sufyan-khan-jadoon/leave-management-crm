@@ -2,12 +2,17 @@ import { Role } from "@prisma/client";
 
 import { countConsecutiveMissed, hasCutoffPassed, type DayVerdict } from "@/lib/attendance-policy";
 import { addUtcDays, todayUtc, toIsoDate } from "@/lib/date";
+import { coversDate } from "@/lib/remote-work";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { attendanceRepository } from "@/repositories/attendance.repository";
 import { attendanceWarningRepository } from "@/repositories/attendance-warning.repository";
 import { employeeRepository } from "@/repositories/employee.repository";
 import { holidayRepository } from "@/repositories/holiday.repository";
 import { leaveRepository } from "@/repositories/leave.repository";
+import {
+  remoteWorkRepository,
+  type RemoteCoverage,
+} from "@/repositories/remote-work.repository";
 import { attendancePolicyService } from "@/services/attendance-policy.service";
 import { attendanceService } from "@/services/attendance.service";
 import { emailService } from "@/services/email/email.service";
@@ -79,7 +84,11 @@ export async function dispatchAttendanceWarnings(now: Date = new Date()): Promis
 
   // Reuses the roster the admin screen reads, so "absent" cannot mean one thing
   // on the screen and another in somebody's inbox. It already excludes anyone
-  // present, on approved leave, or covered by a closure.
+  // present, on approved leave, covered by a closure, **or working remotely** —
+  // that last one for free, because `describeDay` returns REMOTE rather than
+  // ABSENT and this filter only ever writes to people the roster calls absent.
+  // Nothing here had to learn about remote work to stop chasing remote people,
+  // which is the whole reason absence is derived in one place.
   const { entries } = await attendanceService.rosterEntries(date, { roles: WARNABLE_ROLES });
   const absentees = entries.filter((entry) => entry.status === "ABSENT");
 
@@ -143,10 +152,16 @@ async function countStreaks(
 ): Promise<Map<string, number>> {
   const earliest = addUtcDays(date, -LOOKBACK_DAYS);
 
-  const [attendance, leaves, closures, joiningDates] = await Promise.all([
+  const [attendance, leaves, closures, remoteSpans, joiningDates] = await Promise.all([
     attendanceRepository.listForEmployeesBetween(employeeIds, earliest, date),
     leaveRepository.approvedForEmployeesBetween(employeeIds, earliest, date),
     holidayRepository.closedDatesBetween(earliest, addUtcDays(date, 1)),
+    // Remote days are neither a miss nor an attendance, so the run has to skip
+    // them exactly as it skips leave and closures. Without this, somebody back
+    // from a fortnight of remote work who misses one day would be told it was
+    // their fifteenth in a row — a figure that is stored on the row and quoted
+    // in a letter, so getting it wrong is not something a later read corrects.
+    remoteWorkRepository.coveringBetween(employeeIds, earliest, date),
     employeeRepository.joiningDatesFor(employeeIds),
   ]);
 
@@ -155,10 +170,16 @@ async function countStreaks(
   const onLeave = new Set(leaves.map((row) => key(row.employeeId, row.leaveDate)));
   const closed = new Set(closures.map((day) => toIsoDate(day)));
 
+  const remoteByPerson = new Map<string, RemoteCoverage[]>();
+  for (const span of remoteSpans) {
+    remoteByPerson.set(span.employeeId, [...(remoteByPerson.get(span.employeeId) ?? []), span]);
+  }
+
   const streaks = new Map<string, number>();
 
   for (const employeeId of employeeIds) {
     const joined = joiningDates.get(employeeId) ?? null;
+    const remote = remoteByPerson.get(employeeId) ?? [];
     const verdicts: DayVerdict[] = [];
 
     for (let offset = 0; offset <= LOOKBACK_DAYS; offset += 1) {
@@ -172,7 +193,7 @@ async function countStreaks(
         continue;
       }
 
-      if (onLeave.has(key(employeeId, day))) {
+      if (onLeave.has(key(employeeId, day)) || remote.some((span) => coversDate(span, day))) {
         verdicts.push("skip");
         continue;
       }

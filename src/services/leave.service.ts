@@ -21,6 +21,7 @@ import {
   type LeaveWithEmployeeDto,
 } from "@/repositories/leave.repository";
 import { emailService } from "@/services/email/email.service";
+import { remoteWorkService } from "@/services/remote-work.service";
 import { workingDaysService } from "@/services/working-days.service";
 
 /** Allowance picture for one calendar month a request touches. */
@@ -178,6 +179,32 @@ export const leaveService = {
         ...base,
         ok: false,
         problem: `You already have a request covering ${formatDateRange(clashes.map((c) => c.leaveDate))}.`,
+      };
+    }
+
+    // Days already exempt from attendance cannot also be booked off.
+    //
+    // Refused rather than absorbed, and the reason is the allowance. A remote
+    // day costs nothing; a leave day costs one of four in the month. Booking
+    // leave over a remote day would charge somebody for a day they were already
+    // not expected in — the exact opposite of what they were asking for — and
+    // silently *not* charging them would leave a leave row that took nothing,
+    // which every count in the system reads as a day taken. So the request is
+    // turned away with the arrangement named, which is also the answer to the
+    // question actually being asked: they do not need the day off.
+    //
+    // The refusal is here rather than in the route because `bookLeave` re-plans
+    // before it writes and the assistant confirms against the same call — one
+    // check covers the form, the chat proposal and the confirmation.
+    const remoteDates = await remoteWorkService.remoteDatesAmong(employeeId, dates);
+    if (remoteDates.length > 0) {
+      return {
+        ...base,
+        ok: false,
+        problem:
+          remoteDates.length === dates.length
+            ? `You are already working remotely ${formatDateRange(remoteDates)}, so there is no attendance to take leave from. Those days cost you nothing.`
+            : `You are already working remotely ${formatDateRange(remoteDates)}, which is part of the range you asked for. Remote days cost you no leave — request the other days on their own.`,
       };
     }
 

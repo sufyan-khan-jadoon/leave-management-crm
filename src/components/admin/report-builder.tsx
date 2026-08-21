@@ -57,14 +57,16 @@ const PEOPLE_OPTIONS: PeopleSelectionView[] = [
   "SELECTED_ADMINS",
 ];
 
-const RECORD_TYPES: ReportRecordTypeView[] = ["ATTENDANCE", "ABSENT", "LEAVE"];
+const RECORD_TYPES: ReportRecordTypeView[] = ["ATTENDANCE", "ABSENT", "LEAVE", "REMOTE"];
 
+/** The work-status filter. One list, shared with the roster's own wording. */
 const STATUS_OPTIONS = [
   { value: "ALL", label: "All statuses" },
   { value: "PRESENT", label: "Present" },
   { value: "LATE", label: "Late" },
   { value: "ABSENT", label: "Absent" },
   { value: "ON_LEAVE", label: "On leave" },
+  { value: "REMOTE", label: "Remote" },
 ] as const;
 
 const ROLE_OPTIONS = [

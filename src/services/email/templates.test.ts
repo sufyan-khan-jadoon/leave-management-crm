@@ -29,6 +29,9 @@ import {
   passwordChangedTemplate,
   passwordResetOtpTemplate,
   profileUpdatedTemplate,
+  remoteWorkAssignedTemplate,
+  remoteWorkRevokedTemplate,
+  remoteWorkUpdatedTemplate,
   welcomeTemplate,
 } from "@/services/email/templates";
 
@@ -93,6 +96,41 @@ const templates = {
   profileUpdated: profileUpdatedTemplate("Ayesha Khan", "an administrator"),
   accountSuspended: accountStatusTemplate("Ayesha Khan", true),
   accountReactivated: accountStatusTemplate("Ayesha Khan", false),
+  // All three remote-work letters, and both shapes of the first — a bounded
+  // period and an open-ended one word themselves differently, so a suite that
+  // built only one would leave the other inheriting none of the branding,
+  // palette and letterhead invariants below.
+  remoteWorkAssigned: remoteWorkAssignedTemplate({
+    name: "Ayesha Khan",
+    period: "Aug 21, 2026 – Aug 28, 2026",
+    dayCount: 8,
+    reason: "Working from home while the office is refitted",
+    assignedByName: "System Administrator",
+    permanent: false,
+  }),
+  remoteWorkAssignedPermanent: remoteWorkAssignedTemplate({
+    name: "Ayesha Khan",
+    period: "Aug 21, 2026 onwards, until revoked",
+    dayCount: null,
+    reason: "Permanently remote — Lahore",
+    assignedByName: "System Administrator",
+    permanent: true,
+  }),
+  remoteWorkUpdated: remoteWorkUpdatedTemplate({
+    name: "Ayesha Khan",
+    previousPeriod: "Aug 21, 2026 – Aug 28, 2026",
+    period: "Aug 21, 2026 – Sep 15, 2026",
+    reason: "Refit is running late",
+    changedByName: "System Administrator",
+    permanent: false,
+  }),
+  remoteWorkRevoked: remoteWorkRevokedTemplate({
+    name: "Ayesha Khan",
+    period: "Aug 21, 2026 – Aug 24, 2026",
+    resumesOn: day("2026-08-25"),
+    reason: "Office reopened early",
+    revokedByName: "System Administrator",
+  }),
   complaintResolved: complaintResolvedTemplate({
     name: "Ayesha Khan",
     reference: "ZV-8F3K2A9C",

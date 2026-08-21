@@ -18,6 +18,10 @@ const RECORD_TYPE_BADGE = {
   ATTENDANCE: { label: "Attendance", variant: "success" },
   ABSENT: { label: "Absent", variant: "destructive" },
   LEAVE: { label: "Leave", variant: "warning" },
+  // Matching `AttendanceStatusBadge`'s REMOTE exactly, so the record-type chip
+  // and the status badge beside it in the same row cannot disagree about what
+  // colour a remote day is.
+  REMOTE: { label: "Remote", variant: "warning" },
 } as const satisfies Record<ReportRecordTypeView, { label: string; variant: string }>;
 
 /**

@@ -62,6 +62,44 @@ enum AttendanceStatus {
   PRESENT
 }
 
+/// How a remote-work period was asked for.
+///
+/// Kept because it is what the administrator *chose*, not a second copy of the
+/// dates it produced. "One month from today" and a custom range that happens to
+/// cover the same days are the same two dates and different instructions, and
+/// the management screen is read by somebody asking which was meant. The dates
+/// stay the only thing anything computes with — `resolveRemotePeriod` turns the
+/// type into them once, when the assignment is written, and nothing re-derives
+/// them afterwards. Editing a period therefore makes it CUSTOM, because that is
+/// what it has become.
+///
+/// UNTIL_REVOKED is the one that is not a duration at all: it is the absence of
+/// an end date, which is why `RemoteWorkAssignment.endDate` is nullable rather
+/// than carrying a far-future sentinel every comparison would have to know about.
+enum RemoteWorkType {
+  TODAY
+  TOMORROW
+  WEEK
+  MONTH
+  CUSTOM
+  UNTIL_REVOKED
+}
+
+/// What happened to a remote-work assignment, for the audit trail.
+///
+/// A table rather than columns on the row — deliberately the exception to this
+/// codebase's habit of keeping an audit on the thing itself, which
+/// `Attendance.markedById` makes the case for. That argument holds precisely
+/// because a check-in is never amended: one row per person per day, and nothing
+/// changes it. A remote period is the opposite kind of thing — its dates are
+/// edited and then it is revoked — so the row can only ever describe its present
+/// state, and the period it used to cover would be lost with every edit.
+enum RemoteWorkAction {
+  ASSIGNED
+  MODIFIED
+  REVOKED
+}
+
 /// How far the office-closed announcement has got.
 ///
 /// SCHEDULED and SENT are the ordinary path, and a closure declared for *today*
@@ -320,6 +358,21 @@ model Employee {
   /// Read from the database on every request, like the other six.
   canManageComplaints Boolean @default(false)
 
+  /// Whether this administrator may put people on remote work.
+  ///
+  /// The eighth delegable right, and it belongs in this list rather than being
+  /// folded into an existing one because of what it actually does: a remote
+  /// period makes every date it covers **attendance-exempt**, so the person is
+  /// neither present nor absent for it and no warning letter can reach them.
+  /// That is the ability to take somebody off the register, which is a stronger
+  /// thing than `canMarkAttendance` — that one corrects one day in one
+  /// direction, this one suspends the question indefinitely.
+  ///
+  /// Off by default, granted per administrator by the super admin, read from
+  /// here on every request rather than carried in the session, so withdrawing it
+  /// stops the next attempt instead of waiting for a week-old token to expire.
+  canManageRemoteWork Boolean @default(false)
+
   /// Consecutive failed sign-ins since the last time the password was proven.
   /// Reset by a correct password, by verifying the address, or by a reset.
   failedLoginAttempts Int @default(0)
@@ -383,6 +436,11 @@ model Employee {
   emailsReceived     EmailDispatch[]     @relation("EmailRecipient")
   complaints         Complaint[]         @relation("ComplaintAuthor")
   complaintsResolved Complaint[]         @relation("ComplaintResolver")
+
+  remoteWork         RemoteWorkAssignment[] @relation("RemoteWorker")
+  remoteWorkAssigned RemoteWorkAssignment[] @relation("RemoteWorkAssigner")
+  remoteWorkRevoked  RemoteWorkAssignment[] @relation("RemoteWorkRevoker")
+  remoteWorkActs     RemoteWorkEvent[]      @relation("RemoteWorkActor")
 
   @@index([department])
   @@index([status])
@@ -842,4 +900,128 @@ model ComplaintAttachment {
 
   @@index([complaintId])
   @@map("complaint_attachments")
+}
+
+/// A stretch of days one person works away from the office.
+///
+/// **Remote is not attendance, and that is the whole model.** A date this covers
+/// is attendance-*exempt*: `describeDay` returns REMOTE for it, so the person is
+/// not present, not absent and not on leave, no warning letter can reach them
+/// for it, and every report drops it out of the attendance denominator rather
+/// than counting it as a day they failed to appear. Nothing is written to
+/// `attendance` or `leaves` when a period is assigned — the exemption is derived
+/// from this row on every read, exactly as absence and closures are, so
+/// shortening or revoking a period puts the days back with nothing to migrate.
+///
+/// **There is deliberately no `status` column.** Active, expired, scheduled and
+/// revoked are all readable off the three dates and `revokedAt`, and a stored
+/// copy would need something to keep it honest — the same argument
+/// `InvitationStatus` makes for having no "expired" value, and the same one
+/// `AttendanceStatus` makes for having no ABSENT. A period that ended last night
+/// would otherwise sit at ACTIVE until a sweep ran, and there is no sweep.
+///
+/// **Coverage is one predicate**: `startDate <= day AND (endDate IS NULL OR
+/// endDate >= day)`. Every query that asks whether somebody is remote asks
+/// exactly that, which is what the two indexes below are for.
+model RemoteWorkAssignment {
+  id         String @id @default(cuid())
+  employeeId String
+
+  /// First and last day covered, at UTC midnight like every calendar date here.
+  ///
+  /// `endDate` null means **until revoked** — an open period, not a missing
+  /// value. A sentinel far-future date would have been the alternative and every
+  /// comparison in the codebase would have had to know the number.
+  startDate DateTime  @db.Date
+  endDate   DateTime? @db.Date
+
+  /// How the period was asked for. See `RemoteWorkType` — kept as the
+  /// instruction, never re-derived into dates.
+  type RemoteWorkType
+
+  /// Why this person is working remotely. Required: an exemption from the
+  /// attendance register with nothing said about it is the kind of record
+  /// somebody has to reconstruct from memory a quarter later.
+  reason String
+
+  /// When the period was called off, by whom, and what they said about it.
+  ///
+  /// Revoking **does not delete coverage already served.** It writes `endDate`
+  /// to the day of revocation, so the days somebody has genuinely worked from
+  /// home stay exempt and only the future returns to the register — otherwise
+  /// calling off a period would retroactively mark a fortnight of legitimate
+  /// remote work as absence, which is precisely the false record this feature
+  /// exists to avoid.
+  ///
+  /// A period revoked **before it started** is closed to an empty range —
+  /// `endDate` lands one day before `startDate` — so the coverage predicate
+  /// matches nothing at all. That is the honest shape for an instruction that
+  /// never took effect, and it is why nothing here constrains `endDate >=
+  /// startDate`: that rule belongs to *input*, and is enforced in
+  /// `remote-work.schema.ts`.
+  revokedAt    DateTime?
+  revokedById  String?
+  revokeReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignedById String
+
+  employee   Employee  @relation("RemoteWorker", fields: [employeeId], references: [id], onDelete: Cascade)
+  /// Restricted rather than cascading: deleting the administrator who put
+  /// somebody on remote work must not silently put that person back on the
+  /// attendance register, which is what removing the row would do.
+  assignedBy Employee  @relation("RemoteWorkAssigner", fields: [assignedById], references: [id], onDelete: Restrict)
+  /// `SetNull`, for the reason `Attendance.markedBy` uses it — losing the name
+  /// of who called a period off is a worse record; losing the revocation itself
+  /// would be a wrong one.
+  revokedBy  Employee? @relation("RemoteWorkRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  events RemoteWorkEvent[]
+
+  /// The coverage question, asked per person and asked company-wide, so both
+  /// have an index to read.
+  @@index([employeeId, startDate, endDate])
+  @@index([startDate, endDate])
+  @@map("remote_work_assignments")
+}
+
+/// One thing that happened to a remote-work assignment.
+///
+/// The audit trail §20 asks for, and a table rather than columns on the row for
+/// the reason `RemoteWorkAction` gives: the period is edited, so the row cannot
+/// carry its own history. Both the previous and the new period are copied in by
+/// value at the moment of the change — the same argument
+/// `EmailDispatch.recipientNames` and `AttendanceWarning.consecutiveMissed`
+/// make. This is what the record *said*, and a later edit must not rewrite it.
+model RemoteWorkEvent {
+  id           String           @id @default(cuid())
+  assignmentId String
+  employeeId   String
+  action       RemoteWorkAction
+
+  /// The period before and after, both nullable in their end date for the same
+  /// reason the assignment's is. `previousStart` is null for ASSIGNED, where
+  /// there was no period before.
+  previousStart DateTime? @db.Date
+  previousEnd   DateTime? @db.Date
+  newStart      DateTime? @db.Date
+  newEnd        DateTime? @db.Date
+
+  /// What was said at the time — the assignment's reason, or the revocation's.
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  /// Nullable and `SetNull`: an audit entry outlives the account that made it,
+  /// and an event nobody can be named for is still a fact about the assignment.
+  actorId String?
+  actor   Employee? @relation("RemoteWorkActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  assignment RemoteWorkAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@index([assignmentId, createdAt])
+  @@index([employeeId, createdAt])
+  @@map("remote_work_events")
 }

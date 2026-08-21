@@ -3,6 +3,7 @@ import {
   CalendarDays,
   CalendarOff,
   FileBarChart,
+  House,
   Mail,
   LayoutDashboard,
   MapPin,
@@ -53,6 +54,12 @@ export const ADMIN_NAV: NavItem[] = [
   // permission, not a different place to be.
   { href: ROUTES.adminStaff, label: "Staff", icon: Users, group: "Manage" },
   { href: ROUTES.adminAttendance, label: "Attendance", icon: MapPin, group: "Manage" },
+  // Shown to every administrator, not only those who may arrange it — the same
+  // courtesy "Send email", "Working days" and "Reports" extend. Knowing whether
+  // a colleague is expected in the office is ordinary people-management, and the
+  // screen is read-only without the grant rather than empty, which is what makes
+  // it unlike Complaints below.
+  { href: ROUTES.adminRemoteWork, label: "Remote work", icon: House, group: "Manage" },
   // Shown to every administrator, not only those holding `canViewAdminRecords`.
   // The screen says so and points at who can enable it, which is the same
   // courtesy "Send email" and "Working days" already extend — an item that

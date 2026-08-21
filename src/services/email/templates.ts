@@ -2,7 +2,7 @@ import type { Role } from "@prisma/client";
 
 import { appConfig } from "@/lib/env";
 import { ordinal } from "@/lib/attendance-policy";
-import { MAX_LOGIN_ATTEMPTS, MONTHLY_LEAVE_ALLOWANCE, OTP_TTL_MINUTES } from "@/lib/constants";
+import { MAX_LOGIN_ATTEMPTS, MONTHLY_LEAVE_ALLOWANCE, OTP_TTL_MINUTES, ROUTES } from "@/lib/constants";
 import { formatDate, formatDateRange, formatDateTime } from "@/lib/date";
 
 type Template = { subject: string; html: string; text: string };
@@ -679,5 +679,140 @@ export function complaintResolvedTemplate(options: {
       { label: "View your complaints", url: `${appConfig.url}/complaints` },
     ),
     text: `Hello ${options.name},\n\nYour complaint has been reviewed and marked as resolved.\n\nComplaint: ${options.reference}\nSubject: ${options.subject}\nStatus: Resolved\nResolved on: ${when}${options.resolvedByName ? `\nResolved by: ${options.resolvedByName}` : ""}\n\nWhat was decided:\n${options.resolution}\n\nIf you feel this has not been dealt with fully, reply to your administrator or raise a new complaint and reference ${options.reference}.\n\nView your complaints: ${appConfig.url}/complaints\n\nThank you for raising it,\n${BRAND}`,
+  };
+}
+
+/**
+ * The three remote-work letters, and the one sentence they exist to say.
+ *
+ * Every one of them states that **attendance is not required** for the period,
+ * because that is the whole of what a remote assignment does and it is the thing
+ * somebody would otherwise write in to ask. A person told only "you are remote
+ * from Monday" still does not know whether to keep marking themselves present,
+ * and the answer matters: the geofence refuses them, so guessing wrong reads as
+ * the system being broken.
+ *
+ * They share a period line built by `describeRemotePeriod`, the same function
+ * the management table and the profile section print, so the dates in the letter
+ * and the dates on the screen cannot be worded differently.
+ */
+export function remoteWorkAssignedTemplate(options: {
+  name: string;
+  period: string;
+  /** Null for an open-ended arrangement, which the wording then names instead. */
+  dayCount: number | null;
+  reason: string;
+  assignedByName: string;
+  permanent: boolean;
+}): Template {
+  const rows: Array<[string, string]> = [
+    ["Arrangement", options.permanent ? "Remote — until revoked" : "Remote work"],
+    ["Period", options.period],
+  ];
+
+  if (options.dayCount !== null) {
+    rows.push(["Duration", `${options.dayCount} ${options.dayCount === 1 ? "day" : "days"}`]);
+  }
+
+  rows.push(["Reason", options.reason], ["Arranged by", options.assignedByName]);
+
+  const closing = options.permanent
+    ? "This arrangement has no end date and continues until an administrator revokes it. You will be emailed if that happens."
+    : "Your normal attendance rules resume the day after this period ends.";
+
+  return {
+    subject: options.permanent
+      ? "You have been set to remote work — until revoked"
+      : `You have been set to remote work — ${options.period}`,
+    html: layout(
+      "You are working remotely",
+      `<p>Hello ${esc(options.name)},</p>
+       <p>You have been set to <strong>remote work</strong>${options.permanent ? "" : ` for ${esc(options.period)}`}.</p>
+       ${detailTable(rows)}
+       <p><strong>You do not need to mark attendance during this period.</strong> These days are not counted as present, absent or leave, they cost you nothing from your leave allowance, and you will not receive attendance reminders for them.</p>
+       <p>${esc(closing)}</p>
+       <p style="color:${C.muted};">Regards,<br />${BRAND}</p>`,
+      { label: "View your dashboard", url: `${appConfig.url}${ROUTES.dashboard}` },
+    ),
+    text: `Hello ${options.name},\n\nYou have been set to remote work${options.permanent ? "" : ` for ${options.period}`}.\n\nArrangement: ${options.permanent ? "Remote — until revoked" : "Remote work"}\nPeriod: ${options.period}${options.dayCount !== null ? `\nDuration: ${options.dayCount} ${options.dayCount === 1 ? "day" : "days"}` : ""}\nReason: ${options.reason}\nArranged by: ${options.assignedByName}\n\nYou do not need to mark attendance during this period. These days are not counted as present, absent or leave, they cost you nothing from your leave allowance, and you will not receive attendance reminders for them.\n\n${closing}\n\nRegards,\n${BRAND}`,
+  };
+}
+
+/**
+ * A period whose dates have moved.
+ *
+ * Both the old and the new period are named. A letter saying only "your remote
+ * work now runs to 15 September" leaves the recipient unable to tell whether
+ * that is longer or shorter than what they had been told a week earlier, which
+ * is the one thing they need to know.
+ */
+export function remoteWorkUpdatedTemplate(options: {
+  name: string;
+  previousPeriod: string;
+  period: string;
+  reason: string;
+  changedByName: string;
+  permanent: boolean;
+}): Template {
+  return {
+    subject: `Your remote work period has changed — ${options.period}`,
+    html: layout(
+      "Your remote work period has changed",
+      `<p>Hello ${esc(options.name)},</p>
+       <p>Your remote work arrangement has been updated.</p>
+       ${detailTable([
+         ["Was", options.previousPeriod],
+         ["Now", options.period],
+         ["Reason", options.reason],
+         ["Changed by", options.changedByName],
+       ])}
+       <p><strong>Attendance is still not required for the days above.</strong> They are not counted as present, absent or leave.</p>
+       <p>${options.permanent ? "This arrangement now has no end date and continues until an administrator revokes it." : "Your normal attendance rules resume the day after the new period ends."}</p>
+       <p style="color:${C.muted};">Regards,<br />${BRAND}</p>`,
+      { label: "View your dashboard", url: `${appConfig.url}${ROUTES.dashboard}` },
+    ),
+    text: `Hello ${options.name},\n\nYour remote work arrangement has been updated.\n\nWas: ${options.previousPeriod}\nNow: ${options.period}\nReason: ${options.reason}\nChanged by: ${options.changedByName}\n\nAttendance is still not required for the days above. They are not counted as present, absent or leave.\n\n${options.permanent ? "This arrangement now has no end date and continues until an administrator revokes it." : "Your normal attendance rules resume the day after the new period ends."}\n\nRegards,\n${BRAND}`,
+  };
+}
+
+/**
+ * A period called off.
+ *
+ * States the date attendance resumes rather than the date of the revocation,
+ * because those are not the same day and only the first is actionable. Revoking
+ * keeps the days already worked remotely covered — see `revocationEndDate` — so
+ * what changes for the recipient begins tomorrow.
+ */
+export function remoteWorkRevokedTemplate(options: {
+  name: string;
+  /** The period as it now stands, after truncation. */
+  period: string;
+  resumesOn: Date;
+  reason: string | null;
+  revokedByName: string;
+}): Template {
+  const resumes = formatDate(options.resumesOn);
+
+  const rows: Array<[string, string]> = [
+    ["Remote work covered", options.period],
+    ["Attendance resumes", resumes],
+    ["Ended by", options.revokedByName],
+  ];
+
+  if (options.reason) rows.push(["Reason", options.reason]);
+
+  return {
+    subject: `Your remote work has ended — attendance resumes ${resumes}`,
+    html: layout(
+      "Your remote work has ended",
+      `<p>Hello ${esc(options.name)},</p>
+       <p>Your remote work arrangement has been ended. The days you have already worked remotely are unaffected and remain exempt from attendance.</p>
+       ${detailTable(rows)}
+       <p><strong>From ${esc(resumes)} you are expected in the office and will need to mark attendance as usual.</strong></p>
+       <p>If you believe this is a mistake, speak to your administrator before that date.</p>
+       <p style="color:${C.muted};">Regards,<br />${BRAND}</p>`,
+      { label: "Mark attendance", url: `${appConfig.url}${ROUTES.dashboard}` },
+    ),
+    text: `Hello ${options.name},\n\nYour remote work arrangement has been ended. The days you have already worked remotely are unaffected and remain exempt from attendance.\n\nRemote work covered: ${options.period}\nAttendance resumes: ${resumes}\nEnded by: ${options.revokedByName}${options.reason ? `\nReason: ${options.reason}` : ""}\n\nFrom ${resumes} you are expected in the office and will need to mark attendance as usual.\n\nIf you believe this is a mistake, speak to your administrator before that date.\n\nRegards,\n${BRAND}`,
   };
 }

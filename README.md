@@ -23,6 +23,7 @@ An AI-powered leave management system. Employees describe the leave they need in
 - [AI workflow](#ai-workflow)
 - [Leave approval logic](#leave-approval-logic)
 - [Attendance](#attendance)
+- [Remote work](#remote-work)
 - [API reference](#api-reference)
 - [Security](#security)
 - [Production deployment](#production-deployment)
@@ -51,7 +52,8 @@ An AI-powered leave management system. Employees describe the leave they need in
 - Monthly leave trend and department-wise breakdown charts, plus a recent activity feed
 - Employee management: search, filter, sort, edit, suspend, reactivate, delete
 - Leave oversight: search, filter, sort and drill into any employee profile — requests are decided automatically, so there is nothing to approve
-- Attendance roster for any date: who was present, absent, on leave, or with the office closed
+- Attendance roster for any date: who was present, absent, on leave, remote, or with the office closed
+- Remote work: put somebody on a remote period — today, tomorrow, a week, a month, a custom range, or until revoked — and those days become exempt from attendance
 - CSV export that always matches the filters currently on screen
 
 **Platform**
@@ -415,8 +417,9 @@ nothing else; check-ins already recorded keep the distance they were judged agai
 - **The client is never trusted.** `markAttendanceSchema` is a `z.strictObject` accepting exactly three numbers, so a body carrying `distance`, `isInsideOffice` or `isPresent` is rejected with `422` rather than silently ignored.
 - **The geofence is exactly 30 m and is never widened.** A GPS fix vaguer than 30 m cannot distinguish "inside the circle" from "near it", so it is refused (`422`) rather than accommodated — accuracy is never added to the radius.
 - **One check-in per person per day**, enforced by a unique index rather than by a check-then-write. A repeat returns `200` with the row already there; eight concurrent taps produce one row.
-- **Absence is derived, never stored.** `AttendanceStatus` has only `PRESENT`. A day reads `PRESENT` → `CLOSED` → `ON_LEAVE` → `ABSENT` in that order, computed on read — so withdrawing an office closure restores the previous meaning of a past day without migrating anything.
+- **Absence is derived, never stored.** `AttendanceStatus` has only `PRESENT`. A day reads `PRESENT` → `CLOSED` → `NON_WORKING` → `ON_LEAVE` → `REMOTE` → `ABSENT` in that order, computed on read — so withdrawing an office closure, or revoking a remote period, restores the previous meaning of a past day without migrating anything.
 - **An office day off outranks attendance.** A closed date is not a working day, so nobody is absent on it and no check-in is taken.
+- **Remote is not attendance.** A day covered by a remote period is *exempt*: not present, not absent, not leave. It costs no allowance, is never chased by the warning sweep, and is dropped out of the attendance denominator in reports — 16 present out of 22 working days with 5 remote reads as 16 / 17, not 16 / 22. See below.
 - **There are no working hours in this project**, so `LATE` and `HALF_DAY` deliberately do not exist. The `status` column is where they would go once working hours are defined.
 - **The admin roster is read-only.** Presence is proved by being in the building; a button that marked somebody present from a desk would be a way around the geofence.
 
@@ -432,12 +435,55 @@ rules from the Access panel:
 | Send warning letters | On | Off switch; the rules stay configured |
 
 - The sweep runs daily at **17:05 Asia/Karachi** (`5 12 * * *` UTC), five minutes after the default cutoff, and **checks for itself** that the deadline has passed — so moving the cutoff never needs a redeploy.
-- **It reuses the same "who is absent" calculation the admin roster shows**, so a letter can never contradict the screen. Office closures and approved leave are excluded before the sweep sees anyone.
+- **It reuses the same "who is absent" calculation the admin roster shows**, so a letter can never contradict the screen. Office closures, approved leave and remote periods are all excluded before the sweep sees anyone.
 - **One letter per person per day**, enforced by a unique index rather than a check-then-write: eight concurrent sweeps produce one letter.
-- The letter names the run — *"this is the 3rd working day in a row"* — counted honestly, skipping closures, non-working days and approved leave.
+- The letter names the run — *"this is the 3rd working day in a row"* — counted honestly, skipping closures, non-working days, approved leave and remote days.
 - **The super admin is never sent one.** They still read as absent on the roster.
 - Working days govern who is *expected*, not who is *permitted*: somebody who comes in on a Saturday can still mark attendance, they are simply never chased for missing it.
 - Geolocation requires a secure context — HTTPS in production (automatic on Vercel), or `localhost` in development. Opening the dev server over a plain-http LAN address on a phone is reported as unsupported.
+
+---
+
+## Remote work
+
+`/admin/remote-work` puts somebody on a remote period. Those days become **attendance-exempt**:
+neither present, nor absent, nor leave.
+
+| Duration | What it covers |
+| --- | --- |
+| Today | Today only |
+| Tomorrow | Tomorrow only |
+| One week | Seven days, today included |
+| One month | One calendar month from today — 31 Jan runs to 27 Feb, clamped rather than rolled over |
+| Custom range | Both dates chosen, e.g. 25 Aug → 15 Sep |
+| Until revoked | No end date; permanent until an administrator ends it |
+
+The dates for a fixed duration are resolved **on the server**, against the company's calendar day.
+A payload sending its own dates alongside `type: "WEEK"` is refused rather than ignored.
+
+### Rules worth knowing
+
+- **Nothing is written to `attendance` or `leaves`.** The exemption is derived on every read, like absence and office closures — so shortening or revoking a period puts the days straight back on the register with nothing to migrate.
+- **Revoking keeps the days already served.** It truncates the period to today rather than deleting the row, so a fortnight genuinely worked from home stays exempt and only the future returns. A period revoked before it started covers nothing at all.
+- **A check-in still wins.** Somebody remote who comes into the office can check in as usual and the day reads *Present* — remote decides who is *expected*, not who is *permitted*.
+- **Booked leave inside a period stays booked** and still costs the allowance; the assign dialog says so. Requesting *new* leave on a remote day is refused, since those days already cost nothing.
+- **Overlapping live periods are refused**, not merged — two rows covering one day would make "is this person remote" a question with two answers.
+- **Every change is audited** and the employee is emailed on assignment, on a date change, and on revocation. The revocation letter names the day attendance resumes.
+- **Permission is `canManageRemoteWork`**, off by default and granted per administrator from the Access panel. Every administrator can *see* who is remote; only granted ones can arrange it.
+
+### In reports
+
+Remote days are counted separately and taken out of the attendance denominator:
+
+```
+Working days:              22
+Remote days:                5
+Attendance-eligible days:  17
+Present:                   16
+Absent:                     1
+```
+
+The exports print **Remote** for those dates — never *Absent*.
 
 ---
 
@@ -499,6 +545,11 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `GET` | `/api/admin/attendance/export` | Admin | CSV of the roster honouring current filters |
 | `GET` | `/api/admin/attendance/policy` | Admin | Read the cutoff and working week |
 | `PATCH` | `/api/admin/attendance/policy` | Super admin | Change the cutoff, working days or off switch |
+| `GET` | `/api/admin/remote-work` | Admin | Remote-work arrangements, filtered by state and population |
+| `POST` | `/api/admin/remote-work` | Admin + `canManageRemoteWork` | Put somebody on a remote period |
+| `PATCH` | `/api/admin/remote-work/[id]` | Admin + `canManageRemoteWork` | Move a period's dates, or rewrite its reason |
+| `DELETE` | `/api/admin/remote-work/[id]` | Admin + `canManageRemoteWork` | Revoke a period — truncates it, never deletes it |
+| `GET` | `/api/admin/remote-work/[id]/history` | Admin + `canManageRemoteWork` | The arrangement's audit trail |
 | `POST` | `/api/admin/reports` | Admin + `canViewAdminRecords` | Generate an attendance/absence/leave report over a period |
 | `POST` | `/api/admin/reports/export` | Admin + `canViewAdminRecords` | The same report, as a branded CSV |
 | `GET` | `/api/admin/reports/people` | Admin + `canViewAdminRecords` | People a report may be pointed at, for the picker |
