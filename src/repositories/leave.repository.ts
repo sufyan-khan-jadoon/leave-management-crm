@@ -63,6 +63,33 @@ export const leaveRepository = {
   },
 
   /**
+   * Clears one person's leave on one calendar day.
+   *
+   * **Scoped to a person as well as a date, which `deleteMany` deliberately is
+   * not**, and the difference is worth stating because the reset's rule reads
+   * like it forbids exactly this. That one is a *sweep*: narrowing it by
+   * employee would let an administrator hand one person their allowance back
+   * while every count that polices the monthly policy went on reading everybody
+   * else's history, with nothing on any row to show it had happened.
+   *
+   * This is the opposite shape. It is a single named correction to a single
+   * named day, it writes an `AttendanceEdit` row recording that it happened, and
+   * the allowance it returns is the one day the correction says the person did
+   * not take. The audit is what makes the narrowing safe — the reset has no such
+   * record, which is why it may not narrow.
+   *
+   * Every status, not just `APPROVED`: a legacy `PENDING` row on the date would
+   * otherwise be left behind to be resurrected by nothing, and `describeDay`
+   * reads approved leave only, so leaving it would put a row in the table that
+   * no screen accounts for.
+   */
+  deleteForEmployeeOnDate(employeeId: string, leaveDate: Date): Promise<number> {
+    return prisma.leave
+      .deleteMany({ where: { employeeId, leaveDate } })
+      .then((result) => result.count);
+  },
+
+  /**
    * How many rows a clear would actually take, counted the same way it deletes.
    *
    * Replaces a bare `countAll`, and deliberately: the preview and the delete have

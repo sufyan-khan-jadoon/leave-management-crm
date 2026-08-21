@@ -240,6 +240,35 @@ export type AttendanceRosterEntry = {
   attendance: AttendanceView | null;
 };
 
+/**
+ * One historical day moved from one status to another.
+ *
+ * Both statuses are plain strings rather than `AttendanceDayStatus`, matching
+ * the column: the day status is derived in `describeDay` and has never existed
+ * in the database, so what is stored is what the roster *said* at the moment of
+ * the change. Narrowing the type here would promise the compiler something the
+ * table cannot guarantee about rows written by an older version of the code.
+ */
+export type AttendanceEditView = {
+  id: string;
+  /** The attendance date that was corrected. */
+  date: string;
+  previousStatus: string;
+  newStatus: string;
+  /** What the editor was at the time, frozen so a promotion cannot retitle it. */
+  editorRole: string;
+  /** When the correction was made — the other date, and the one this is sorted by. */
+  createdAt: string;
+  employee: { id: string; name: string; department: string | null; position: string | null };
+  /** Null once the administrator's account has been deleted; the row survives it. */
+  editedBy: { id: string; name: string } | null;
+};
+
+export type AttendanceChangeLogView = {
+  items: AttendanceEditView[];
+  pagination: Pagination;
+};
+
 export type AttendanceRosterView = {
   date: string;
   officeClosed: boolean;
@@ -263,6 +292,21 @@ export type AttendanceRosterView = {
   };
   /** Whether to offer "Mark present". Mirrors the server check, never replaces it. */
   canMarkAttendance: boolean;
+  /**
+   * Whether to offer the status editor on a finished day.
+   *
+   * A different grant from `canMarkAttendance` and offered on different dates —
+   * see the roster route. Mirrors the server check and never replaces it:
+   * `editHistoricalDay` asks again against the row.
+   */
+  canEditHistoricalAttendance: boolean;
+  /**
+   * Whether the date on screen has already finished.
+   *
+   * Decided on the server so a viewer in another timezone cannot offer the
+   * editor on a date the server still calls today and be refused for it.
+   */
+  isHistorical: boolean;
   /** The deadline lateness is judged against, for the mark dialog's preview. */
   cutoffMinutes: number;
   /** The latest arrival that may be recorded by hand. */

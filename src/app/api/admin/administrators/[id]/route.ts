@@ -58,6 +58,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       updated = await remoteWorkService.setPermission(id, permissions.canManageRemoteWork);
     }
 
+    if (permissions.canEditHistoricalAttendance !== undefined) {
+      updated = await attendanceService.setHistoricalEditPermission(
+        id,
+        permissions.canEditHistoricalAttendance,
+      );
+    }
+
     return ok(updated);
   });
 }

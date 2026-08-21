@@ -373,6 +373,22 @@ model Employee {
   /// stops the next attempt instead of waiting for a week-old token to expire.
   canManageRemoteWork Boolean @default(false)
 
+  /// Whether this administrator may correct a day that has already gone.
+  ///
+  /// The ninth delegable right, and deliberately **not** `canMarkAttendance`.
+  /// That one is bounded by `hrMarkWindowMinutes` and can only ever turn ABSENT
+  /// into PRESENT — a narrow grace period for somebody whose phone failed this
+  /// afternoon. This one has no window at all and moves a day in **any**
+  /// direction between PRESENT, ABSENT and ON_LEAVE, which includes deleting a
+  /// check-in the geofence actually proved. Those are different powers, and an
+  /// administrator handed the first must not silently acquire the second.
+  ///
+  /// Off by default, granted per administrator by the super admin, read from
+  /// here on every request rather than carried in the session — the same
+  /// discipline the other eight follow, so withdrawing it bites on the next
+  /// request instead of when a week-old token expires.
+  canEditHistoricalAttendance Boolean @default(false)
+
   /// Consecutive failed sign-ins since the last time the password was proven.
   /// Reset by a correct password, by verifying the address, or by a reset.
   failedLoginAttempts Int @default(0)
@@ -441,6 +457,9 @@ model Employee {
   remoteWorkAssigned RemoteWorkAssignment[] @relation("RemoteWorkAssigner")
   remoteWorkRevoked  RemoteWorkAssignment[] @relation("RemoteWorkRevoker")
   remoteWorkActs     RemoteWorkEvent[]      @relation("RemoteWorkActor")
+
+  attendanceEdits     AttendanceEdit[] @relation("AttendanceEditSubject")
+  attendanceEditsMade AttendanceEdit[] @relation("AttendanceEditActor")
 
   @@index([department])
   @@index([status])
@@ -794,6 +813,64 @@ model Attendance {
   @@unique([employeeId, date])
   @@index([date])
   @@map("attendance")
+}
+
+/// One historical day moved from one status to another, and who moved it.
+///
+/// **A table rather than columns on the row, and that is the exception this
+/// codebase already makes once.** `Attendance.markedById` is an audit trail on
+/// the row itself, and the argument for it holds precisely because a check-in is
+/// never amended — one row per person per day, created once. Historical editing
+/// breaks that assumption in both directions: a day can be moved ABSENT →
+/// PRESENT → ABSENT, and the second move *deletes the very row* the first one's
+/// audit lived on. An audit that vanishes with the thing it describes is not an
+/// audit, so it goes somewhere the edit cannot reach. `RemoteWorkEvent` is the
+/// same shape for the same reason.
+///
+/// Both statuses are `AttendanceDayStatus` values copied in **by value** as
+/// strings, not enums: the day status is derived in `describeDay` and has never
+/// existed in the database, so there is no enum to point at. Storing what the
+/// day *read as* at the moment it was changed is also the right record —
+/// `AttendanceWarning.consecutiveMissed` and `EmailDispatch.recipientNames` make
+/// the same argument. A closure declared next month must not rewrite what an
+/// administrator saw when they pressed the button.
+///
+/// `editorRole` is likewise frozen. An administrator later promoted or demoted
+/// must not retitle every act they have already taken.
+model AttendanceEdit {
+  id         String @id @default(cuid())
+  employeeId String
+
+  /// The working day that was corrected, at UTC midnight like every other
+  /// calendar date here. **Not** the day the correction was made — that is
+  /// `createdAt`, and the two are different questions an audit has to answer
+  /// separately ("what happened on the 15th" vs "what did Sarah do on Friday").
+  date DateTime @db.Date
+
+  previousStatus String
+  newStatus      String
+
+  /// Null once the administrator's account is deleted, exactly as
+  /// `Attendance.markedById` is: removing whoever made a correction must not
+  /// remove the record that it happened, nor the person it was about. The row
+  /// survives having lost the name, which is a worse record than before and a
+  /// far better one than none.
+  editedById String?
+  editorRole String
+
+  createdAt DateTime @default(now())
+
+  employee Employee  @relation("AttendanceEditSubject", fields: [employeeId], references: [id], onDelete: Cascade)
+  editedBy Employee? @relation("AttendanceEditActor", fields: [editedById], references: [id], onDelete: SetNull)
+
+  /// The four ways this log is read: one person's history, one date across
+  /// everybody, one administrator's activity, and the whole thing newest-first —
+  /// which is what the screen opens on and what every filter narrows.
+  @@index([employeeId, date])
+  @@index([date])
+  @@index([editedById])
+  @@index([createdAt])
+  @@map("attendance_edits")
 }
 
 /// One employee raising a problem, and what was done about it.

@@ -125,6 +125,31 @@ export const attendanceRepository = {
     }
   },
 
+  /**
+   * Removes one person's check-in on one day.
+   *
+   * The only thing in this codebase that deletes a single check-in, and it
+   * exists because absence has no row: turning a day from `PRESENT` back to
+   * `ABSENT` is not an update to a status column, it is the removal of the
+   * evidence that produced the status. `AttendanceStatus` has one value, so
+   * there is nothing to set it to.
+   *
+   * Returns the number removed rather than the row, so a day that was already
+   * clear — somebody else's correction landing first — reads as `0` rather than
+   * throwing. The service turns that into the honest answer about what happened.
+   *
+   * Scoped to a person *and* a date, unlike `deleteMany` below, which sweeps a
+   * whole day across everybody. That asymmetry is deliberate and argued where
+   * `leaveRepository.deleteForEmployeeOnDate` states it: a sweep may not be
+   * narrowed to one person because nothing would record that it had been, and
+   * this one writes an `AttendanceEdit` row saying exactly that.
+   */
+  deleteForEmployeeOnDate(employeeId: string, date: Date): Promise<number> {
+    return prisma.attendance
+      .deleteMany({ where: { employeeId, date } })
+      .then((result) => result.count);
+  },
+
   /** Every check-in on one day, for the roster to join against. */
   listOnDate(date: Date): Promise<AttendanceDto[]> {
     return prisma.attendance.findMany({ where: { date }, select: attendanceSelect });

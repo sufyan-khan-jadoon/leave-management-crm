@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   CalendarOff,
+  History,
   House,
   Mail,
   MailWarning,
@@ -32,6 +33,7 @@ export type Administrator = {
   canMarkAttendance: boolean;
   canManageComplaints: boolean;
   canManageRemoteWork: boolean;
+  canEditHistoricalAttendance: boolean;
 };
 
 /** One delegable right, described once and rendered for every administrator. */
@@ -44,7 +46,8 @@ type Grant = {
     | "canViewAdminRecords"
     | "canMarkAttendance"
     | "canManageComplaints"
-    | "canManageRemoteWork";
+    | "canManageRemoteWork"
+    | "canEditHistoricalAttendance";
   icon: LucideIcon;
   label: string;
   on: string;
@@ -148,6 +151,19 @@ const GRANTS: Grant[] = [
     off: "Cannot arrange remote work",
     granted: "can now arrange remote work",
     revoked: "can no longer arrange remote work",
+  },
+  {
+    key: "canEditHistoricalAttendance",
+    icon: History,
+    label: "Edit past attendance",
+    // Names the two things that make this stronger than "Record attendance by
+    // hand" above it: it runs in both directions, and it has no deadline. An
+    // administrator deciding whether to delegate it should not have to work out
+    // from the word "edit" that it can erase a check-in the office proved.
+    on: "Can change a finished day to Present, Absent or On leave",
+    off: "Cannot change past attendance",
+    granted: "can now edit past attendance",
+    revoked: "can no longer edit past attendance",
   },
 ];
 

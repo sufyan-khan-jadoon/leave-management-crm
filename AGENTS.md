@@ -740,6 +740,110 @@ it can see which setting to change. It is deliberately **not** prevented by vali
 so a cross-field rule would have to compare against a stored value the sender never saw — the same
 problem the `updateAttendancePolicySchema` comment already describes for opening and closing.
 
+### Correcting a day that has already finished
+
+`markPresentFor` above is a **grace period**: bounded by `hrMarkWindowMinutes`, travelling in one
+direction, for somebody whose phone failed this afternoon. It was never the thing that puts a register
+right three weeks later, and stretching it into one would have meant removing the window — which is
+the whole of what makes it safe. So historical editing is a second door: `editHistoricalDay`,
+`POST /api/admin/attendance/edit`, behind **`canEditHistoricalAttendance`**, the ninth delegable
+right.
+
+**The two grants are deliberately separate.** `canMarkAttendance` writes a check-in the geofence
+missed. This one can **delete a check-in the geofence proved**, and moves a day in any direction
+between `PRESENT`, `ABSENT` and `ON_LEAVE`. Those are different powers, and an HR administrator
+trusted with the first must not silently acquire the second — the same argument that keeps
+`canMarkAttendance` out of `canViewAdminRecords`.
+
+**It only ever touches days that are over.** `isHistoricalDate` is strictly `date < todayUtc()`, and
+the strictness is the separation of concerns rather than caution: today already has an editor, and if
+this reached it the same people would hold an unbounded version of the windowed permission by a second
+door. The live check-in flow, the warning sweep and the hr-mark window are all untouched by this
+existing. The roster route returns `isHistorical` so the screen and the server agree about which day
+today is — a viewer in another timezone would otherwise be offered a control the server refuses.
+
+**Nothing here is a status update, because there is no status column to update.** `AttendanceStatus`
+still has one value and absence is still the lack of a row, so every transition is a create or a
+delete. `planAttendanceEdit` in `src/lib/attendance-edit.ts` turns the pair into two booleans per
+table — Prisma-free and tested alone like `geo.ts` and `working-days.ts`, with all nine ordered pairs
+enumerated rather than sampled, because the point of deriving the plan is that no combination can be
+silently unhandled. `ON_LEAVE → PRESENT` clears the leave *and* writes the check-in, so the day stops
+costing the employee a day of their allowance, which is right: they worked it.
+
+**`EDITABLE_DAY_STATUSES` is three, and each exclusion is a rule stated elsewhere in this file.**
+`CLOSED` and `NON_WORKING` belong to the calendar rather than to a person; `REMOTE` is
+attendance-exempt so there is no wrong record to correct; `UPCOMING` has not happened; `NO_RECORD`
+would flip every colleague to `ABSENT` the moment one row landed in it. All five are refused as
+*sources* as well as targets, and the service refuses them **in `refusalFor`'s own words** — the same
+roster-derived judgement `markPresentFor` uses, so this screen cannot come to disagree with the one
+beside it. They are not values `attendanceEditSchema` accepts either, so asserting one is refused by
+the parser before any service has to explain itself.
+
+**The check-in instant is the day's own cutoff, never `now()`.** There is no arrival time to ask for —
+one click is the requirement — and on a day three weeks gone `now()` is worse than the defect it
+already caused once: it would record an arrival at whatever o'clock somebody happened to press the
+button. The cutoff paired with `lateBasisMinutes` means exactly "here, and not late", which is the
+minimum claim a correction makes and the only one it has evidence for. Lateness is a separate
+accusation this feature has no information to make; an administrator who *does* know the arrival time
+has the roster's own dialog to enter it in. Don't "improve" this by defaulting to the current time.
+
+**Every refusal happens before the first write**, and that is a fix rather than a precaution. The
+deletes and creates span two tables and the layering keeps `prisma` in the repositories, so there is
+no transaction to roll one back — the constraint the reset already documents. The allowance check was
+inside `bookCorrectedLeave` at first, which runs *after* the check-in is removed, so a
+`PRESENT → ON_LEAVE` over the monthly limit deleted the check-in, threw, and left the day reading
+`ABSENT` with no audit row to explain it. A refusal has to leave the record exactly as it found it.
+
+**Moving a day *to* `ON_LEAVE` books real leave, and the allowance still decides.** This file is
+emphatic that there is no administrator approval path and that adding one would let somebody approve
+past `MONTHLY_LEAVE_ALLOWANCE` by hand. This is not that: it is refused by the same count that refuses
+an employee's own request, so an administrator can record that leave was taken and cannot grant more
+than the policy allows. The reason is generated rather than asked for — `Leave.reason` is a required
+column and a mandatory box collects "n/a".
+
+Seniority is `assertMayCorrect`, reused rather than restated, so all four of its answers come for
+free: a granted administrator reaches `EMPLOYEE` and `ADMIN` alike, nobody edits their own day, and
+nobody edits the owner's. Nothing is emailed — a letter about a day already past gives its recipient
+nothing to do, and the audit row is where this is answerable.
+
+#### The change log
+
+`AttendanceEdit` is **a table rather than columns on the row**, breaking this codebase's habit for the
+reason `RemoteWorkEvent` breaks it. `Attendance.markedById` works precisely because a check-in is
+never amended; historical editing breaks that in both directions, and `PRESENT → ABSENT` **deletes the
+very row an on-row audit would live on**. An audit that vanishes with the thing it describes is not
+one.
+
+Both statuses are stored as plain strings copied **by value**, because `AttendanceDayStatus` is
+derived in `describeDay` and has never existed in the database — there is no enum to point at, and
+what belongs in the record is what the roster *said* at the moment somebody acted. `editorRole` is
+frozen for the same reason `consecutiveMissed` and `lateBasisMinutes` are: an administrator later
+promoted must not have every past act of theirs retitled. `editedById` is `SetNull` — deleting the
+administrator who made a correction must not delete the record that it happened.
+
+`date` and `createdAt` are two different questions and the screen answers them separately: *which day
+was corrected* versus *when somebody corrected it*. The log is ordered by the second, because "what
+has been changed lately" is what it opens on — ordering by the first would bury this morning's fix to
+last March under corrections made weeks ago.
+
+**`GET /api/admin/attendance/edits` is the super admin's alone, gated in the route**, deliberately
+unlike almost every other admin surface here, which guards loosely and settles a delegable grant in a
+service. There is no delegable half: this is oversight *of the administrators*, and an administrator
+who could read it would be auditing themselves. `canEditHistoricalAttendance` buys making a
+correction, never reviewing everybody else's. `/admin/attendance/changes` re-checks the same thing
+before it renders — **a page is as reachable as an endpoint**, the lesson `staff/[id]/page.tsx`
+records. It is nested under Attendance rather than given a sidebar item, so `adminAttendance` not
+being `exact` keeps the nav highlighted and no item exists that only one account can see.
+
+There is **no `PATCH` or `DELETE`** on any of it, and the absence of the verb is the enforcement —
+the same way `/api/complaints/[id]` has none. An audit somebody can edit is not one.
+
+**Reports, exports and analytics needed no changes at all**, which is the return on absence being
+derived in one place. Every figure downstream counts rows: `describeDay` re-reads the tables, so the
+roster, the tiles, `historiesFor`, the attendance rate, the calendar, the trend chart and all three
+exported files reflect a correction the moment it is written. Nothing caches a status and nothing
+stores one.
+
 ### How late is late
 
 `src/lib/lateness.ts` holds the whole rule, free of Prisma so it can be read and tested alone exactly

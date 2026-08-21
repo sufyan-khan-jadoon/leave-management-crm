@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AttendanceStatusBadge } from "@/components/shared/attendance-status-badge";
+import { AttendanceStatusEditor } from "@/components/admin/attendance-status-editor";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatCard, StatCardSkeleton } from "@/components/shared/stat-card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -600,7 +600,23 @@ export function AttendanceManager({
                       */}
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <AttendanceStatusBadge status={entry.status} />
+                          {/*
+                            The badge, and on a finished day for somebody who
+                            holds the grant, the badge as a control. It falls
+                            back to the plain badge in every other case, so the
+                            roster reads exactly as it always has — see the
+                            component, which decides that in one place rather
+                            than this table growing a condition.
+                          */}
+                          <AttendanceStatusEditor
+                            status={entry.status}
+                            employeeId={entry.employee.id}
+                            employeeName={entry.employee.name}
+                            date={date}
+                            canEdit={data?.canEditHistoricalAttendance ?? false}
+                            isHistorical={data?.isHistorical ?? false}
+                            onChanged={refresh}
+                          />
                           {entry.attendance && entry.attendance.lateMinutes > 0 && (
                             <span className="text-warning-ink text-xs font-medium whitespace-nowrap">
                               {describeLateness(entry.attendance.lateMinutes)}

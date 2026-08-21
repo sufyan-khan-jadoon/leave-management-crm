@@ -259,6 +259,12 @@ export const ROUTES = {
   adminLeaves: "/admin/leaves",
   adminWorkingDays: "/admin/working-days",
   adminAttendance: "/admin/attendance",
+  // Nested under Attendance rather than given a sidebar item of its own: it is
+  // the history of that screen, and `adminAttendance` is not `exact`, so the nav
+  // keeps Attendance highlighted while it is open. The super admin reaches it
+  // from a button in that header — a nav item only one account can see reads as
+  // a sidebar that differs per person for no visible reason.
+  adminAttendanceChanges: "/admin/attendance/changes",
   adminReports: "/admin/reports",
   adminAssistant: "/admin/assistant",
   adminEmails: "/admin/emails",

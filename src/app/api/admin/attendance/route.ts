@@ -1,6 +1,7 @@
 import { handleRoute, ok, parseQuery } from "@/lib/api";
 import { hrMarkWindowExpiresAt, isWithinHrMarkWindow } from "@/lib/attendance-policy";
 import { requireAdmin } from "@/lib/auth/guards";
+import { todayUtc } from "@/lib/date";
 import { isSuperAdminRole } from "@/lib/enums";
 import { serializeAttendance } from "@/lib/serialize";
 import { attendanceService } from "@/services/attendance.service";
@@ -32,9 +33,10 @@ export async function GET(request: Request) {
     const user = await requireAdmin();
     const query = parseQuery(request, attendanceRosterQuerySchema);
 
-    const [roster, canMarkAttendance, policy] = await Promise.all([
+    const [roster, canMarkAttendance, canEditHistoricalAttendance, policy] = await Promise.all([
       attendanceService.roster(query, user),
       attendanceService.mayMarkAttendance(user),
+      attendanceService.mayEditHistoricalAttendance(user),
       attendancePolicyService.get(),
     ]);
 
@@ -47,6 +49,25 @@ export async function GET(request: Request) {
       // the row — exactly as `canIssue` and `canManage` do on the invitation and
       // holiday routes.
       canMarkAttendance,
+      /**
+       * Whether this viewer may move a **finished** day between Present, Absent
+       * and On leave — a different grant from the one above, and offered on
+       * different days, which is why it is a second field rather than a wider
+       * reading of the first.
+       *
+       * Hides a control it may not use and nothing more: `editHistoricalDay`
+       * asks again against the row, and refuses today's date whatever this says.
+       */
+      canEditHistoricalAttendance,
+      /**
+       * Whether the date on screen is one this feature reaches at all.
+       *
+       * Decided here rather than in the browser so the screen and the server
+       * agree about which day "today" is — a viewer in another timezone would
+       * otherwise offer the control on a date the server still calls today, and
+       * be refused for it. `roster.date` has already been through `todayUtc()`.
+       */
+      isHistorical: roster.date.getTime() < todayUtc().getTime(),
       // The deadline lateness is judged against, so the mark dialog can show
       // what a typed arrival time would come to *before* it is submitted. The
       // preview is a courtesy; the figure that lands is computed on the server

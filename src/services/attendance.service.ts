@@ -1,6 +1,7 @@
 import type { Role } from "@prisma/client";
 
 import {
+  cutoffInstant,
   describeHrMarkWindow,
   friendlyTimeLabel,
   hasCutoffPassed,
@@ -8,6 +9,14 @@ import {
   isAfterClosing,
   isWithinHrMarkWindow,
 } from "@/lib/attendance-policy";
+import {
+  isEditableDayStatus,
+  isHistoricalDate,
+  isNoOp,
+  planAttendanceEdit,
+} from "@/lib/attendance-edit";
+import { dayStatusLabel } from "@/lib/report-labels";
+import { MONTHLY_LEAVE_ALLOWANCE } from "@/lib/constants";
 import {
   addUtcDays,
   appZoneInstant,
@@ -30,6 +39,10 @@ import {
   type AttendanceDto,
 } from "@/repositories/attendance.repository";
 import {
+  attendanceEditRepository,
+  type AttendanceEditDto,
+} from "@/repositories/attendance-edit.repository";
+import {
   employeeRepository,
   type AttendanceRosterMember,
 } from "@/repositories/employee.repository";
@@ -49,6 +62,18 @@ import type {
   ResetAttendanceInput,
   ResetAttendancePreviewQuery,
 } from "@/validations/attendance.schema";
+import type {
+  AttendanceEditInput,
+  AttendanceEditQuery,
+} from "@/validations/attendance-edit.schema";
+
+/** What a historical correction moved, and what the day reads as now. */
+export type AttendanceEditResult = {
+  status: AttendanceDayStatus;
+  attendance: AttendanceDto | null;
+  previousStatus: AttendanceDayStatus;
+  record: AttendanceEditDto;
+};
 
 /**
  * What one person's day amounts to.
@@ -382,6 +407,93 @@ async function mayMarkAttendance(actor: PopulationActor): Promise<boolean> {
 
   const employee = await employeeRepository.findById(actor.id);
   return Boolean(employee?.canMarkAttendance);
+}
+
+/**
+ * Whether this account may correct a day that has already finished.
+ *
+ * The super admin always — nobody has to grant themselves the ability to put
+ * the register right, and there is no one senior to ask. An administrator only
+ * once `canEditHistoricalAttendance` is set, read from the row on every attempt
+ * exactly as the other eight delegable rights are, so withdrawing it stops the
+ * very next request rather than waiting out a week-old token.
+ *
+ * Deliberately a separate question from `mayMarkAttendance`. That grant is a
+ * bounded grace period travelling in one direction; this one has no window and
+ * can delete a check-in the building proved. An HR administrator trusted with
+ * the first must not silently acquire the second.
+ */
+async function mayEditHistoricalAttendance(actor: PopulationActor): Promise<boolean> {
+  if (isSuperAdminRole(actor.role)) return true;
+  if (actor.role !== "ADMIN") return false;
+
+  const employee = await employeeRepository.findById(actor.id);
+  return Boolean(employee?.canEditHistoricalAttendance);
+}
+
+/**
+ * Writes the approved leave a correction to `ON_LEAVE` implies.
+ *
+ * **The monthly allowance is enforced here, and that is what makes this safe to
+ * exist at all.** The working notes are emphatic that there is no administrator
+ * approval path and that adding one back would let somebody approve past
+ * `MONTHLY_LEAVE_ALLOWANCE` by hand. This is not that: it is a correction to a
+ * day already gone, and it is refused by the same count that refuses an
+ * employee's own request. An administrator can record that leave was taken; they
+ * cannot grant more of it than the policy allows.
+ *
+ * `usedInMonth`'s own logic is repeated in one respect only — discounting days
+ * the office turned out to be closed — because `countApprovedInMonth` takes that
+ * list as an argument and a count that ignored it would charge somebody for a
+ * closure. The allowance rule itself is the constant, read from one place.
+ *
+ * The reason is generated rather than asked for. The requirement is a one-click
+ * correction, and `Leave.reason` is a required column, so the honest thing to put
+ * in it is what actually happened — never a blank, and never "n/a", which is what
+ * a mandatory box would collect.
+ */
+async function assertLeaveAllowance(employeeId: string, date: Date): Promise<void> {
+  const closedDates = await holidayRepository.closedDatesBetween(
+    startOfUtcMonth(date),
+    endOfUtcMonth(date),
+  );
+
+  const used = await leaveRepository.countApprovedInMonth(employeeId, date, closedDates);
+
+  if (used >= MONTHLY_LEAVE_ALLOWANCE) {
+    throw new ConflictError(
+      `That would be more than the ${MONTHLY_LEAVE_ALLOWANCE} leaves allowed in ${toIsoDate(date).slice(0, 7)} — ${used} are already recorded. The allowance decides this, not an administrator.`,
+    );
+  }
+}
+
+/**
+ * Writes the approved leave the correction implies.
+ *
+ * Separate from the check above **because the check has to run before anything
+ * is deleted**. The two were one function at first, called in plan order, and
+ * that was wrong in a way only the `PRESENT → ON_LEAVE` path shows: the
+ * check-in is removed first, so an allowance refusal landed *after* the delete
+ * and left the day reading `ABSENT` with no audit row to say why. A refusal has
+ * to leave the record exactly as it found it.
+ */
+async function bookCorrectedLeave(employeeId: string, date: Date): Promise<void> {
+  await leaveRepository.create({
+    employeeId,
+    leaveDate: date,
+    // Generated rather than asked for. The requirement is a one-click
+    // correction and `Leave.reason` is a required column, so the honest thing to
+    // put in it is what actually happened — never a blank, and never the "n/a" a
+    // mandatory box would collect.
+    reason: "Recorded by an administrator when correcting the attendance record.",
+    status: "APPROVED",
+  });
+
+  // Nothing is emailed. The other surfaces that write on somebody's behalf —
+  // invitations, remote work, complaint resolutions — all send, and this
+  // deliberately does not: a correction to a fortnight-old register is
+  // bookkeeping, and a letter about a day already past gives its recipient
+  // nothing to do. The audit row is where this is answerable.
 }
 
 /**
@@ -955,6 +1067,211 @@ export const attendanceService = {
     }
 
     return { attendance, alreadyMarked: false };
+  },
+
+  mayEditHistoricalAttendance,
+
+  /**
+   * Grants or withdraws the right to correct days that have already gone. The
+   * super admin's alone, gated in the route that calls it.
+   */
+  setHistoricalEditPermission(adminId: string, allowed: boolean) {
+    return employeeRepository.setHistoricalAttendancePermission(adminId, allowed);
+  },
+
+  /**
+   * Moves a **past** day between `PRESENT`, `ABSENT` and `ON_LEAVE`.
+   *
+   * The correction feature `markPresentFor` could not be: that one is a grace
+   * period, bounded by `hrMarkWindowMinutes` and travelling in one direction
+   * only, for somebody whose phone failed this afternoon. This is the register
+   * being put right weeks later, in whichever direction it is wrong.
+   *
+   * Four things keep it from being a hole in everything above it:
+   *
+   * - **It is its own grant.** `canEditHistoricalAttendance`, read from the row,
+   *   deliberately not `canMarkAttendance` — deleting a check-in the geofence
+   *   proved is a different power from writing one it missed.
+   * - **It judges the day by building the roster**, never by asking its own
+   *   questions, exactly as `markPresentFor` does. Closures, the working week,
+   *   remote periods, the future and `NO_RECORD` all reach here already settled
+   *   by `describeDay`, so this screen cannot come to disagree with the one
+   *   beside it. A hand-written "is this a working day" check here would be the
+   *   second opinion, and the second opinion is the one that rots.
+   * - **It only ever touches today's past.** `isHistoricalDate` refuses today
+   *   and everything after it, so the live check-in flow, the warning sweep and
+   *   the hr-mark window are all untouched by this existing.
+   * - **Every successful move writes an audit row**, and the statuses on it are
+   *   the ones the roster actually reported — not what the client claimed, since
+   *   the schema has no field for that.
+   *
+   * Nothing here is a status update, because there is no status column to
+   * update: `AttendanceStatus` has one value and absence is the lack of a row.
+   * Every transition is therefore a create or a delete, which is what
+   * `planAttendanceEdit` turns the pair into.
+   */
+  async editHistoricalDay(
+    actor: PopulationActor,
+    input: AttendanceEditInput,
+  ): Promise<AttendanceEditResult> {
+    if (!(await mayEditHistoricalAttendance(actor))) {
+      throw new ForbiddenError(
+        actor.role === "ADMIN"
+          ? "You do not have permission to edit past attendance. Ask your super administrator to enable it."
+          : "Only administrators can edit attendance records.",
+      );
+    }
+
+    // Refused before anything is read. Today has an editor already — the
+    // hr-mark window — and reaching it from here would hand the same people an
+    // unbounded version of that permission by a second door.
+    if (!isHistoricalDate(input.date, todayUtc())) {
+      throw new ValidationError("Only days that have already finished can be edited here.", {
+        date: `${toIsoDate(input.date)} is not in the past. Today's attendance is corrected from the roster while the marking window is open.`,
+      });
+    }
+
+    // The whole judgement, from the one place that makes it — and the account
+    // alongside it purely for its `role`, which the roster does not carry.
+    const [{ entries }, target] = await Promise.all([
+      buildRoster(input.date, { employeeId: input.employeeId }),
+      employeeRepository.findById(input.employeeId),
+    ]);
+
+    const entry = entries[0];
+
+    if (!entry || !target) throw new NotFoundError("That person is not on the roster.");
+
+    // Seniority before anything about the day, and the same rule attendance
+    // corrections already use: a granted administrator reaches employees and
+    // administrators alike, nobody edits their own day, nobody edits the owner's.
+    assertMayCorrect(actor, target);
+
+    const from = entry.status;
+
+    // The calendar's own statuses, refused in the roster's words. `refusalFor`
+    // covers CLOSED, NON_WORKING, REMOTE, UPCOMING and NO_RECORD; the only
+    // statuses it passes are exactly the three that are editable, so this cannot
+    // fall out of step with `EDITABLE_DAY_STATUSES` without failing loudly.
+    if (!isEditableDayStatus(from)) {
+      throw new ConflictError(
+        refusalFor(from, input.date) ?? `${toIsoDate(input.date)} cannot be edited.`,
+      );
+    }
+
+    const plan = planAttendanceEdit(from, input.status);
+
+    // A move to the status the day already holds. Refused rather than waved
+    // through as a success, so a double-click cannot write a second audit row
+    // recording a change that changed nothing.
+    if (isNoOp(plan)) {
+      throw new ConflictError(
+        `${entry.employee.name} already reads as ${dayStatusLabel(from).toLowerCase()} on ${toIsoDate(input.date)}.`,
+      );
+    }
+
+    const policy = await attendancePolicyService.get();
+
+    // **Every refusal happens before the first write.** These three deletes and
+    // creates span two tables, and the layering keeps `prisma` in the
+    // repositories, so there is no transaction to roll one back — the same
+    // constraint the reset documents. What stands in for it is checking
+    // everything first: a request that is going to be refused is refused while
+    // the record is still exactly as it was found.
+    //
+    // The allowance is the one that bit. It used to be asked inside
+    // `bookCorrectedLeave`, which runs *after* the check-in is removed, so a
+    // `PRESENT → ON_LEAVE` over the monthly limit deleted the check-in, threw,
+    // and left the day reading ABSENT with no audit row to explain it.
+    if (plan.needsLeave) await assertLeaveAllowance(input.employeeId, input.date);
+
+    // Removals first, so nothing races its own replacement: `describeDay` reads
+    // a check-in above leave, and writing the new fact before clearing the old
+    // one would leave a moment where the day held both.
+    if (plan.removesCheckIn) {
+      await attendanceRepository.deleteForEmployeeOnDate(input.employeeId, input.date);
+    }
+
+    if (plan.removesLeave) {
+      await leaveRepository.deleteForEmployeeOnDate(input.employeeId, input.date);
+    }
+
+    if (plan.needsLeave) {
+      await bookCorrectedLeave(input.employeeId, input.date);
+    }
+
+    if (plan.needsCheckIn) {
+      await attendanceRepository.createManual({
+        employeeId: input.employeeId,
+        date: input.date,
+        // **The day's own cutoff, not the moment somebody pressed the button.**
+        //
+        // There is no arrival time to ask for — that is the whole of the
+        // one-click requirement — so this is the only honest instant available.
+        // `now()` was the defect `markEmployeePresentSchema` documents, and on a
+        // day three weeks gone it is worse than arbitrary: it would record an
+        // arrival at whatever o'clock the correction happened to be made.
+        //
+        // The cutoff pairs with `lateBasisMinutes` below to mean exactly "here,
+        // and not late", which is the minimum claim a correction makes and the
+        // only one it has evidence for. Lateness is a separate accusation and
+        // this feature does not have the information to make it — an
+        // administrator who does knows the arrival time and has the roster's own
+        // dialog to enter it in.
+        checkInAt: cutoffInstant(input.date, policy.cutoffMinutes),
+        lateBasisMinutes: policy.cutoffMinutes,
+        markedById: actor.id,
+        reason: null,
+      });
+    }
+
+    // Written after the tables have moved, so a failure above leaves no audit
+    // row claiming something that did not happen. The reverse ordering — claim
+    // first, as the holiday and complaint notices do — is right when the risk is
+    // a *duplicate side effect* nothing can recall, like an email. Here the risk
+    // is a false record, and nothing this writes leaves the building.
+    const record = await attendanceEditRepository.record({
+      employeeId: input.employeeId,
+      date: input.date,
+      previousStatus: from,
+      newStatus: input.status,
+      editedById: actor.id,
+      // Frozen by value: an administrator later promoted must not have every
+      // past act of theirs retitled. Same argument as `consecutiveMissed`.
+      editorRole: actor.role,
+    });
+
+    // Re-read through the roster rather than assumed, so what comes back is what
+    // the next page load will show. If some other fact about the day moved
+    // underneath this — a closure declared mid-request — the caller is told the
+    // truth rather than the intention.
+    const [after] = (await buildRoster(input.date, { employeeId: input.employeeId })).entries;
+
+    return {
+      status: after?.status ?? input.status,
+      attendance: after?.attendance ?? null,
+      previousStatus: from,
+      record,
+    };
+  },
+
+  /**
+   * The attendance change log.
+   *
+   * **Gated in the route, not here**, and gated on the super admin alone — the
+   * looser-guard-with-the-real-check-behind-it split every other admin surface
+   * uses, inverted, because this one has no delegable half. Reading who changed
+   * what for whom is oversight of the administrators, which is the owner's job
+   * and nobody else's; an administrator able to audit the audit would be the
+   * boundary running backwards.
+   */
+  listEdits(query: AttendanceEditQuery) {
+    return attendanceEditRepository.list(query);
+  },
+
+  /** One person's corrections, newest first — for their profile and report. */
+  editsForEmployee(employeeId: string, take = 20) {
+    return attendanceEditRepository.listForEmployee(employeeId, take);
   },
 
   /** Where one person stands today — what the attendance screen opens on. */
