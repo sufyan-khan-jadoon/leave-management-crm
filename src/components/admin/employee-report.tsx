@@ -235,76 +235,82 @@ export function EmployeeReport({ employeeId }: { employeeId: string }) {
     <div className="space-y-4">
       <Card className="py-0">
         <CardContent className="space-y-4 p-4 sm:p-5">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="space-y-2">
-              <Label htmlFor="report-range">Period</Label>
-              <Select value={range} onValueChange={(value) => changeRange(value as EmployeeReportRange)}>
-                <SelectTrigger id="report-range" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {EMPLOYEE_REPORT_RANGES.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {EMPLOYEE_REPORT_RANGE_LABELS[option]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/*
+            The period controls and the exports as two groups rather than four
+            cells of one grid. As a grid the three buttons were squeezed into a
+            quarter of the row and wrapped into a vertical stack — a column of
+            buttons where a toolbar belongs.
+          */}
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div className="grid flex-1 gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="report-range">Period</Label>
+                <Select value={range} onValueChange={(value) => changeRange(value as EmployeeReportRange)}>
+                  <SelectTrigger id="report-range" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EMPLOYEE_REPORT_RANGES.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {EMPLOYEE_REPORT_RANGE_LABELS[option]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {range === "CUSTOM" && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="report-start">Start date</Label>
+                    <Input
+                      id="report-start"
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => {
+                        setStartDate(event.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="report-end">End date</Label>
+                    <Input
+                      id="report-end"
+                      type="date"
+                      value={endDate}
+                      onChange={(event) => {
+                        setEndDate(event.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
-            {range === "CUSTOM" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="report-start">Start date</Label>
-                  <Input
-                    id="report-start"
-                    type="date"
-                    value={startDate}
-                    onChange={(event) => {
-                      setStartDate(event.target.value);
-                      setPage(1);
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="report-end">End date</Label>
-                  <Input
-                    id="report-end"
-                    type="date"
-                    value={endDate}
-                    onChange={(event) => {
-                      setEndDate(event.target.value);
-                      setPage(1);
-                    }}
-                  />
-                </div>
-              </>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {EXPORT_ORDER.map((format) => {
+                const target = EXPORTS[format];
+                const Icon = target.icon;
 
-            <div className="flex items-end sm:col-span-2 lg:col-span-1 lg:col-start-4">
-              <div className="flex w-full flex-wrap gap-2">
-                {EXPORT_ORDER.map((format) => {
-                  const target = EXPORTS[format];
-                  const Icon = target.icon;
-
-                  return (
-                    <Button
-                      key={format}
-                      variant={format === "xlsx" ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => runExport(format)}
-                      disabled={!report || exporting !== null}
-                    >
-                      {exporting === format ? (
-                        <RotateCcw className="size-4 animate-spin" aria-hidden />
-                      ) : (
-                        <Icon className="size-4" aria-hidden />
-                      )}
-                      {target.label}
-                    </Button>
-                  );
-                })}
-              </div>
+                return (
+                  <Button
+                    key={format}
+                    variant={format === "xlsx" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => runExport(format)}
+                    disabled={!report || exporting !== null}
+                  >
+                    {exporting === format ? (
+                      <RotateCcw className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <Icon className="size-4" aria-hidden />
+                    )}
+                    {target.label}
+                  </Button>
+                );
+              })}
             </div>
           </div>
 

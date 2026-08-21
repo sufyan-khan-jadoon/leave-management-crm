@@ -50,23 +50,39 @@ export const DAY_STATUS_VISUAL: Record<AttendanceDayStatus, DayStatusVisual> = {
     color: "var(--brand-deep)",
     cell: "bg-[var(--brand-deep)]/12 border-[var(--brand-deep)]/40",
   },
+  /**
+   * The four that are the *absence* of a record, as a ladder of one neutral.
+   *
+   * **They were one colour each and three of them were the same colour**, which
+   * a calendar cell hid and nothing else did: the cells differ by border style,
+   * so `NON_WORKING`, `NO_RECORD` and `UPCOMING` read apart there while their
+   * legend dots were identical and their doughnut slices were a single
+   * undifferentiated mass — 26 of 31 days, in the case that found it. A shape
+   * with no border to vary needs the colour to carry the distinction.
+   *
+   * The ladder is **how much the system knows**, heaviest first: a declared
+   * closure is a positive fact about the date, a weekly day off is standing
+   * configuration, `NO_RECORD` is nothing known, and `UPCOMING` has not
+   * happened. None of them is a verdict on anybody, so all four stay inside the
+   * one muted hue rather than borrowing a status colour — fading, not competing.
+   */
   CLOSED: {
     color: "var(--color-muted-foreground)",
     cell: "bg-muted border-border",
   },
   NON_WORKING: {
-    color: "var(--color-border)",
+    color: "color-mix(in oklab, var(--color-muted-foreground) 62%, transparent)",
     cell: "bg-muted/50 border-border/60",
   },
-  // Dashed and unfilled, deliberately. Nothing is known about the day, and a
-  // tint of any weight would look like a claim about it — the same reason the
-  // badge refuses `destructive` here.
+  // Dashed and unfilled in the calendar, deliberately. Nothing is known about
+  // the day, and a tint of any weight would look like a claim about it — the
+  // same reason the badge refuses `destructive` here.
   NO_RECORD: {
-    color: "var(--color-border)",
+    color: "color-mix(in oklab, var(--color-muted-foreground) 38%, transparent)",
     cell: "border-dashed border-border bg-transparent",
   },
   UPCOMING: {
-    color: "var(--color-border)",
+    color: "color-mix(in oklab, var(--color-muted-foreground) 20%, transparent)",
     cell: "border-border/50 bg-transparent",
   },
 };
