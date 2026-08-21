@@ -1,8 +1,13 @@
-import { EmployeeStatus, type LeaveStatus, type Role } from "@prisma/client";
+import { EmployeeStatus, LeaveStatus, type Role } from "@prisma/client";
 
-import { toIsoDate } from "@/lib/date";
+import { toIsoDate, todayUtc } from "@/lib/date";
+import {
+  resolveEmployeeReportPreset,
+  type EmployeeReportPreset,
+} from "@/lib/employee-report-range";
 import { rolesInPopulation, ROLE } from "@/lib/enums";
 import { ValidationError } from "@/lib/errors";
+import { groupLeaveSpells, type LeaveSpell } from "@/lib/leave-spells";
 import { describeReportPeriod, type ReportPeriod } from "@/lib/report-period";
 import {
   employeeRepository,
@@ -16,9 +21,12 @@ import {
   type AttendanceDayStatus,
   type DayRecord,
 } from "@/services/attendance.service";
+import { employeeService, type Actor } from "@/services/employee.service";
 import { populationService, type PopulationActor } from "@/services/population.service";
+import type { EmployeeReportRequest } from "@/validations/employee-report.schema";
 import {
   isExplicitSelection,
+  REPORT_RECORD_TYPES,
   type PeopleSelection,
   type ReportPeopleQuery,
   type ReportRecordType,
@@ -44,17 +52,19 @@ import {
  * printing, and **what they add up to**. Nothing else.
  */
 
-/** One line of a report: one person, one date, one thing that happened. */
-export type ReportRow = {
+/**
+ * Everything a report holds about one date, without saying whose it is.
+ *
+ * Split out so the row set and the per-person calendar are built from **one**
+ * derivation rather than two. A day is a row only when it is a record —
+ * `recordTypeOf` sends four of the eight verdicts to nothing — but the calendar
+ * has to print every date in the period, records and closures alike, and two
+ * functions each turning a `DayRecord` into a shape with a `lateMinutes` on it
+ * is two answers about the same morning waiting to disagree.
+ */
+export type ReportDayDetail = {
   date: Date;
-  employeeId: string;
-  name: string;
-  email: string;
-  role: Role;
-  department: string | null;
-  position: string | null;
-  recordType: ReportRecordType;
-  /** The roster's own verdict, unchanged — `PRESENT`, `ABSENT` or `ON_LEAVE`. */
+  /** The roster's own verdict, unchanged. Whatever `describeDay` decided. */
   status: AttendanceDayStatus;
   checkInAt: Date | null;
   lateMinutes: number;
@@ -75,6 +85,17 @@ export type ReportRow = {
    */
   leaveStatus: LeaveStatus | null;
   leaveReason: string | null;
+};
+
+/** One line of a report: one person, one date, one thing that happened. */
+export type ReportRow = ReportDayDetail & {
+  employeeId: string;
+  name: string;
+  email: string;
+  role: Role;
+  department: string | null;
+  position: string | null;
+  recordType: ReportRecordType;
 };
 
 /** What a set of rows adds up to. Counted off the rows, never tracked beside them. */
@@ -204,6 +225,80 @@ export type ReportResult = {
    * short by one person is indistinguishable from a total that is simply low.
    */
   missingSelections: string[];
+};
+
+/** Who a one-person report is about, as its header prints them. */
+export type EmployeeReportSubject = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  status: EmployeeStatus;
+  department: string | null;
+  position: string | null;
+  profilePhoto: string | null;
+  phone: string | null;
+  joiningDate: Date | null;
+};
+
+/**
+ * One person's report: an ordinary `ReportResult` with the three things a
+ * screen about a single person needs and a workforce report has no use for.
+ *
+ * It **extends** rather than replaces, which is what lets the three exports run
+ * unchanged — `buildReportDocument` takes a `ReportResult`, and this is one. The
+ * additions are readings of the same day walk, never a second source: `calendar`
+ * is every day `describeDay` judged, `leaveSpells` groups the leave rows the
+ * report already fetched, and `attendanceRate` is two numbers off `coverage` and
+ * `totals` divided in the one place, so the tile, the PDF and the workbook
+ * cannot round it differently.
+ */
+export type EmployeeReportResult = ReportResult & {
+  subject: EmployeeReportSubject;
+  /**
+   * Every calendar day in the period with the verdict it was given.
+   *
+   * Wider than `rows` on purpose. A report prints *records*, and `recordTypeOf`
+   * sends closures, weekly days off, empty days and the future to nothing —
+   * rightly, since an absence report full of Saturdays is unreadable. A calendar
+   * has the opposite job: a month with the weekends missing is not a month.
+   */
+  calendar: ReportDayDetail[];
+  /** Approved leave in the period, gathered back into the stretches it was booked as. */
+  leaveSpells: LeaveSpell[];
+  /**
+   * Present days as a share of **the days the register actually judged them on**
+   * — `present / (present + absent)`, and nothing else in the denominator.
+   *
+   * The obvious formula is `present / attendanceEligibleDays`, and it is wrong
+   * in every period that is not entirely in the past. Driving it found a real
+   * employee with five check-ins and not one absence reported at **23.8%**:
+   * August has 21 working days, he had been present on all five the system held
+   * anything about, and the other sixteen were days nobody had yet worked or
+   * days holding no record for anybody in the company. Dividing by them charged
+   * him for a calendar he had no part in — which is exactly the accusation
+   * `NO_RECORD` exists to withhold, arriving by arithmetic instead of by a
+   * status.
+   *
+   * So each excluded kind of day is excluded for a reason this file already
+   * gives: `UPCOMING` has not happened, `NO_RECORD` was not being watched,
+   * `REMOTE` is attendance-exempt, `ON_LEAVE` was authorised, and closures and
+   * weekly days off are not working days at all. What is left is the two
+   * verdicts that are a statement about whether somebody turned up.
+   *
+   * **§12's worked example is unaffected**, which is what makes this safe: 22
+   * working days, 5 remote, 17 eligible, 16 present, 1 absent — 16 + 1 is 17, so
+   * both formulas give 16/17. They only diverge where §12 had nothing to say.
+   * `attendanceEligibleDays` is untouched and still means what it meant; it is
+   * the coverage figure the workforce report and the three exports print, and it
+   * is still shown beside this on the screen.
+   *
+   * Null rather than zero when the register judged them on no day at all —
+   * "0%" about a period nobody could have attended is a verdict, not a figure.
+   */
+  attendanceRate: number | null;
+  /** How many days that rate is out of. Named so a tile can say what it divided by. */
+  attendanceAssessedDays: number;
 };
 
 /** One candidate in the people picker. */
@@ -392,11 +487,8 @@ function rowsFor(
     const recordType = recordTypeOf(day.status);
     if (!recordType || !recordTypes.has(recordType)) continue;
 
-    const leave = leavesByDate.get(toIsoDate(day.date)) ?? null;
-    const attendance: AttendanceDto | null = day.attendance;
-
     rows.push({
-      date: day.date,
+      ...detailFor(day, leavesByDate),
       employeeId: subject.id,
       name: subject.name,
       email: subject.email,
@@ -404,23 +496,33 @@ function rowsFor(
       department: subject.department,
       position: subject.position,
       recordType,
-      status: day.status,
-      checkInAt: attendance?.checkInAt ?? null,
-      // Computed by the one function that turns a row into minutes, so the
-      // report, the roster, the CSV and the assistant cannot arrive at different
-      // answers about the same morning.
-      lateMinutes: lateMinutesOf(attendance),
-      lateBasisMinutes: attendance?.lateBasisMinutes ?? null,
-      distanceMeters: attendance?.distanceMeters ?? null,
-      markedBy: attendance?.markedBy ?? null,
-      markedAt: attendance?.markedAt ?? null,
-      markedReason: attendance?.reason ?? null,
-      leaveStatus: leave?.status ?? null,
-      leaveReason: leave?.reason ?? null,
     });
   }
 
   return rows;
+}
+
+/** One day of the roster's verdict, read off the row it was decided from. */
+function detailFor(day: DayRecord, leavesByDate: Map<string, LeaveDto>): ReportDayDetail {
+  const leave = leavesByDate.get(toIsoDate(day.date)) ?? null;
+  const attendance: AttendanceDto | null = day.attendance;
+
+  return {
+    date: day.date,
+    status: day.status,
+    checkInAt: attendance?.checkInAt ?? null,
+    // Computed by the one function that turns a row into minutes, so the report,
+    // the roster, the CSV and the assistant cannot arrive at different answers
+    // about the same morning.
+    lateMinutes: lateMinutesOf(attendance),
+    lateBasisMinutes: attendance?.lateBasisMinutes ?? null,
+    distanceMeters: attendance?.distanceMeters ?? null,
+    markedBy: attendance?.markedBy ?? null,
+    markedAt: attendance?.markedAt ?? null,
+    markedReason: attendance?.reason ?? null,
+    leaveStatus: leave?.status ?? null,
+    leaveReason: leave?.reason ?? null,
+  };
 }
 
 /**
@@ -451,6 +553,123 @@ function refine(rows: ReportRow[], request: ReportRequest): ReportRow[] {
   });
 }
 
+/** One person's slice of an assembled report, before it is flattened and paged. */
+type ReportSection = {
+  subject: ReportSubject;
+  /** Every calendar day in the period, records and closures alike. */
+  days: DayRecord[];
+  /** The leave rows that fell in the period, keyed by ISO date. */
+  leaves: Map<string, LeaveDto>;
+  rows: ReportRow[];
+};
+
+/**
+ * A report, from a set of people already decided on.
+ *
+ * **Lifted out of `generate` so the whole-workforce report and the one-person
+ * report are the same code.** They differ in who they are about and in who may
+ * ask — which is `generate` and `forEmployee` above — and in nothing else. A
+ * per-employee report assembled separately would be a second implementation of a
+ * report that already exists, and the two would drift in exactly the place this
+ * file spends its comments warning about: a figure on a screen disagreeing with
+ * the same figure in a file somebody archived.
+ *
+ * The sections come back alongside the result because the caller may want the
+ * day walk itself — the calendar on the employee screen prints the closures and
+ * weekly days off that are, by construction, in no row.
+ */
+async function assemble(
+  subjects: ReportSubject[],
+  request: ReportRequest,
+  missing: string[],
+): Promise<{ result: ReportResult; sections: ReportSection[] }> {
+  const { period, recordTypes } = request;
+  const ids = subjects.map((subject) => subject.id);
+
+  const [histories, leaves] = await Promise.all([
+    attendanceService.historiesFor(ids, period.from, period.to),
+    leaveRepository.listForEmployeesBetween(ids, period.from, period.to),
+  ]);
+
+  // Keyed by person and date so a row can be found without scanning, and
+  // last-write-wins on the impossible duplicate: `bookLeave` writes one row per
+  // person per day, and a report is not the place to discover otherwise.
+  const leavesByPerson = new Map<string, Map<string, LeaveDto>>();
+
+  for (const leave of leaves) {
+    const forPerson = leavesByPerson.get(leave.employeeId) ?? new Map<string, LeaveDto>();
+    forPerson.set(toIsoDate(leave.leaveDate), leave);
+    leavesByPerson.set(leave.employeeId, forPerson);
+  }
+
+  const wanted = new Set(recordTypes);
+
+  const sections: ReportSection[] = subjects.map((subject) => {
+    const days = histories.get(subject.id) ?? [];
+    const forPerson = leavesByPerson.get(subject.id) ?? new Map<string, LeaveDto>();
+
+    return { subject, days, leaves: forPerson, rows: rowsFor(subject, days, forPerson, wanted) };
+  });
+
+  // The narrowing is applied per person so a section that loses every row can
+  // be dropped whole — an individual summary reading nothing but zeroes for
+  // somebody the search excluded is noise, not a finding.
+  const refinedSections = sections
+    .map((section) => ({ ...section, rows: refine(section.rows, request) }))
+    .filter((section) => section.rows.length > 0 || !isNarrowed(request));
+
+  const summaries: ReportPersonSummary[] = refinedSections.map(({ subject, days, rows }) => ({
+    employee: {
+      id: subject.id,
+      name: subject.name,
+      email: subject.email,
+      role: subject.role,
+      status: subject.status,
+      department: subject.department,
+      position: subject.position,
+      profilePhoto: subject.profilePhoto,
+    },
+    totals: totalsOf(rows),
+    coverage: coverageOf(days),
+    joinedDuringPeriod: joiningInside(subject.joiningDate, period),
+  }));
+
+  // Sorted by date first and then by name: a report is read as a diary of the
+  // period, not as a list of people who each happen to have days. One person
+  // reads as their own history either way, since every row shares their name.
+  const rows = refinedSections
+    .flatMap((section) => section.rows)
+    .sort((a, b) => a.date.getTime() - b.date.getTime() || a.name.localeCompare(b.name));
+
+  const totalRows = rows.length;
+  const start = (request.page - 1) * request.pageSize;
+
+  return {
+    sections,
+    result: {
+      period,
+      periodLabel: describeReportPeriod(period),
+      people: request.people,
+      recordTypes,
+      generatedAt: new Date(),
+      // The calendar, taken from the first person's day walk — every person in
+      // one report walks the same dates, so any of them answers, and asking one
+      // avoids summing a fact that is not a sum. An empty selection still has to
+      // describe its period, which is what the fallback is for.
+      coverage: sections[0] ? coverageOf(sections[0].days) : emptyCoverage(period),
+      totals: totalsOf(rows),
+      peopleCount: summaries.length,
+      summaries,
+      rows: rows.slice(start, start + request.pageSize),
+      totalRows,
+      page: request.page,
+      pageSize: request.pageSize,
+      totalPages: Math.max(1, Math.ceil(totalRows / request.pageSize)),
+      missingSelections: missing,
+    },
+  };
+}
+
 export const reportService = {
   /**
    * Generates a report, and everything in it.
@@ -478,93 +697,9 @@ export const reportService = {
     // the query is a refusal that already did the work.
     await populationService.assertMayReport(actor);
 
-    const { period, recordTypes } = request;
     const { subjects, missing } = await resolveSubjects(request.people, request.selectedUserIds);
 
-    const ids = subjects.map((subject) => subject.id);
-
-    const [histories, leaves] = await Promise.all([
-      attendanceService.historiesFor(ids, period.from, period.to),
-      leaveRepository.listForEmployeesBetween(ids, period.from, period.to),
-    ]);
-
-    // Keyed by person and date so a row can be found without scanning, and
-    // last-write-wins on the impossible duplicate: `bookLeave` writes one row per
-    // person per day, and a report is not the place to discover otherwise.
-    const leavesByPerson = new Map<string, Map<string, LeaveDto>>();
-
-    for (const leave of leaves) {
-      const forPerson = leavesByPerson.get(leave.employeeId) ?? new Map<string, LeaveDto>();
-      forPerson.set(toIsoDate(leave.leaveDate), leave);
-      leavesByPerson.set(leave.employeeId, forPerson);
-    }
-
-    const wanted = new Set(recordTypes);
-    const noLeave = new Map<string, LeaveDto>();
-
-    const sections = subjects.map((subject) => {
-      const days = histories.get(subject.id) ?? [];
-      const rows = rowsFor(subject, days, leavesByPerson.get(subject.id) ?? noLeave, wanted);
-
-      return { subject, days, rows };
-    });
-
-    // The narrowing is applied per person so a section that loses every row can
-    // be dropped whole — an individual summary reading nothing but zeroes for
-    // somebody the search excluded is noise, not a finding.
-    const refinedSections = sections
-      .map((section) => ({ ...section, rows: refine(section.rows, request) }))
-      .filter((section) => section.rows.length > 0 || !isNarrowed(request));
-
-    const summaries: ReportPersonSummary[] = refinedSections.map(({ subject, days, rows }) => ({
-      employee: {
-        id: subject.id,
-        name: subject.name,
-        email: subject.email,
-        role: subject.role,
-        status: subject.status,
-        department: subject.department,
-        position: subject.position,
-        profilePhoto: subject.profilePhoto,
-      },
-      totals: totalsOf(rows),
-      coverage: coverageOf(days),
-      joinedDuringPeriod: joiningInside(subject.joiningDate, period),
-    }));
-
-    // Sorted by date first and then by name: a report is read as a diary of the
-    // period, not as a list of people who each happen to have days. One person
-    // reads as their own history either way, since every row shares their name.
-    const rows = refinedSections
-      .flatMap((section) => section.rows)
-      .sort(
-        (a, b) => a.date.getTime() - b.date.getTime() || a.name.localeCompare(b.name),
-      );
-
-    const totalRows = rows.length;
-    const start = (request.page - 1) * request.pageSize;
-
-    return {
-      period,
-      periodLabel: describeReportPeriod(period),
-      people: request.people,
-      recordTypes,
-      generatedAt: new Date(),
-      // The calendar, taken from the first person's day walk — every person in
-      // one report walks the same dates, so any of them answers, and asking one
-      // avoids summing a fact that is not a sum. An empty selection still has to
-      // describe its period, which is what the fallback is for.
-      coverage: sections[0] ? coverageOf(sections[0].days) : emptyCoverage(period),
-      totals: totalsOf(rows),
-      peopleCount: summaries.length,
-      summaries,
-      rows: rows.slice(start, start + request.pageSize),
-      totalRows,
-      page: request.page,
-      pageSize: request.pageSize,
-      totalPages: Math.max(1, Math.ceil(totalRows / request.pageSize)),
-      missingSelections: missing,
-    };
+    return (await assemble(subjects, request, missing)).result;
   },
 
   /**
@@ -577,6 +712,136 @@ export const reportService = {
    */
   async generateAll(actor: PopulationActor, request: ReportRequest): Promise<ReportResult> {
     return this.generate(actor, { ...request, page: 1, pageSize: Number.MAX_SAFE_INTEGER });
+  },
+
+  /**
+   * One person's report, reached from their profile.
+   *
+   * **The gate is `byIdForActor`, and that is the whole permission argument.**
+   * It is deliberately *not* `assertMayReport`, which the workforce screen uses:
+   * that one has no free case because every row there carries a `Role` column and
+   * the picker names what everybody is, so the screen cannot be offered without
+   * handing over which of your colleagues are administrators. This screen is
+   * about **one person somebody has already opened the profile of** — it names
+   * nobody they could not already see, and it is reached by a button on that
+   * profile. So it is exactly as reachable as the profile page, by exactly the
+   * same rule, applied by exactly the same function.
+   *
+   * That matters in both directions. An ordinary administrator reaches an
+   * employee's report without `canViewAdminRecords`, because they can already
+   * open that employee's profile and gating otherwise would take the feature
+   * away from most of the people it was asked for. And an administrator's report
+   * still needs the grant, because `byIdForActor` refuses their profile without
+   * it — so `/admin/staff/<an-admin-id>/report` typed into the address bar is
+   * refused for the same reason the profile above it is, and refused as **not
+   * found**, so the URL cannot be used to discover which ids belong to
+   * administrators. The super admin's account is unreachable to everybody but
+   * itself, unchanged.
+   *
+   * Nothing here confers a write. `assertMayManage` and `assertMayCorrect` are
+   * untouched: this reads.
+   */
+  async forEmployee(
+    actor: Actor,
+    employeeId: string,
+    request: EmployeeReportRequest,
+  ): Promise<EmployeeReportResult> {
+    // Before a record is read, and it throws `NotFoundError` rather than
+    // `ForbiddenError` — see above.
+    const employee = await employeeService.byIdForActor(employeeId, actor);
+
+    const period: ReportPeriod =
+      request.range === "CUSTOM"
+        ? // Both are present by the time the schema has passed; the assertion is
+          // the type system catching up with `superRefine`, not a claim.
+          { kind: "CUSTOM", from: request.startDate!, to: request.endDate! }
+        : // Resolved here against the company's calendar day rather than in the
+          // browser, so a client in another timezone cannot ask for its own idea
+          // of "this month".
+          resolveEmployeeReportPreset(request.range as EmployeeReportPreset, todayUtc());
+
+    const subject: ReportSubject = {
+      id: employee.id,
+      name: employee.name,
+      email: employee.email,
+      role: employee.role,
+      status: employee.status,
+      department: employee.department,
+      position: employee.position,
+      profilePhoto: employee.profilePhoto,
+      joiningDate: employee.joiningDate,
+    };
+
+    // A report of one, run through the ordinary assembly. The record types are
+    // all of them and the narrowing is none of it — see
+    // `employee-report.schema.ts` for why this screen has no status filter.
+    const { result, sections } = await assemble(
+      [subject],
+      {
+        period,
+        people: employee.role === ROLE.EMPLOYEE ? "SELECTED_EMPLOYEES" : "SELECTED_ADMINS",
+        selectedUserIds: [employee.id],
+        recordTypes: [...REPORT_RECORD_TYPES],
+        search: undefined,
+        role: "ALL",
+        status: "ALL",
+        page: request.page,
+        pageSize: request.pageSize,
+      },
+      [],
+    );
+
+    // Always present: `assemble` builds one section per subject and it was given
+    // exactly one. The fallback is for the type, not for a case that happens.
+    const section = sections[0];
+    const days = section?.days ?? [];
+    const leaves = section?.leaves ?? new Map<string, LeaveDto>();
+
+    // Days nobody was expected in for, which a leave spell may span without
+    // being broken by them. Taken from the verdicts `describeDay` already
+    // reached rather than by asking the working week a second time.
+    const bridged = new Set(
+      days
+        .filter((day) => day.status === "CLOSED" || day.status === "NON_WORKING")
+        .map((day) => toIsoDate(day.date)),
+    );
+
+    // The days the register reached a verdict on: turned up, or did not. See
+    // `attendanceRate` above for why this and not `attendanceEligibleDays`.
+    const assessed = result.totals.present + result.totals.absent;
+
+    return {
+      ...result,
+      subject: {
+        ...subject,
+        phone: employee.phone,
+      },
+      calendar: days.map((day) => detailFor(day, leaves)),
+      leaveSpells: groupLeaveSpells(
+        [...leaves.values()]
+          // Approved alone. A legacy `PENDING` or `REJECTED` row is not leave
+          // somebody took — `describeDay` does not count it either, and a spell
+          // built from one would put days on this screen that appear in no tile.
+          .filter((leave) => leave.status === LeaveStatus.APPROVED)
+          .map((leave) => ({ date: leave.leaveDate, reason: leave.reason, status: leave.status })),
+        bridged,
+      ),
+      attendanceRate: assessed > 0 ? result.totals.present / assessed : null,
+      attendanceAssessedDays: assessed,
+    };
+  },
+
+  /** One person's whole report, unpaged — what their export writes. */
+  async forEmployeeAll(
+    actor: Actor,
+    employeeId: string,
+    request: EmployeeReportRequest,
+  ): Promise<EmployeeReportResult> {
+    return this.forEmployee(actor, employeeId, {
+      ...request,
+      page: 1,
+      pageSize: Number.MAX_SAFE_INTEGER,
+    });
   },
 
   /**

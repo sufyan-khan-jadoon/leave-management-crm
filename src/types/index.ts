@@ -386,6 +386,60 @@ export type ReportView = {
   missingSelections: string[];
 };
 
+/**
+ * One day of a person's report calendar.
+ *
+ * Every date in the period, including the ones that are not records — a month
+ * with the weekends missing is not a month. `ReportRowView` is the narrower
+ * thing: only the dates a report prints as rows.
+ */
+export type ReportDayView = {
+  date: string;
+  status: AttendanceDayStatus;
+  checkInAt: string | null;
+  lateMinutes: number;
+  lateBasisMinutes: number | null;
+  distanceMeters: number | null;
+  markedBy: { id: string; name: string } | null;
+  markedAt: string | null;
+  markedReason: string | null;
+  leaveStatus: LeaveStatus | null;
+  leaveReason: string | null;
+};
+
+/** Approved leave, gathered back into the stretch it was booked as. */
+export type LeaveSpellView = {
+  from: string;
+  to: string;
+  /** Leave days in the run. The row count, so it can never overstate. */
+  days: number;
+  reason: string;
+  status: LeaveStatus;
+};
+
+/** One person's report, as the screen behind their profile receives it. */
+export type EmployeeReportView = ReportView & {
+  subject: Pick<
+    EmployeeView,
+    "id" | "name" | "email" | "role" | "status" | "department" | "position" | "profilePhoto" | "phone"
+  > & { joiningDate: string | null };
+  calendar: ReportDayView[];
+  leaveSpells: LeaveSpellView[];
+  /**
+   * Present days over the days the register judged them on, computed on the
+   * server — `present / (present + absent)`.
+   *
+   * Days still to come, days holding no record for anybody, remote days and
+   * approved leave are all outside both halves; see
+   * `EmployeeReportResult.attendanceRate` for why each. Null when no day was
+   * judged at all — not zero, which would be a verdict on somebody for a
+   * calendar they had no part in.
+   */
+  attendanceRate: number | null;
+  /** What that rate is out of, so a tile can say rather than leave it implied. */
+  attendanceAssessedDays: number;
+};
+
 /** One candidate in the report's people picker. */
 export type ReportPersonView = {
   id: string;

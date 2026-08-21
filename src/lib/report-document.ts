@@ -36,6 +36,7 @@ import {
   describePeopleSelection,
   describeRecordTypes,
   describeReportRefinements,
+  formatAttendanceRate,
   recordTypeLabel,
   roleLabel,
 } from "@/lib/report-labels";
@@ -49,6 +50,40 @@ import type {
 
 /** What is narrowing the report beyond its period, people and record types. */
 export type ReportRefinements = Parameters<typeof describeReportRefinements>[0];
+
+/**
+ * The one person a report is about, when it is about one person.
+ *
+ * Present only for the report reached from somebody's profile, and it changes
+ * how the document introduces itself rather than anything it contains: the
+ * identity block names them instead of saying "Selected employees — 1 person",
+ * and the file is named after them so a folder of these can be told apart. Every
+ * figure below is still the service's, unchanged — this is a heading.
+ */
+export type ReportDocumentSubject = {
+  name: string;
+  /** Their account id, which is what §3 calls the employee ID. */
+  id: string;
+  email: string;
+  role: string;
+  department: string | null;
+  /** The job title. `position` is the only field describing what somebody does. */
+  position: string | null;
+  status: string;
+  /**
+   * Present days over the days the register judged them on, or null when it
+   * judged none. Computed by `report.service.ts` and printed, never re-divided
+   * here — see `EmployeeReportResult.attendanceRate` for what the denominator is
+   * and why it is not the working days.
+   */
+  attendanceRate: number | null;
+  /** What that rate is out of, so the file can say rather than leave it implied. */
+  attendanceAssessedDays: number;
+};
+
+export type ReportDocumentOptions = ReportRefinements & {
+  subject?: ReportDocumentSubject;
+};
 
 /** A label and its value, as a summary block is read: down, not across. */
 export type ReportFieldEntry = { label: string; value: string };
@@ -114,21 +149,26 @@ const DOCUMENT_TITLE = "Attendance, Absence & Leave Report";
  * they sort chronologically within it. A single day names itself once rather
  * than as "16 to 16".
  */
-export function reportFileStem(period: ReportPeriod): string {
+export function reportFileStem(period: ReportPeriod, subject?: { name: string }): string {
   const from = toIsoDate(period.from);
   const to = toIsoDate(period.to);
+  const dates = from === to ? from : `${from}_to_${to}`;
 
-  return from === to
-    ? `${BRAND_NAME}_Report_${from}`
-    : `${BRAND_NAME}_Report_${from}_to_${to}`;
+  // A person's name only where the report is about one person, and reduced to
+  // what a filesystem will take: anything but letters, digits and spaces becomes
+  // an underscore, so an apostrophe or a slash in a name cannot produce a path.
+  const who = subject ? `_${subject.name.replace(/[^\p{L}\p{N}]+/gu, "_").replace(/^_|_$/g, "")}` : "";
+
+  return `${BRAND_NAME}_Report${who}_${dates}`;
 }
 
 export function buildReportDocument(
   report: ReportResult,
-  refinements: ReportRefinements,
+  options: ReportDocumentOptions,
 ): ReportDocument {
   const shows = (type: "ATTENDANCE" | "ABSENT" | "LEAVE" | "REMOTE") => report.recordTypes.includes(type);
-  const described = describeReportRefinements(refinements);
+  const described = describeReportRefinements(options);
+  const { subject } = options;
 
   return {
     brand: BRAND_NAME,
@@ -137,8 +177,21 @@ export function buildReportDocument(
     periodLabel: report.periodLabel,
     generatedAt: formatDateTime(report.generatedAt),
     identity: [
+      // A named person leads, and the "People" line goes: "Selected employees —
+      // 1 person" beside a name and an address is the same fact said twice, once
+      // badly. §15's employee block is exactly these five lines.
+      ...(subject
+        ? [
+            { label: "Employee", value: subject.name },
+            { label: "Employee ID", value: subject.id },
+            { label: "Email", value: subject.email },
+            { label: "Department", value: subject.department ?? "Not set" },
+            { label: "Designation", value: subject.position ?? "Not set" },
+            { label: "Role", value: roleLabel(subject.role) },
+            { label: "Status", value: subject.status === "ACTIVE" ? "Active" : "Suspended" },
+          ]
+        : [{ label: "People", value: describePeopleSelection(report.people, report.peopleCount) }]),
       { label: "Period", value: report.periodLabel },
-      { label: "People", value: describePeopleSelection(report.people, report.peopleCount) },
       { label: "Records", value: describeRecordTypes(report.recordTypes) },
       // Only when something is actually narrowing. A line reading "Filters: none"
       // is something to read past on every export for the sake of the few where
@@ -146,11 +199,11 @@ export function buildReportDocument(
       ...(described.length > 0 ? [{ label: "Filters", value: described.join("; ") }] : []),
       { label: "Generated", value: formatDateTime(report.generatedAt) },
     ],
-    summary: summaryEntries(report, shows),
+    summary: summaryEntries(report, shows, subject),
     notes: notesFor(report),
     individuals: individualsTable(report.summaries, shows),
     records: recordsTable(report.rows, shows),
-    fileStem: reportFileStem(report.period),
+    fileStem: reportFileStem(report.period, subject),
   };
 }
 
@@ -163,7 +216,11 @@ type Shows = (type: "ATTENDANCE" | "ABSENT" | "LEAVE" | "REMOTE") => boolean;
  * working days is a property of the calendar, and adding it across eleven people
  * to report 242 is a number nobody asked for and everybody misreads.
  */
-function summaryEntries(report: ReportResult, shows: Shows): ReportFieldEntry[] {
+function summaryEntries(
+  report: ReportResult,
+  shows: Shows,
+  subject?: ReportDocumentSubject,
+): ReportFieldEntry[] {
   const totals: ReportTotals = report.totals;
 
   // Whether the report holds any remote day at all, rather than whether the
@@ -190,8 +247,31 @@ function summaryEntries(report: ReportResult, shows: Shows): ReportFieldEntry[] 
           },
         ]
       : []),
-    { label: "People covered", value: String(report.peopleCount) },
+    // Only where the report is not already headed by one person's name.
+    ...(subject ? [] : [{ label: "People covered", value: String(report.peopleCount) }]),
     { label: "Records", value: String(totals.records) },
+    // §15's attendance percentage, and it is **passed in rather than computed**.
+    // The service divided present days by attendance-eligible days once; a second
+    // division here would be a second answer, in the copy that gets archived
+    // where nothing can be checked against the screen it came from.
+    ...(subject
+      ? [
+          {
+            label: "Attendance rate",
+            value:
+              subject.attendanceRate === null
+                ? "Not applicable — the register judged no day in this period"
+                : formatAttendanceRate(subject.attendanceRate),
+          },
+          // Named out loud, because a percentage in a file somebody archives has
+          // nothing beside it to explain what it divided by. Days still to come
+          // and days holding no record for anybody are in neither figure.
+          {
+            label: "Days assessed (present + absent)",
+            value: String(subject.attendanceAssessedDays),
+          },
+        ]
+      : []),
     ...(shows("ATTENDANCE") ? [{ label: "Present days", value: String(totals.present) }] : []),
     ...(shows("ABSENT") ? [{ label: "Absent days", value: String(totals.absent) }] : []),
     ...(shows("LEAVE") ? [{ label: "Leave days", value: String(totals.onLeave) }] : []),

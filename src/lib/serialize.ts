@@ -1,3 +1,5 @@
+import type { LeaveStatus } from "@prisma/client";
+
 import type { AttendanceDto } from "@/repositories/attendance.repository";
 import type { EmployeeDto } from "@/repositories/employee.repository";
 import type { HolidayDto } from "@/repositories/holiday.repository";
@@ -5,10 +7,11 @@ import type { LeaveWithEmployeeDto } from "@/repositories/leave.repository";
 import type { RemoteWorkEventDto } from "@/repositories/remote-work.repository";
 import { lateMinutesOf, type TodayState } from "@/services/attendance.service";
 import type { RemoteWorkAssignmentView } from "@/services/remote-work.service";
-import type { ReportResult } from "@/services/report.service";
+import type { EmployeeReportResult, ReportResult } from "@/services/report.service";
 import type {
   AttendanceTodayView,
   AttendanceView,
+  EmployeeReportView,
   EmployeeView,
   HolidayView,
   LeaveWithEmployeeView,
@@ -177,6 +180,43 @@ export function serializeReport(report: ReportResult): ReportView {
     pageSize: report.pageSize,
     totalPages: report.totalPages,
     missingSelections: report.missingSelections,
+  };
+}
+
+/**
+ * One person's report for the client.
+ *
+ * Built on `serializeReport` rather than beside it, so the shared half of the
+ * payload cannot come to be converted two ways. Everything added is passed
+ * through untouched for the reason that one gives: recomputing on the way out is
+ * how a second answer gets into a report that already had one — `attendanceRate`
+ * in particular is the service's single division and is deliberately not
+ * re-derived here from the totals sitting next to it.
+ */
+export function serializeEmployeeReport(report: EmployeeReportResult): EmployeeReportView {
+  return {
+    ...serializeReport(report),
+    subject: {
+      ...report.subject,
+      joiningDate: report.subject.joiningDate?.toISOString() ?? null,
+    },
+    calendar: report.calendar.map((day) => ({
+      ...day,
+      date: day.date.toISOString(),
+      checkInAt: day.checkInAt?.toISOString() ?? null,
+      markedAt: day.markedAt?.toISOString() ?? null,
+    })),
+    leaveSpells: report.leaveSpells.map((spell) => ({
+      from: spell.from.toISOString(),
+      to: spell.to.toISOString(),
+      days: spell.days,
+      reason: spell.reason,
+      // Narrowed back to the enum: `groupLeaveSpells` is Prisma-free and takes a
+      // string, and only approved rows are ever grouped.
+      status: spell.status as LeaveStatus,
+    })),
+    attendanceRate: report.attendanceRate,
+    attendanceAssessedDays: report.attendanceAssessedDays,
   };
 }
 

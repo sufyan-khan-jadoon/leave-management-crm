@@ -522,6 +522,36 @@ summaries and every record.
   page two. The export re-posts the request rather than serialising the screen.
 - **The report is read-only** and writes nothing — verified by counting every table before and after.
 
+### One person's report
+
+Every staff profile carries a **View report** button, at `/admin/staff/[id]/report`. It answers the
+same questions for one person, reached from the person rather than from a picker.
+
+| | |
+| --- | --- |
+| **Period** | Today, this week, this month, previous month, this year, or a custom range |
+| **Filters** | None — the period is the only one, deliberately |
+| **Shows** | Eight summary tiles, a doughnut and a trend chart, a clickable month calendar, approved leave grouped into spells, and the detailed records |
+| **Exports** | Excel, PDF and CSV, branded and named after the person |
+
+- **Access is the profile's own rule, not the reporting grant.** It resolves through `byIdForActor` —
+  the same function the profile page above it calls — so an ordinary administrator reaches an
+  employee's report without `canViewAdminRecords`, an administrator's report still needs it, and the
+  super admin's is unreachable to everybody but themselves. The page, the endpoint and all three
+  exports each apply it independently, and refusals are *not found* rather than *forbidden*, so a URL
+  cannot be used to discover which ids belong to administrators.
+- **It is the same engine.** `reportService.forEmployee` runs the ordinary assembly over one subject,
+  so the tiles, the calendar and the files inherit every rule the workforce report obeys.
+- **The attendance rate is `present / (present + absent)`** — the days the register actually reached a
+  verdict on. Days still to come, days holding no record for anybody, remote days and approved leave
+  are outside both halves; the coverage figures beside it still report the calendar in full. A month
+  half in the future would otherwise report somebody present on every recorded day at a quarter.
+- **A preset carries no dates.** The browser sends the word and the server resolves it against the
+  company's calendar day, so a client a timezone away cannot ask for its own idea of "this month".
+- **No check-out, so no hours.** `Attendance` records an arrival and nothing else, so there is no
+  working-hours column and no early-departure count, and neither is inferred from something adjacent.
+  There is no leave *type* on `Leave` either, so leave is reported by date, duration and reason.
+
 ---
 
 ## API reference
@@ -553,6 +583,8 @@ All responses use the envelope `{ success: true, data }` or `{ success: false, e
 | `POST` | `/api/admin/reports` | Admin + `canViewAdminRecords` | Generate an attendance/absence/leave report over a period |
 | `POST` | `/api/admin/reports/export` | Admin + `canViewAdminRecords` | The same report, as a branded CSV |
 | `GET` | `/api/admin/reports/people` | Admin + `canViewAdminRecords` | People a report may be pointed at, for the picker |
+| `POST` | `/api/admin/reports/employees/[id]` | Admin, per `byIdForActor` | One person's report — summary, calendar, records, leave |
+| `POST` | `/api/admin/reports/employees/[id]/export/{pdf,xlsx,csv}` | Admin, per `byIdForActor` | The same report as a branded file |
 | `GET` | `/api/search` | Auth | Global search, scoped by role |
 | `GET` | `/api/admin/stats` | Admin | Overview, charts, recent activity |
 | `GET` | `/api/admin/employees` | Admin | Paginated employee list |

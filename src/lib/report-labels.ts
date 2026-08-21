@@ -56,15 +56,20 @@ export function roleLabel(role: string): string {
 }
 
 /**
- * A day's verdict, as the roster's own badge says it.
+ * A day's verdict, in the one wording every surface uses.
  *
- * Only the three a report can hold: `recordTypeOf` maps everything else to
- * nothing, because a closure and a weekly day off are the *absence* of a record
- * and are counted in the coverage instead. The wording matches
- * `AttendanceStatusBadge` deliberately — a spreadsheet reading `ON_LEAVE` beside
- * a screen reading "On leave" is the same report described twice.
+ * **All eight**, and `AttendanceStatusBadge` reads them from here rather than
+ * keeping its own copy — a spreadsheet reading `ON_LEAVE` beside a screen
+ * reading "On leave" is the same day described twice, and the badge and the
+ * calendar cell beside it saying different words about one date is the same
+ * mistake one level down.
+ *
+ * The exports only ever reach four of them: `recordTypeOf` maps closures, weekly
+ * days off, empty days and the future to nothing, because each is the *absence*
+ * of a record and is counted in the coverage instead. The calendar reaches all
+ * eight, because a month with the weekends missing is not a month.
  */
-const DAY_STATUS_LABELS: Record<string, string> = {
+export const DAY_STATUS_LABELS: Record<string, string> = {
   PRESENT: "Present",
   ABSENT: "Absent",
   ON_LEAVE: "On leave",
@@ -73,10 +78,32 @@ const DAY_STATUS_LABELS: Record<string, string> = {
   // exact mistake this feature exists to stop, and unlike a screen there is
   // nothing beside it to check against.
   REMOTE: "Remote",
+  CLOSED: "Office closed",
+  NON_WORKING: "Non-working day",
+  NO_RECORD: "No record",
+  UPCOMING: "Not yet",
 };
 
 export function dayStatusLabel(status: string): string {
   return DAY_STATUS_LABELS[status] ?? status;
+}
+
+/**
+ * An attendance rate, as every surface says it.
+ *
+ * One rounding, shared by the tile on the screen and the summary line in the
+ * PDF, the workbook and the CSV — a report reading 87.5% beside a file reading
+ * 88% is the same figure described twice, and the file is the copy that gets
+ * archived. One decimal place, because a whole number hides the difference
+ * between 16 of 17 and 17 of 18 on the short periods this screen is most often
+ * read over.
+ *
+ * **Null is not zero.** A period with no attendance-eligible days in it — a week
+ * of closures, somebody remote throughout — has no rate, and printing "0%" would
+ * be a verdict on somebody for a calendar they had no part in.
+ */
+export function formatAttendanceRate(rate: number | null): string {
+  return rate === null ? "—" : `${Math.round(rate * 1000) / 10}%`;
 }
 
 /**

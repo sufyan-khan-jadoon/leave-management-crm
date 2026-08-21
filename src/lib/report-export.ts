@@ -28,6 +28,7 @@ import { requireAdmin } from "@/lib/auth/guards";
 import { AppError } from "@/lib/errors";
 import { buildReportDocument, type ReportDocument } from "@/lib/report-document";
 import { reportService } from "@/services/report.service";
+import { employeeReportRequestSchema } from "@/validations/employee-report.schema";
 import { reportRequestSchema } from "@/validations/report.schema";
 
 /** How one format turns a report document into a downloadable file. */
@@ -39,16 +40,70 @@ export type ReportExportFormat = {
 };
 
 export async function exportReport(request: Request, format: ReportExportFormat): Promise<Response> {
-  try {
+  return deliver(format, async () => {
     const user = await requireAdmin();
     const input = await parseBody(request, reportRequestSchema);
     const report = await reportService.generateAll(user, input);
 
-    const document = buildReportDocument(report, {
+    return buildReportDocument(report, {
       search: input.search,
       role: input.role,
       status: input.status,
     });
+  });
+}
+
+/**
+ * The same three files, for the report about one person.
+ *
+ * It re-posts the body the screen generated with, through the **same service
+ * call** the screen used, for the reason the workforce export gives: a file
+ * assembled from its own query is the one that comes to disagree with the report
+ * it was taken from. `reportService.forEmployee` applies `byIdForActor` again on
+ * every request, so an export is refused by exactly the rule that refuses the
+ * profile page — a hand-written POST to another administrator's id gets the same
+ * *not found* the screen would.
+ *
+ * There is no refinement to carry, because that screen has none: the period is
+ * its only filter. The document is handed the subject instead, which is what
+ * puts §15's employee block and the attendance rate on all three formats without
+ * any of the three renderers learning about it.
+ */
+export async function exportEmployeeReport(
+  request: Request,
+  employeeId: string,
+  format: ReportExportFormat,
+): Promise<Response> {
+  return deliver(format, async () => {
+    const user = await requireAdmin();
+    const input = await parseBody(request, employeeReportRequestSchema);
+    const report = await reportService.forEmployeeAll(user, employeeId, input);
+
+    return buildReportDocument(report, {
+      role: "ALL",
+      status: "ALL",
+      subject: {
+        name: report.subject.name,
+        id: report.subject.id,
+        email: report.subject.email,
+        role: report.subject.role,
+        department: report.subject.department,
+        position: report.subject.position,
+        status: report.subject.status,
+        attendanceRate: report.attendanceRate,
+        attendanceAssessedDays: report.attendanceAssessedDays,
+      },
+    });
+  });
+}
+
+/** Renders a built document as a download, and turns a refusal into JSON. */
+async function deliver(
+  format: ReportExportFormat,
+  build: () => Promise<ReportDocument>,
+): Promise<Response> {
+  try {
+    const document = await build();
 
     return new Response(await format.render(document), {
       headers: {

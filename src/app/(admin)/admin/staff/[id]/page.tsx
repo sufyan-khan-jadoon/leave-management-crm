@@ -6,6 +6,7 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  FileBarChart,
   Mail,
   Phone,
   ShieldCheck,
@@ -71,12 +72,28 @@ export default async function AdminEmployeeDetailPage({ params }: { params: Prom
         title={employee.name}
         description={`${employee.position ?? "No position"} · ${employee.department ?? "No department"}`}
         actions={
-          <Button variant="outline" asChild>
-            <Link href={ROUTES.adminStaff}>
-              <ArrowLeft className="size-4" />
-              Back to staff
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" asChild>
+              <Link href={ROUTES.adminStaff}>
+                <ArrowLeft className="size-4" />
+                Back to staff
+              </Link>
+            </Button>
+            {/*
+              The way into this person's report, and the only one — an
+              administrator who has found somebody should not have to find them
+              again in a picker. The screen behind it re-resolves the account
+              through `byIdForActor`, the same call that rendered this page, so
+              the button confers nothing: anybody who can read this page can read
+              that one, and nobody else can.
+            */}
+            <Button asChild>
+              <Link href={`${ROUTES.adminStaff}/${employee.id}/report`}>
+                <FileBarChart className="size-4" />
+                View report
+              </Link>
+            </Button>
+          </div>
         }
       />
 

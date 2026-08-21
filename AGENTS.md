@@ -955,6 +955,98 @@ stop existing when their account did. `SUPER_ADMIN` is counted with the administ
 `rolesInPopulation` counts them in every report; an account in neither population would vanish from
 its own organisation's figures.
 
+#### One person's report — the same engine, a different door
+
+`/admin/staff/[id]/report` is the report about one person, reached by a **View report** button on
+their profile. It is not a second reporting feature: `reportService.forEmployee` builds the same
+`ReportRequest` the workforce screen builds, with one subject and every record type, and runs it
+through the **same** `assemble` — which is why `generate` was split rather than copied. The tiles,
+the coverage, the lateness and the three exported files inherit every rule above for free. A
+per-employee report assembled separately would be a second implementation of a report that already
+exists, and the two would drift in the copies that get archived.
+
+**The gate is `byIdForActor`, and that is the whole permission argument.** Deliberately *not*
+`assertMayReport`, which has no free case because the workforce screen prints a `Role` column on
+every row and names everybody in a picker. This screen is about one person whose profile the viewer
+has **already opened**, and it is reached by a button on that profile — so it is exactly as
+reachable as the profile page, by exactly the same rule, applied by exactly the same function. Both
+directions matter: an ordinary administrator reaches an employee's report without
+`canViewAdminRecords` (gating otherwise would take the feature from most of the people it is for),
+and an administrator's report still needs the grant, because `byIdForActor` refuses their profile
+without it. The owner is unreachable to everybody but themselves. Refusals are **not found**, so the
+URL cannot be used to discover which ids belong to administrators. The page, the endpoint and all
+three exports each apply it — *a page is as reachable as an endpoint*, the lesson
+`staff/[id]/page.tsx` records, applied on the way in this time rather than after the fact.
+
+**It has no in-report filter, and the absence is the design.** `employeeReportRequestSchema` carries
+a range and paging and nothing else — no search, no status, no record types. The rule "every number
+describes the rows the report currently holds" is cheap on a screen that is a summary and a table;
+on one with a headline rate, eight tiles, a calendar and two charts it would mean every narrowing
+moved all of them, or that some of them quietly stopped describing the table beneath. So the period
+is the only filter and the record types are always all four.
+
+**A preset carries no dates.** `resolveEmployeeReportPreset` in `src/lib/employee-report-range.ts` is
+the whole rule, Prisma-free and tested alone like `geo.ts` and `working-days.ts`, and the server
+resolves the word against `todayUtc()`. A preset arriving *with* dates is **refused rather than
+ignored** — the same stance `remote-work.schema.ts` takes towards a fixed duration sending its own,
+and for the same reason: silently dropping them leaves a client believing it decided something it
+did not. Weeks start Monday, deliberately not at the first configured working day: a week that
+followed the policy would silently re-cut every past report the moment the working week moved.
+
+##### The attendance rate, and the defect that shaped it
+
+**`present / (present + absent)`, and nothing else in the denominator.** The obvious formula is
+`present / attendanceEligibleDays`, and driving this against the real database is what showed it to
+be wrong: an employee with five check-ins and **not one absence** was reported at **23.8%**. August
+holds 21 working days, he had been present on all five the system held anything about, and the other
+sixteen were days still to come or days holding no record for anybody in the company. Dividing by
+them charged him for a calendar he had no part in — the exact accusation `NO_RECORD` exists to
+withhold, arriving by arithmetic instead of by a status.
+
+Each excluded kind of day is excluded for a reason this file already gives: `UPCOMING` has not
+happened, `NO_RECORD` was not being watched, `REMOTE` is attendance-exempt, `ON_LEAVE` was
+authorised, and closures and weekly days off are not working days at all. What is left is the two
+verdicts that say whether somebody turned up.
+
+**§12's worked example is untouched, which is what makes this safe**: 22 working days, 5 remote, 17
+eligible, 16 present, 1 absent — 16 + 1 is 17, so both formulas give 16/17. They diverge only where
+§12 had nothing to say. `attendanceEligibleDays` still means what it meant and is still what the
+workforce report and every export print; this is a second figure beside it, not a redefinition.
+`attendanceAssessedDays` rides along so the tile and the exported summary can name what was divided
+by rather than leave a reader to guess. It is `null` — never `0` — when nothing was assessed.
+
+##### What it deliberately does not report
+
+**There is no check-out on `Attendance`**, so there is no working-hours column, no early-departure
+count and no "hours worked" tile, and none of them is inferred from something adjacent. There is no
+leave *type* on `Leave`, so leave is reported by date, duration and reason. This is the same refusal
+the workforce report records, restated because a screen full of tiles is where somebody will be
+tempted to fill the gap. If a check-out ever lands, the hours belong beside `lateMinutesOf` —
+derived on read, in one place — not computed in a component.
+
+##### The pieces, and where the rules live
+
+`leave-spells.ts` groups the per-day leave rows back into the stretches they were booked as, and
+**`days` is the row count, never `to − from`** — a Friday and the Monday after is two days off, not
+four. Which days may be spanned without breaking a run is passed *in* as the set `describeDay`
+already called `CLOSED` or `NON_WORKING`, so this file never becomes the second place in the
+codebase that thinks it knows what a weekend is. `report-trend.ts` buckets the day walk for the
+chart and counts nothing that is not a record, so the columns sum to the tiles by construction at
+every granularity — pinned by a test, and again against the live database.
+
+`DAY_STATUS_VISUAL` is a **finer** encoding than `AttendanceStatusBadge`, not a competing one. The
+badge has four tiers and five statuses share the last; that is right where the word does the work
+and useless in a calendar cell where the colour *is* the word. Where the badge commits to a colour
+this agrees with it; where it deliberately merges, this separates, and only there. Remote takes
+`--brand-deep` — the palette's other green, which reads as a day somebody worked and carries no
+verdict. **The wording is `dayStatusLabel` in both**, which is why `DAY_STATUS_LABELS` grew from four
+entries to eight and the badge now reads its labels from there instead of keeping its own copy.
+
+The document gained an optional `subject`: with one, the identity block names the person instead of
+printing "Selected employees — 1 person", the summary carries the rate, and the filename carries the
+name. That is the only change the three renderers needed — none — because `report-document.ts` is
+the seam.
+
 #### The exports — three files, one document
 
 A report downloads as **Excel, PDF or CSV**, and all three re-post **the same body through the same
@@ -1042,6 +1134,21 @@ reason neutralised in the CSV and inert in the workbook; the PDF branded, pagina
 nothing mid-word; a suspended account out of the bulk selection and in when named; an employee id
 posted as an admin selection reporting on nobody; and all three routes refusing an anonymous caller,
 an employee, an administrator without `canViewAdminRecords`, and a payload carrying its own totals.
+
+The per-employee report was verified the same way, against the **live** database and crossing the Zod
+schema rather than calling the service directly — 26 checks: every preset resolving coherently, the
+calendar covering all 31 days of a month exactly once and in order, coverage and totals counted off
+those same verdicts, the rows being exactly the record days and agreeing with the calendar field for
+field, paging that neither overlaps nor loses a row, agreement with `roster()` on five real dates and
+with `historyFor` over a month, a live remote period reading `REMOTE` and leaving the denominator,
+leave spells summing to the approved rows in the period, the trend summing to the tiles at all three
+granularities, the super admin reaching everybody including itself, an unknown id and the owner both
+refused as *not found*, the grant withdrawn mid-run and biting on the very next call with the same
+actor, a granted administrator reaching another administrator and an ungranted one refused while
+still reaching employees and their own account, all three files rendering with the right magic bytes
+and holding exactly the report's rows, the document naming the person and carrying the rate, and
+every table counted around a block of thirty report generations and fifteen file renders to prove
+nothing was written. The attendance-rate defect above was found by that run and not by reasoning.
 
 **What this system does not record, and what the report therefore does not invent.** There is no
 check-out time on `Attendance` and no leave *type* on `Leave` — so there is no "hours worked" column
