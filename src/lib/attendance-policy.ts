@@ -81,6 +81,47 @@ export function hasCutoffPassed(day: Date, cutoffMinutes: number, now: Date = ne
 }
 
 /**
+ * When the daily warning sweep actually fires, on the company's clock.
+ *
+ * **Hand-converted from `vercel.json`**, exactly as the cron line there was
+ * hand-converted the other way: `5 12 * * *` is UTC, and 12:05 UTC is 17:05 in
+ * Asia/Karachi. The two are one fact written in two places because a cron
+ * expression cannot be imported, so **they have to move together** — a copy that
+ * has drifted from the schedule warns about the wrong time, which is worse than
+ * not warning at all. Change `APP_TIME_ZONE` and both need revisiting.
+ */
+export const WARNING_SWEEP_MINUTES = 17 * 60 + 5;
+
+/**
+ * Whether a cutoff falls after the day's only sweep, so nobody would ever be
+ * warned about missing it.
+ *
+ * The sweep refuses to write to anybody before the deadline has passed — that
+ * gate is the reason an early firing cannot chase people who still have hours to
+ * arrive. On a once-a-day cron there is no second firing to catch it afterwards,
+ * so a cutoff later than the sweep means every run returns `before-cutoff`, the
+ * table stays empty, and nothing anywhere says why. It is the one policy value
+ * that can silently switch the feature off.
+ *
+ * Equal is fine and deliberately not flagged: `hasCutoffPassed` compares with
+ * `<=`, so a deadline falling exactly as the sweep runs has passed. A late
+ * firing only ever helps, which is why this asks about the scheduled moment
+ * rather than trying to model jitter.
+ *
+ * This is a warning rather than a validation, for the reason the schema gives
+ * about the closing time: the panel sends a partial update, so refusing here
+ * would mean judging against a stored value the sender never saw. It is also a
+ * property of the deployment's cron schedule rather than of the request, and a
+ * schema has no business reading `vercel.json`.
+ */
+export function cutoffOutrunsSweep(
+  cutoffMinutes: number,
+  sweepMinutes: number = WARNING_SWEEP_MINUTES,
+): boolean {
+  return cutoffMinutes > sweepMinutes;
+}
+
+/**
  * The instant a delegated administrator stops being able to record somebody
  * present for `day`.
  *

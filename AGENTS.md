@@ -1308,6 +1308,30 @@ schedule to mean it has, because the cutoff is a setting and a cron line cannot 
 frequency a knob rather than a correctness question: on Pro make it hourly (`5 * * * *`) and letters
 land within the hour of whatever cutoff is configured. Same `CRON_SECRET`, same fail-closed rule.
 
+**The once-a-day firing puts a ceiling on the cutoff, and the panel now says so.** The sweep declines
+before the deadline has passed, and on a daily cron there is no later run to catch it — so a cutoff
+past 17:05 returns `before-cutoff` every day and nobody is ever warned. Nothing reports that: an
+empty `attendance_warnings` looks exactly like a company where nobody missed a day, which is the
+whole difficulty. `cutoffOutrunsSweep` and `WARNING_SWEEP_MINUTES` in `attendance-policy.ts` are the
+rule, and `WARNING_SWEEP_MINUTES` is **hand-converted from `vercel.json` and has to move with it** —
+one fact in two places, because a cron expression cannot be imported. Equality is deliberately not
+flagged, since `hasCutoffPassed` compares with `<=`; a late firing only ever helps, so the check asks
+about the scheduled moment rather than modelling jitter. It is a **warning, not a validation**, for
+the reason the closing time is: the panel sends a partial update, so refusing would mean judging
+against a stored value the sender never saw — and a schema has no business reading `vercel.json`.
+Going hourly on Pro removes the ceiling, at which point drop the notice rather than raising the
+number.
+
+**`CRON_SECRET` must exist in the deployment's environment, and its absence is silent.** Vercel
+attaches `Authorization: Bearer <CRON_SECRET>` only when the variable is set on the project; without
+it the cron fires, arrives bare, and the fail-closed route 401s before `dispatch()` is ever called.
+This is not hypothetical — it is how the feature shipped. The cron landed in `fd5993b` and the secret
+was never added to Production, so for twelve days every run 401'd and `attendance_warnings` held zero
+rows while people were genuinely absent past the deadline. **The empty table is the symptom to
+recognise**: `claim` inserts *before* anything is mailed, so even a total SMTP outage still leaves
+rows behind with `sentAt` null. No rows at all means the sweep never ran, and the fault is upstream
+of every rule in this section. Check `vercel env ls production` before reading any of the logic.
+
 **Marking present happens on the dashboard and nowhere else.** `/attendance` is history, read-only:
 two places to press the same button read as two different actions, and the one that matters is the
 one on the screen people already open. `MarkAttendanceCard` therefore takes `today` already resolved

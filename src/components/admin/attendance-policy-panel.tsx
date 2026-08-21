@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import {
+  cutoffOutrunsSweep,
   describeHrMarkWindow,
   describeOfficeHours,
   friendlyTimeLabel,
@@ -19,6 +20,7 @@ import {
   MINUTES_IN_DAY,
   minutesToTimeLabel,
   timeLabelToMinutes,
+  WARNING_SWEEP_MINUTES,
 } from "@/lib/attendance-policy";
 import {
   MAX_HR_MARK_WINDOW_MINUTES,
@@ -254,6 +256,31 @@ export function AttendancePolicyPanel() {
               </Label>
             </div>
           </div>
+
+          {/*
+            The other configuration that switches a feature off without saying
+            so, surfaced where it is set for the same reason the closing-time
+            notice below is.
+
+            The sweep runs once a day and refuses to warn anybody before the
+            deadline has passed, so a cutoff later than that single firing is
+            never reached: every run returns `before-cutoff` and the letters
+            simply stop. Nothing else reports it — an empty warnings table looks
+            identical to a day nobody missed.
+          */}
+          {enabled && cutoffOutrunsSweep(cutoffPreview) && (
+            <div className="border-warning/40 bg-warning/10 flex items-start gap-2 rounded-xl border p-3 text-sm">
+              <MailWarning className="text-warning-ink mt-0.5 size-4 shrink-0" aria-hidden />
+              <p className="text-warning-ink">
+                The daily sweep runs at {friendlyTimeLabel(WARNING_SWEEP_MINUTES)}, before this{" "}
+                {friendlyTimeLabel(cutoffPreview)} cutoff — and it never warns anybody whose deadline
+                has not yet passed. With one run a day there is no later firing to catch them, so{" "}
+                <strong>no warning letters would be sent at all</strong>. Set the cutoff to{" "}
+                {friendlyTimeLabel(WARNING_SWEEP_MINUTES)} or earlier, or move the schedule in{" "}
+                <code className="text-xs">vercel.json</code> to run after it.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="hr-mark-window">Mark-present window</Label>

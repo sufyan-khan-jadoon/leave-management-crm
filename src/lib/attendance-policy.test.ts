@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
   countConsecutiveMissed,
   cutoffInstant,
+  cutoffOutrunsSweep,
   describeHrMarkWindow,
   describeOfficeHours,
   friendlyTimeLabel,
@@ -27,6 +28,7 @@ import {
   minutesToTimeLabel,
   ordinal,
   timeLabelToMinutes,
+  WARNING_SWEEP_MINUTES,
 } from "@/lib/attendance-policy";
 import { MAX_HR_MARK_WINDOW_MINUTES } from "@/lib/constants";
 
@@ -74,6 +76,59 @@ describe("hasCutoffPassed", () => {
     // 07:00 UTC is midday in Karachi — nowhere near the cutoff. A rule reading
     // the server's clock would already have fired.
     expect(hasCutoffPassed(day("2026-08-10"), FIVE_PM, new Date("2026-08-10T07:00:00.000Z"))).toBe(false);
+  });
+});
+
+/**
+ * The cutoff that outruns the only sweep of the day.
+ *
+ * Found in production: the sweep is pinned to 17:05 Karachi in `vercel.json` and
+ * the cutoff is a setting, so moving it later leaves every run returning
+ * `before-cutoff` and nobody ever warned — with an empty warnings table looking
+ * exactly like a company where nobody missed a day. These numbers are tied to
+ * that cron line and have to move with it.
+ */
+describe("cutoffOutrunsSweep", () => {
+  it("puts the sweep at 17:05, matching `5 12 * * *` UTC in vercel.json", () => {
+    expect(WARNING_SWEEP_MINUTES).toBe(17 * 60 + 5);
+    // The other direction: that moment is what the cron actually fires at.
+    expect(cutoffInstant(day("2026-08-10"), WARNING_SWEEP_MINUTES).toISOString()).toBe(
+      "2026-08-10T12:05:00.000Z",
+    );
+  });
+
+  it("is false for any cutoff the sweep would reach", () => {
+    for (const minutes of [0, 9 * 60, FIVE_PM, 16 * 60, 17 * 60 + 4]) {
+      expect(cutoffOutrunsSweep(minutes), String(minutes)).toBe(false);
+    }
+  });
+
+  it("is false at exactly the sweep, because hasCutoffPassed compares with <=", () => {
+    expect(cutoffOutrunsSweep(WARNING_SWEEP_MINUTES)).toBe(false);
+    // The reason equality is safe, asserted rather than assumed.
+    expect(
+      hasCutoffPassed(day("2026-08-10"), WARNING_SWEEP_MINUTES, new Date("2026-08-10T12:05:00.000Z")),
+    ).toBe(true);
+  });
+
+  it("is true from the minute after the sweep onwards", () => {
+    for (const minutes of [17 * 60 + 6, 18 * 60, 20 * 60, MINUTES_IN_DAY - 1]) {
+      expect(cutoffOutrunsSweep(minutes), String(minutes)).toBe(true);
+    }
+  });
+
+  it("is what a cutoff past the sweep actually costs: the sweep declines", () => {
+    const sixPm = 18 * 60;
+    expect(cutoffOutrunsSweep(sixPm)).toBe(true);
+    // 12:05 UTC is when the sweep runs; an 18:00 Karachi cutoff is 13:00 UTC,
+    // so the deadline has not passed and the sweep writes to nobody.
+    expect(hasCutoffPassed(day("2026-08-10"), sixPm, new Date("2026-08-10T12:05:00.000Z"))).toBe(false);
+  });
+
+  it("takes the sweep time as an argument, so a moved cron can be checked", () => {
+    const ninePm = 21 * 60;
+    expect(cutoffOutrunsSweep(18 * 60, ninePm)).toBe(false);
+    expect(cutoffOutrunsSweep(21 * 60 + 1, ninePm)).toBe(true);
   });
 });
 
