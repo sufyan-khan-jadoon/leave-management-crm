@@ -52,7 +52,7 @@ import {
 } from "@/lib/employee-report-range";
 import { formatDistance } from "@/lib/geo";
 import { describeLateness } from "@/lib/lateness";
-import { formatAttendanceRate } from "@/lib/report-labels";
+import { dayStatusLabel, formatAttendanceRate } from "@/lib/report-labels";
 import { MAX_REPORT_RANGE_DAYS } from "@/lib/report-period";
 import { bucketTrend, trendGranularityFor } from "@/lib/report-trend";
 import { cn } from "@/lib/utils";
@@ -754,8 +754,15 @@ function Records({
                     <TableHead>Location</TableHead>
                     <TableHead>Leave</TableHead>
                     <TableHead className={showActions ? "" : "pr-4 sm:pr-6"}>Notes</TableHead>
+                    {/*
+                      Pinned to the right edge, because this table scrolls
+                      sideways on anything narrower than a wide desktop and the
+                      action was the column that fell off it. A control you have
+                      to discover a horizontal scrollbar to reach is one most
+                      people never find.
+                    */}
                     {showActions && (
-                      <TableHead className="pr-4 text-right sm:pr-6">
+                      <TableHead className="bg-card sticky right-0 pr-4 text-right sm:pr-6">
                         <span className="sr-only">Edit</span>
                       </TableHead>
                     )}
@@ -787,8 +794,36 @@ function Records({
                           {formatDate(row.date)}
                         </TableCell>
 
+                        {/*
+                          **The badge is a control here too, and it has to be.**
+
+                          The attendance roster made the status itself the thing
+                          you click — see `AttendanceStatusEditor` — so that is
+                          the gesture an administrator has already learned, and
+                          they arrive at this table and try it. Offering the
+                          action *only* as a button in the last column left them
+                          clicking a status that does nothing, with the real
+                          control beyond a horizontal scroll they had no reason
+                          to suspect. Reported as "still unable to click on
+                          absent", which is exactly what it was.
+
+                          Both doors open the same dialog. The Edit button stays
+                          for discoverability and for keyboard users tabbing the
+                          row; this is the one people actually reach for.
+                        */}
                         <TableCell>
-                          <AttendanceStatusBadge status={row.status} />
+                          {editable ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditing({ date: row.date, status: editable })}
+                              aria-label={`Edit attendance for ${formatDate(row.date)}, currently ${dayStatusLabel(row.status)}`}
+                              className="focus-visible:ring-ring/50 cursor-pointer rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-[3px]"
+                            >
+                              <AttendanceStatusBadge status={row.status} />
+                            </button>
+                          ) : (
+                            <AttendanceStatusBadge status={row.status} />
+                          )}
                         </TableCell>
 
                         <TableCell className="text-muted-foreground whitespace-nowrap">
@@ -850,7 +885,7 @@ function Records({
                         </TableCell>
 
                         {showActions && (
-                          <TableCell className="pr-4 text-right sm:pr-6">
+                          <TableCell className="bg-card sticky right-0 pr-4 text-right sm:pr-6">
                             {editable ? (
                               <Button
                                 variant="ghost"
