@@ -192,8 +192,17 @@ export function serializeReport(report: ReportResult): ReportView {
  * how a second answer gets into a report that already had one — `attendanceRate`
  * in particular is the service's single division and is deliberately not
  * re-derived here from the totals sitting next to it.
+ *
+ * `canEditHistoricalAttendance` and `today` are the route's to add, not this
+ * function's, which is why they are subtracted from the return type rather than
+ * defaulted here. Both are facts about *the caller and the moment* rather than
+ * about the report — the three export routes render the very same
+ * `EmployeeReportResult` into a file, where a permission flag and a browser's
+ * idea of today mean nothing at all.
  */
-export function serializeEmployeeReport(report: EmployeeReportResult): EmployeeReportView {
+export function serializeEmployeeReport(
+  report: EmployeeReportResult,
+): Omit<EmployeeReportView, "canEditHistoricalAttendance" | "today"> {
   return {
     ...serializeReport(report),
     subject: {

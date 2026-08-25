@@ -34,6 +34,9 @@ export async function GET(request: Request) {
         date: edit.date.toISOString(),
         previousStatus: edit.previousStatus,
         newStatus: edit.newStatus,
+        // Null for every one-click correction, which is most of them. Where it
+        // is set it is the only part of the row somebody typed.
+        note: edit.note,
         editorRole: edit.editorRole,
         // When the correction was made — a different question from `date`, and
         // the one this screen is ordered by.

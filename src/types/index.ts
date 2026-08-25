@@ -262,6 +262,8 @@ export type AttendanceEditView = {
   date: string;
   previousStatus: string;
   newStatus: string;
+  /** What the administrator said about it, when they said anything. */
+  note: string | null;
   /** What the editor was at the time, frozen so a promotion cannot retitle it. */
   editorRole: string;
   /** When the correction was made — the other date, and the one this is sorted by. */
@@ -491,6 +493,27 @@ export type EmployeeReportView = ReportView & {
   attendanceRate: number | null;
   /** What that rate is out of, so a tile can say rather than leave it implied. */
   attendanceAssessedDays: number;
+  /**
+   * Whether to offer the Edit action on this person's records.
+   *
+   * The grant **and** the seniority rule, resolved together on the server by
+   * `mayEditHistoricalDayFor` — so it is already false on your own report and on
+   * the owner's, rather than offering a control the service would refuse. A
+   * courtesy that hides a button: `/api/admin/attendance/edit` asks all of it
+   * again, against the row, on every request.
+   */
+  canEditHistoricalAttendance: boolean;
+  /**
+   * The company's calendar day, as the **server** reckons it.
+   *
+   * Sent rather than read off the browser's clock for the reason the roster
+   * sends `isHistorical`: a viewer in another timezone would otherwise offer the
+   * editor on a date the server still calls today and be refused for it. One
+   * value rather than a flag per row, because a report is a run of consecutive
+   * dates and thirty-one copies of one boundary is thirty-one chances for the
+   * rows to disagree about where it falls.
+   */
+  today: string;
 };
 
 /** One candidate in the report's people picker. */

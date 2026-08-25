@@ -252,6 +252,20 @@ export function AttendanceChangeLog() {
                             <ArrowRight className="text-muted-foreground size-3.5" aria-hidden />
                             <AttendanceStatusBadge status={edit.newStatus as AttendanceDayStatus} />
                           </div>
+
+                          {/*
+                            Beneath the change rather than in a column of its
+                            own, because it is null on most rows — the roster
+                            corrects a day in one click and says nothing — and a
+                            column that is empty four times in five is width
+                            spent on whitespace. Where somebody did explain
+                            themselves it belongs against the change it explains.
+                          */}
+                          {edit.note && (
+                            <p className="text-muted-foreground mt-1 max-w-72 text-xs">
+                              {edit.note}
+                            </p>
+                          )}
                         </TableCell>
 
                         <TableCell>

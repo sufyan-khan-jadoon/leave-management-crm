@@ -850,6 +850,18 @@ model AttendanceEdit {
   previousStatus String
   newStatus      String
 
+  /// What the administrator wanted recorded about *why*, when they had something
+  /// to say. Optional, and the optionality is the whole of why it is allowed to
+  /// exist: `attendanceEditSchema` argues against a box demanding a sentence,
+  /// because that is a box somebody fills with "n/a". A box they may leave empty
+  /// makes no such demand, and the roster's one-click path leaves it null.
+  ///
+  /// It lives here rather than on `Attendance.reason` because a correction to
+  /// `ABSENT` **deletes** the attendance row — the same argument this model's own
+  /// existence rests on. An explanation that vanishes with the thing it explains
+  /// is not one.
+  note String?
+
   /// Null once the administrator's account is deleted, exactly as
   /// `Attendance.markedById` is: removing whoever made a correction must not
   /// remove the record that it happened, nor the person it was about. The row

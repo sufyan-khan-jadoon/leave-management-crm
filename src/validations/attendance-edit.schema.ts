@@ -15,10 +15,17 @@ import { calendarDateSchema } from "@/validations/holiday.schema";
  * is refused loudly rather than stripped, so the attempt surfaces as an error
  * somebody sees instead of as an audit entry that quietly lied.
  *
- * There is deliberately **no `reason` field**, unlike `markEmployeePresentSchema`
- * beside it. This is a one-click correction: the name, the role, both statuses
- * and the moment are captured automatically, which is the whole of what an audit
- * needs, and a box demanding a sentence is a box somebody fills with "n/a".
+ * `note` is **optional, and the optionality is the argument**. This file used to
+ * say there was no reason field at all, on the grounds that a one-click
+ * correction captures the name, the role, both statuses and the moment
+ * automatically — which is the whole of what an audit needs — and that a box
+ * demanding a sentence is a box somebody fills with "n/a". That reasoning was
+ * about a *mandatory* box and it still holds: nothing here demands one, the
+ * roster's dropdown sends none, and a day corrected without a word is recorded
+ * exactly as it always was. What it never justified was refusing an
+ * administrator who *does* have something to say — "phone died, seen in the
+ * office by two people" is precisely the thing a register put right three weeks
+ * later needs beside it, and there was nowhere to put it.
  *
  * There is no `arrivalTime` either, and that absence is load-bearing rather than
  * a simplification — see `attendance.service.ts`, which pins a corrected day's
@@ -42,6 +49,21 @@ export const attendanceEditSchema = z.strictObject({
    * `employeeQuerySchema` takes towards `SUPER_ADMIN`.
    */
   status: z.enum(EDITABLE_DAY_STATUSES),
+  /**
+   * Why, in the administrator's own words, when they have something to say.
+   *
+   * Trimmed and folded to `undefined` when it comes through empty, so a dialog
+   * that always sends the field cannot write a row of whitespace into the audit
+   * trail — the service stores `null` for it, which is the same record a
+   * one-click correction leaves and is readable as "nothing was said" rather
+   * than as an empty string somebody typed.
+   */
+  note: z
+    .string()
+    .trim()
+    .max(500, "Keep the note under 500 characters")
+    .optional()
+    .transform((value) => (value ? value : undefined)),
 });
 
 export type AttendanceEditInput = z.infer<typeof attendanceEditSchema>;

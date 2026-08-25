@@ -1,6 +1,8 @@
 import { handleRoute, ok, parseBody } from "@/lib/api";
 import { requireAdmin } from "@/lib/auth/guards";
+import { todayUtc } from "@/lib/date";
 import { serializeEmployeeReport } from "@/lib/serialize";
+import { attendanceService } from "@/services/attendance.service";
 import { reportService } from "@/services/report.service";
 import { employeeReportRequestSchema } from "@/validations/employee-report.schema";
 
@@ -36,6 +38,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { id } = await params;
     const input = await parseBody(request, employeeReportRequestSchema);
 
-    return ok(serializeEmployeeReport(await reportService.forEmployee(user, id, input)));
+    // `forEmployee` gates on `byIdForActor`, so reaching this line at all means
+    // the caller may see this person. Whether they may *change* one of their
+    // days is a second, narrower question, asked after the report has resolved
+    // who its subject actually is rather than against the id off the URL.
+    const report = await reportService.forEmployee(user, id, input);
+
+    return ok({
+      ...serializeEmployeeReport(report),
+      /**
+       * Purely so the Records table can offer an Edit action it may actually
+       * use. It mirrors the real check and never replaces it — the same
+       * arrangement `canMarkAttendance` has on the roster route and `canIssue`
+       * on the invitation routes.
+       *
+       * Resolved through the service rather than assembled here, so the grant
+       * and the seniority rule stay in the one place that owns them: a route
+       * spelling out "and not yourself, and not the owner" is a second copy of
+       * `assertMayCorrect` waiting to fall behind it.
+       */
+      canEditHistoricalAttendance: await attendanceService.mayEditHistoricalDayFor(
+        user,
+        report.subject,
+      ),
+      // The company's calendar day, so the screen and the server agree about
+      // which rows are past. `todayUtc()` reads `APP_TIME_ZONE`, never the
+      // browser's clock and never the server's raw UTC one.
+      today: todayUtc().toISOString(),
+    });
   });
 }

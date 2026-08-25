@@ -546,6 +546,10 @@ async function bookCorrectedLeave(employeeId: string, date: Date): Promise<void>
  * The role is read from the row rather than from the roster, which deliberately
  * carries no `role` — see `attendanceRosterSelect`.
  */
+function mayCorrect(actor: PopulationActor, target: { id: string; role: Role }): boolean {
+  return target.id !== actor.id && target.role !== "SUPER_ADMIN";
+}
+
 function assertMayCorrect(actor: PopulationActor, target: { id: string; role: Role }): void {
   if (target.id === actor.id) {
     throw new ForbiddenError(
@@ -1166,6 +1170,30 @@ export const attendanceService = {
   mayEditHistoricalAttendance,
 
   /**
+   * Whether this administrator could edit a past day **of this person's** — the
+   * grant and the seniority rule together, as one boolean a screen can render
+   * from.
+   *
+   * It exists so no route has to restate `assertMayCorrect`. The grant alone is
+   * not the answer: a granted administrator still may not edit their own days,
+   * and nobody may edit the owner's, so a screen drawn from
+   * `mayEditHistoricalAttendance` by itself would offer a control the service
+   * then refuses — which reads as the feature being broken rather than as a
+   * boundary being kept. `mayCorrect` is the same predicate `assertMayCorrect`
+   * throws on, called here rather than copied, so the two cannot drift.
+   *
+   * A **courtesy**, exactly as `canMarkAttendance` and `canIssue` are.
+   * `editHistoricalDay` asks all of this again against the row, and refuses
+   * today's date whatever this said.
+   */
+  async mayEditHistoricalDayFor(
+    actor: PopulationActor,
+    target: { id: string; role: Role },
+  ): Promise<boolean> {
+    return mayCorrect(actor, target) && (await mayEditHistoricalAttendance(actor));
+  },
+
+  /**
    * Grants or withdraws the right to correct days that have already gone. The
    * super admin's alone, gated in the route that calls it.
    */
@@ -1329,6 +1357,9 @@ export const attendanceService = {
       date: input.date,
       previousStatus: from,
       newStatus: input.status,
+      // Null rather than an empty string when nothing was said, so the log can
+      // tell a correction nobody explained from one explained with a blank.
+      note: input.note ?? null,
       editedById: actor.id,
       // Frozen by value: an administrator later promoted must not have every
       // past act of theirs retitled. Same argument as `consecutiveMissed`.

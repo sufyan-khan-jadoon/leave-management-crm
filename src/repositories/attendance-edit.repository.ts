@@ -17,6 +17,7 @@ export const attendanceEditSelect = {
   date: true,
   previousStatus: true,
   newStatus: true,
+  note: true,
   editorRole: true,
   createdAt: true,
   employee: { select: { id: true, name: true, department: true, position: true } },
@@ -72,6 +73,8 @@ export const attendanceEditRepository = {
     date: Date;
     previousStatus: string;
     newStatus: string;
+    /** Null whenever the administrator had nothing to add — the ordinary case. */
+    note: string | null;
     editedById: string;
     editorRole: string;
   }): Promise<AttendanceEditDto> {

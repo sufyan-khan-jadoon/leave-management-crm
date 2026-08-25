@@ -14,14 +14,17 @@ import {
   House,
   MapPin,
   Palmtree,
+  Pencil,
   RotateCcw,
   Table2,
   TriangleAlert,
   UserCheck,
+  UserRoundX,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { AttendanceEditDialog } from "@/components/admin/attendance-edit-dialog";
 import { EmployeeReportCalendar } from "@/components/admin/employee-report-calendar";
 import { AttendanceMixChart, type AttendanceMixSlice } from "@/components/charts/attendance-mix-chart";
 import { AttendanceTrendChart } from "@/components/charts/attendance-trend-chart";
@@ -39,6 +42,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiClientError, apiClient } from "@/lib/api-client";
+import { isEditableDayStatus, isHistoricalDate, type EditableDayStatus } from "@/lib/attendance-edit";
 import { friendlyTimeLabel } from "@/lib/attendance-policy";
 import { formatDate, formatDateTime, formatTimeInAppZone, toIsoDate, todayUtc } from "@/lib/date";
 import {
@@ -124,6 +128,20 @@ export function EmployeeReport({ employeeId }: { employeeId: string }) {
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
 
   /**
+   * Bumped after a record is corrected, to re-run the one fetch below.
+   *
+   * A counter rather than a hand-patched row, and the difference is the whole of
+   * why the correction lands everywhere at once. The tiles, the attendance rate,
+   * the coverage notes, the calendar, both charts, the leave spells and the row
+   * itself are **all readings of one `describeDay` pass** on the server — so
+   * editing the row in place would leave eight figures beside it describing the
+   * report as it was a moment ago, and a page somebody later refreshed would
+   * change under them. Re-asking is the only way they cannot disagree.
+   */
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey((key) => key + 1), []);
+
+  /**
    * What is wrong with the range before it is sent.
    *
    * A courtesy exactly as the report builder's draft check is: every one of
@@ -194,7 +212,7 @@ export function EmployeeReport({ employeeId }: { employeeId: string }) {
     return () => {
       current = false;
     };
-  }, [employeeId, body, page, rangeProblem]);
+  }, [employeeId, body, page, rangeProblem, reloadKey]);
 
   async function runExport(format: ExportFormat) {
     if (exporting || !report) return;
@@ -360,7 +378,7 @@ export function EmployeeReport({ employeeId }: { employeeId: string }) {
           </Card>
 
           <Leaves report={report} />
-          <Records report={report} onPageChange={setPage} />
+          <Records report={report} onPageChange={setPage} onEdited={reload} />
         </div>
       ) : null}
     </div>
@@ -470,6 +488,22 @@ function Summary({ report }: { report: EmployeeReportView }) {
         </Note>
       )}
 
+      {/*
+        The tile above has already had these days out of its working-days
+        figure, so the note is what stops a short month reading as an error.
+        Unlike the joining-date note below it, this one describes a boundary the
+        register actually applies — see `src/lib/employment.ts`.
+      */}
+      {coverage.preEmploymentDays > 0 && (
+        <Note icon={UserRoundX}>
+          {coverage.preEmploymentDays} {coverage.preEmploymentDays === 1 ? "day" : "days"} in this
+          period {coverage.preEmploymentDays === 1 ? "falls" : "fall"} before they registered, so{" "}
+          {coverage.preEmploymentDays === 1 ? "it is" : "they are"} not theirs to have missed.{" "}
+          {coverage.preEmploymentDays === 1 ? "It is" : "They are"} counted as neither present nor
+          absent, appear in no record, and are already out of the working days above.
+        </Note>
+      )}
+
       {coverage.upcomingDays > 0 && (
         <Note icon={Clock}>
           This period reaches {coverage.upcomingDays} working{" "}
@@ -482,10 +516,11 @@ function Summary({ report }: { report: EmployeeReportView }) {
       )}
 
       {/*
-        Reported, never acted on. `describeDay` takes no notice of when somebody
-        started, so a day before their first one reads exactly as it does on the
-        attendance roster — quietly reclassifying it would be this screen forming
-        an opinion about a date.
+        Their **joining date** — the profile field, not the registration
+        boundary the note above describes. Reported and never acted on:
+        `describeDay` takes no notice of it, so a day before it reads exactly as
+        it does on the attendance roster, and quietly reclassifying one would be
+        this screen forming an opinion about a date.
       */}
       {report.summaries[0]?.joinedDuringPeriod && (
         <Note icon={CalendarDays} tone="warning">
@@ -643,14 +678,42 @@ function Leaves({ report }: { report: EmployeeReportView }) {
  * a figure this system does not hold and one this screen will not invent. If a
  * check-out ever lands, the hours belong beside `lateMinutesOf` — derived on
  * read, in one place — rather than computed here.
+ *
+ * It is also the one place on this screen that can **write**. A day that has
+ * finished can be moved between present, absent and on leave through
+ * `AttendanceEditDialog`, which is the same correction the attendance roster
+ * offers and posts to the same endpoint. The control is drawn from
+ * `report.canEditHistoricalAttendance`, resolved on the server against the grant
+ * *and* the seniority rule; it hides a button and authorises nothing.
  */
 function Records({
   report,
   onPageChange,
+  onEdited,
 }: {
   report: EmployeeReportView;
   onPageChange: (page: number) => void;
+  onEdited: () => void;
 }) {
+  /** The row being corrected, or null. One dialog for the table, not one per row. */
+  const [editing, setEditing] = useState<{ date: string; status: EditableDayStatus } | null>(null);
+
+  /**
+   * The boundary between a day that can be corrected and one that cannot,
+   * measured against the **server's** calendar day rather than the browser's.
+   *
+   * `report.today` came back from the same request that produced these rows, so
+   * a viewer whose machine is the other side of midnight is offered exactly the
+   * dates the server would accept. Reading `new Date()` here is the bug that
+   * avoids: the control would appear on a date `editHistoricalDay` still calls
+   * today, and be refused the moment it was pressed.
+   */
+  const today = useMemo(() => new Date(report.today), [report.today]);
+
+  // Whether the column exists at all, rather than whether each button does. A
+  // column of dashes on a report nobody may edit is width spent on nothing.
+  const showActions = report.canEditHistoricalAttendance;
+
   return (
     <Card className="py-0">
       <CardHeader className="pt-6">
@@ -659,6 +722,13 @@ function Records({
           One row per day that holds something. Office closures, weekly days off, days the system
           holds nothing about and days still to come are counted above and appear in the calendar,
           not here.
+          {showActions && (
+            <>
+              {" "}
+              Days that have already finished can be corrected between present, absent and on leave;
+              every change is written to the attendance change log.
+            </>
+          )}
         </CardDescription>
       </CardHeader>
 
@@ -683,80 +753,122 @@ function Records({
                     <TableHead>Arrival</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Leave</TableHead>
-                    <TableHead className="pr-4 sm:pr-6">Notes</TableHead>
+                    <TableHead className={showActions ? "" : "pr-4 sm:pr-6"}>Notes</TableHead>
+                    {showActions && (
+                      <TableHead className="pr-4 text-right sm:pr-6">
+                        <span className="sr-only">Edit</span>
+                      </TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
 
                 <TableBody>
-                  {report.rows.map((row) => (
-                    <TableRow key={row.date}>
-                      <TableCell className="pl-4 whitespace-nowrap sm:pl-6">
-                        {formatDate(row.date)}
-                      </TableCell>
+                  {report.rows.map((row) => {
+                    /**
+                     * What this row may be corrected to, or null if it is not a
+                     * row anybody may correct. Both halves are checked again by
+                     * the service, against the roster rather than against this.
+                     *
+                     * The status half is what keeps a remote day out of reach —
+                     * `REMOTE` is a record and so has a row here, but it is
+                     * attendance-exempt, so there is no wrong record to put
+                     * right. `EDITABLE_DAY_STATUSES` is the single list of the
+                     * three a person can be moved between, shared with the
+                     * dialog, the roster's own editor and the schema.
+                     */
+                    const editable: EditableDayStatus | null =
+                      isEditableDayStatus(row.status) && isHistoricalDate(new Date(row.date), today)
+                        ? row.status
+                        : null;
 
-                      <TableCell>
-                        <AttendanceStatusBadge status={row.status} />
-                      </TableCell>
+                    return (
+                      <TableRow key={row.date}>
+                        <TableCell className="pl-4 whitespace-nowrap sm:pl-6">
+                          {formatDate(row.date)}
+                        </TableCell>
 
-                      <TableCell className="text-muted-foreground whitespace-nowrap">
-                        {row.checkInAt ? formatTimeInAppZone(row.checkInAt) : "—"}
-                      </TableCell>
+                        <TableCell>
+                          <AttendanceStatusBadge status={row.status} />
+                        </TableCell>
 
-                      <TableCell className="whitespace-nowrap">
-                        {row.lateMinutes > 0 ? (
-                          <span
-                            className="text-warning-ink text-xs font-medium"
-                            title={
-                              row.lateBasisMinutes !== null
-                                ? `Measured from the ${friendlyTimeLabel(row.lateBasisMinutes)} cutoff in force that day`
-                                : undefined
-                            }
-                          >
-                            {describeLateness(row.lateMinutes)} late
-                          </span>
-                        ) : row.checkInAt ? (
-                          <span className="text-muted-foreground text-xs">On time</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
+                        <TableCell className="text-muted-foreground whitespace-nowrap">
+                          {row.checkInAt ? formatTimeInAppZone(row.checkInAt) : "—"}
+                        </TableCell>
+
+                        <TableCell className="whitespace-nowrap">
+                          {row.lateMinutes > 0 ? (
+                            <span
+                              className="text-warning-ink text-xs font-medium"
+                              title={
+                                row.lateBasisMinutes !== null
+                                  ? `Measured from the ${friendlyTimeLabel(row.lateBasisMinutes)} cutoff in force that day`
+                                  : undefined
+                              }
+                            >
+                              {describeLateness(row.lateMinutes)} late
+                            </span>
+                          ) : row.checkInAt ? (
+                            <span className="text-muted-foreground text-xs">On time</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+
+                        {/*
+                          A hand-recorded day carries no distance and never has one
+                          invented for it — the office's own coordinates would make
+                          a claim indistinguishable from somebody who stood there.
+                          It names who vouched for it instead.
+                        */}
+                        <TableCell className="whitespace-nowrap">
+                          {row.markedBy ? (
+                            <Badge variant="outline">
+                              <UserCheck aria-hidden />
+                              Recorded by hand
+                            </Badge>
+                          ) : row.distanceMeters !== null ? (
+                            <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                              <MapPin className="size-3.5 shrink-0" aria-hidden />
+                              {formatDistance(row.distanceMeters)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+
+                        <TableCell className="whitespace-nowrap">
+                          {row.leaveStatus ? <LeaveStatusBadge status={row.leaveStatus} /> : "—"}
+                        </TableCell>
+
+                        <TableCell className={showActions ? "" : "pr-4 sm:pr-6"}>
+                          <div className="text-muted-foreground max-w-64 space-y-0.5 text-xs">
+                            {row.markedBy && <p className="truncate">Recorded by {row.markedBy.name}</p>}
+                            {row.markedReason && <p className="truncate">{row.markedReason}</p>}
+                            {row.leaveReason && <p className="truncate">Leave: {row.leaveReason}</p>}
+                            {!row.markedBy && !row.markedReason && !row.leaveReason && <span>—</span>}
+                          </div>
+                        </TableCell>
+
+                        {showActions && (
+                          <TableCell className="pr-4 text-right sm:pr-6">
+                            {editable ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setEditing({ date: row.date, status: editable })}
+                                aria-label={`Edit attendance for ${formatDate(row.date)}`}
+                              >
+                                <Pencil className="size-3.5" aria-hidden />
+                                Edit
+                              </Button>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
                         )}
-                      </TableCell>
-
-                      {/*
-                        A hand-recorded day carries no distance and never has one
-                        invented for it — the office's own coordinates would make
-                        a claim indistinguishable from somebody who stood there.
-                        It names who vouched for it instead.
-                      */}
-                      <TableCell className="whitespace-nowrap">
-                        {row.markedBy ? (
-                          <Badge variant="outline">
-                            <UserCheck aria-hidden />
-                            Recorded by hand
-                          </Badge>
-                        ) : row.distanceMeters !== null ? (
-                          <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                            <MapPin className="size-3.5 shrink-0" aria-hidden />
-                            {formatDistance(row.distanceMeters)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-
-                      <TableCell className="whitespace-nowrap">
-                        {row.leaveStatus ? <LeaveStatusBadge status={row.leaveStatus} /> : "—"}
-                      </TableCell>
-
-                      <TableCell className="pr-4 sm:pr-6">
-                        <div className="text-muted-foreground max-w-64 space-y-0.5 text-xs">
-                          {row.markedBy && <p className="truncate">Recorded by {row.markedBy.name}</p>}
-                          {row.markedReason && <p className="truncate">{row.markedReason}</p>}
-                          {row.leaveReason && <p className="truncate">Leave: {row.leaveReason}</p>}
-                          {!row.markedBy && !row.markedReason && !row.leaveReason && <span>—</span>}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -774,6 +886,25 @@ function Records({
           </>
         )}
       </CardContent>
+
+      {/*
+        Controlled and mounted once for the whole table rather than per row,
+        because the rows are replaced wholesale on every refetch — a dialog owned
+        by a row would be unmounted by the very reload its own success triggers.
+      */}
+      {editing && (
+        <AttendanceEditDialog
+          open
+          onOpenChange={(next) => {
+            if (!next) setEditing(null);
+          }}
+          employeeId={report.subject.id}
+          employeeName={report.subject.name}
+          date={editing.date}
+          currentStatus={editing.status}
+          onSaved={onEdited}
+        />
+      )}
     </Card>
   );
 }
