@@ -14,7 +14,6 @@ import {
   House,
   MapPin,
   Palmtree,
-  Pencil,
   RotateCcw,
   Table2,
   TriangleAlert,
@@ -710,8 +709,10 @@ function Records({
    */
   const today = useMemo(() => new Date(report.today), [report.today]);
 
-  // Whether the column exists at all, rather than whether each button does. A
-  // column of dashes on a report nobody may edit is width spent on nothing.
+  // Whether to *say* the rows can be corrected. The statuses themselves decide
+  // for each row through `editable` below, which reads the same grant — this
+  // only governs the sentence, so a viewer who may change nothing is not told
+  // about a control they will never be offered.
   const showActions = report.canEditHistoricalAttendance;
 
   return (
@@ -753,19 +754,7 @@ function Records({
                     <TableHead>Arrival</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Leave</TableHead>
-                    <TableHead className={showActions ? "" : "pr-4 sm:pr-6"}>Notes</TableHead>
-                    {/*
-                      Pinned to the right edge, because this table scrolls
-                      sideways on anything narrower than a wide desktop and the
-                      action was the column that fell off it. A control you have
-                      to discover a horizontal scrollbar to reach is one most
-                      people never find.
-                    */}
-                    {showActions && (
-                      <TableHead className="bg-card sticky right-0 pr-4 text-right sm:pr-6">
-                        <span className="sr-only">Edit</span>
-                      </TableHead>
-                    )}
+                    <TableHead className="pr-4 sm:pr-6">Notes</TableHead>
                   </TableRow>
                 </TableHeader>
 
@@ -773,8 +762,16 @@ function Records({
                   {report.rows.map((row) => {
                     /**
                      * What this row may be corrected to, or null if it is not a
-                     * row anybody may correct. Both halves are checked again by
-                     * the service, against the roster rather than against this.
+                     * row this viewer may correct. All three halves are checked
+                     * again by the service, against the roster rather than
+                     * against this.
+                     *
+                     * **The permission belongs in here**, not only around the
+                     * control. It used to sit on the action column alone, which
+                     * was survivable while that column was the only door — once
+                     * the badge became a door too, an administrator without
+                     * `canEditHistoricalAttendance` would have been offered a
+                     * status that opens a dialog the server then refuses.
                      *
                      * The status half is what keeps a remote day out of reach —
                      * `REMOTE` is a record and so has a row here, but it is
@@ -784,7 +781,9 @@ function Records({
                      * dialog, the roster's own editor and the schema.
                      */
                     const editable: EditableDayStatus | null =
-                      isEditableDayStatus(row.status) && isHistoricalDate(new Date(row.date), today)
+                      report.canEditHistoricalAttendance &&
+                      isEditableDayStatus(row.status) &&
+                      isHistoricalDate(new Date(row.date), today)
                         ? row.status
                         : null;
 
@@ -795,21 +794,21 @@ function Records({
                         </TableCell>
 
                         {/*
-                          **The badge is a control here too, and it has to be.**
+                          **The badge is the control, and it is the only one.**
 
                           The attendance roster made the status itself the thing
                           you click — see `AttendanceStatusEditor` — so that is
                           the gesture an administrator has already learned, and
-                          they arrive at this table and try it. Offering the
-                          action *only* as a button in the last column left them
-                          clicking a status that does nothing, with the real
-                          control beyond a horizontal scroll they had no reason
-                          to suspect. Reported as "still unable to click on
-                          absent", which is exactly what it was.
+                          they arrive at this table and try it. This screen first
+                          offered the action as an Edit button in a trailing
+                          column instead, which failed twice over: clicking the
+                          status did nothing, and the button sat past a
+                          horizontal scroll nobody had reason to suspect.
 
-                          Both doors open the same dialog. The Edit button stays
-                          for discoverability and for keyboard users tabbing the
-                          row; this is the one people actually reach for.
+                          The button is gone rather than kept alongside. Two
+                          controls for one act, on a table already wide enough to
+                          overflow, is a column of width spent restating what the
+                          status beside it already offers.
                         */}
                         <TableCell>
                           {editable ? (
@@ -875,7 +874,7 @@ function Records({
                           {row.leaveStatus ? <LeaveStatusBadge status={row.leaveStatus} /> : "—"}
                         </TableCell>
 
-                        <TableCell className={showActions ? "" : "pr-4 sm:pr-6"}>
+                        <TableCell className="pr-4 sm:pr-6">
                           <div className="text-muted-foreground max-w-64 space-y-0.5 text-xs">
                             {row.markedBy && <p className="truncate">Recorded by {row.markedBy.name}</p>}
                             {row.markedReason && <p className="truncate">{row.markedReason}</p>}
@@ -883,24 +882,6 @@ function Records({
                             {!row.markedBy && !row.markedReason && !row.leaveReason && <span>—</span>}
                           </div>
                         </TableCell>
-
-                        {showActions && (
-                          <TableCell className="bg-card sticky right-0 pr-4 text-right sm:pr-6">
-                            {editable ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setEditing({ date: row.date, status: editable })}
-                                aria-label={`Edit attendance for ${formatDate(row.date)}`}
-                              >
-                                <Pencil className="size-3.5" aria-hidden />
-                                Edit
-                              </Button>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                        )}
                       </TableRow>
                     );
                   })}
