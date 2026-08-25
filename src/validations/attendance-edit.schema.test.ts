@@ -29,6 +29,58 @@ describe("attendanceEditSchema", () => {
   });
 
   /**
+   * **The defect this feature actually shipped with**, pinned so it cannot come
+   * back. A report's rows carry `date` as a serialized *instant*, and the Records
+   * dialog posted it straight through — which `calendarDateSchema` refuses,
+   * because it pins the shape to `YYYY-MM-DD` before parsing. Every edit from
+   * that screen failed with "The submitted data is invalid" while the roster's
+   * editor worked, its date having come off a date input already in this shape.
+   *
+   * The lesson at the top of this file, arriving a second time: the schema and
+   * the service were both fine, and the *wire between the client and them* was
+   * the thing nobody exercised.
+   */
+  it("refuses a serialized instant, which is the shape a report row carries", () => {
+    const result = attendanceEditSchema.safeParse({
+      ...valid,
+      date: "2026-08-17T00:00:00.000Z",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts what the Records dialog now sends, note and all", () => {
+    // Exactly the conversion the dialog performs on a row's `date`.
+    const fromReportRow = new Date("2026-08-17T00:00:00.000Z").toISOString().slice(0, 10);
+
+    const parsed = attendanceEditSchema.parse({
+      employeeId: "emp_1",
+      date: fromReportRow,
+      status: "PRESENT",
+      note: "  Phone died; seen in the office.  ",
+    });
+
+    expect(parsed.date.toISOString()).toBe("2026-08-17T00:00:00.000Z");
+    expect(parsed.note).toBe("Phone died; seen in the office.");
+  });
+
+  /**
+   * The note is optional in both directions: absent entirely, or present and
+   * empty once trimmed. Both mean "nothing was said", and the service stores
+   * null for them — an audit row holding an empty string would be a correction
+   * somebody appeared to explain with nothing.
+   */
+  it("folds a blank note away rather than storing whitespace", () => {
+    expect(attendanceEditSchema.parse(valid).note).toBeUndefined();
+    expect(attendanceEditSchema.parse({ ...valid, note: "   " }).note).toBeUndefined();
+  });
+
+  it("bounds the note, so one request cannot write an essay into the log", () => {
+    expect(attendanceEditSchema.safeParse({ ...valid, note: "x".repeat(501) }).success).toBe(false);
+    expect(attendanceEditSchema.safeParse({ ...valid, note: "x".repeat(500) }).success).toBe(true);
+  });
+
+  /**
    * The five statuses that belong to the calendar rather than to a person are
    * not values here at all, so asserting one is refused by the parser rather
    * than reaching a service that would have to explain itself.

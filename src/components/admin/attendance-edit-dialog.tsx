@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { ApiClientError, apiClient } from "@/lib/api-client";
 import { EDITABLE_DAY_STATUSES, type EditableDayStatus } from "@/lib/attendance-edit";
-import { formatDate } from "@/lib/date";
+import { formatDate, toIsoDate } from "@/lib/date";
 import { dayStatusLabel } from "@/lib/report-labels";
 import type { AttendanceDayStatus } from "@/types";
 
@@ -99,7 +99,16 @@ export function AttendanceEditDialog({
         "/api/admin/attendance/edit",
         {
           employeeId,
-          date,
+          // **A calendar day, not the timestamp this component was handed.**
+          //
+          // `calendarDateSchema` pins the shape to `YYYY-MM-DD` before parsing,
+          // because `new Date("2026-08-17")` is UTC midnight for that exact
+          // format and for nothing else. A report's rows carry `date` as a
+          // serialized instant — `2026-08-17T00:00:00.000Z` — so posting it
+          // through unchanged is refused by the parser, which is exactly what
+          // shipped broken here. The roster's editor never met this: its `date`
+          // comes off a date input and is already in the shape the schema wants.
+          date: toIsoDate(new Date(date)),
           status,
           // Left off entirely when empty rather than sent as "". The schema folds
           // it to undefined too; doing it here as well keeps the wire honest
