@@ -1,4 +1,14 @@
-import { CalendarOff, CheckCircle2, CircleDashed, Clock, Coffee, House, Palmtree, XCircle } from "lucide-react";
+import {
+  CalendarOff,
+  CheckCircle2,
+  CircleDashed,
+  Clock,
+  Coffee,
+  House,
+  Palmtree,
+  UserRoundX,
+  XCircle,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { dayStatusLabel } from "@/lib/report-labels";
@@ -30,6 +40,11 @@ export const DAY_STATUS_BADGE = {
   // is being held against anybody — colouring it like a missed day would be the
   // accusation the status exists to withhold.
   NO_RECORD: { variant: "secondary", Icon: CircleDashed },
+  // `UserRoundX` rather than a second dashed circle. The reason this day holds
+  // nothing is about the *person* — their account did not exist yet — rather
+  // than about what the register happens to contain, and it is the one status
+  // here a reader is most likely to be surprised by on a roster.
+  PRE_EMPLOYMENT: { variant: "secondary", Icon: UserRoundX },
   UPCOMING: { variant: "secondary", Icon: Clock },
 } as const satisfies Record<AttendanceDayStatus, unknown>;
 

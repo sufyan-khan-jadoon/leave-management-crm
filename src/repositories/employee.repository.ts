@@ -36,7 +36,16 @@ export const employeeSelect = {
 
 export type EmployeeDto = Prisma.EmployeeGetPayload<{ select: typeof employeeSelect }>;
 
-/** Just enough to name somebody on the attendance roster and show their face. */
+/**
+ * Just enough to name somebody on the attendance roster and show their face.
+ *
+ * `createdAt` rides along because absence is derived per person per day, and the
+ * derivation has to stop at the account's own beginning — see
+ * `src/lib/employment.ts`. Carried on the row the roster already fetches rather
+ * than asked for separately, so the boundary costs nothing over listing the
+ * people. It is not a leak in the way `role` would be: when somebody registered
+ * says nothing about *what* they are, which is the thing this select withholds.
+ */
 export const attendanceRosterSelect = {
   id: true,
   name: true,
@@ -44,6 +53,7 @@ export const attendanceRosterSelect = {
   department: true,
   position: true,
   profilePhoto: true,
+  createdAt: true,
 } satisfies Prisma.EmployeeSelect;
 
 export type AttendanceRosterMember = Prisma.EmployeeGetPayload<{
@@ -550,6 +560,33 @@ export const employeeRepository = {
     });
 
     return new Map(rows.map((row) => [row.id, row.joiningDate]));
+  },
+
+  /**
+   * When these accounts were created.
+   *
+   * The lower bound of everybody's attendance record — see
+   * `src/lib/employment.ts` for why it is `createdAt` and deliberately not
+   * `joiningDate`, which is a profile field its own owner can edit.
+   *
+   * Deliberately its own query rather than a column added to
+   * `joiningDatesFor`: the two answer different questions for different callers,
+   * and the sweep asking for a joining date should not silently start receiving
+   * a boundary it has not been written to apply.
+   *
+   * Returned as a map because `buildHistories` is handed ids rather than rows —
+   * unlike the roster, which reads the same fact straight off
+   * `attendanceRosterSelect`.
+   */
+  async registrationDatesFor(ids: string[]): Promise<Map<string, Date>> {
+    if (ids.length === 0) return new Map();
+
+    const rows = await prisma.employee.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, createdAt: true },
+    });
+
+    return new Map(rows.map((row) => [row.id, row.createdAt]));
   },
 
   create(data: {

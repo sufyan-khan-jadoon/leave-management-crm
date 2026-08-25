@@ -111,7 +111,19 @@ export async function GET(request: Request) {
       serverTime: new Date().toISOString(),
       summary: roster.summary,
       items: roster.items.map((entry) => ({
-        employee: entry.employee,
+        // Named rather than passed whole. `attendanceRosterSelect` carries
+        // `createdAt` so `describeDay` can stop the register at the account's
+        // own first day — that is a server-side boundary, and putting a
+        // registration timestamp on every row of a screen with no use for it is
+        // how a select comes to mean "whatever the client happens to receive".
+        employee: {
+          id: entry.employee.id,
+          name: entry.employee.name,
+          email: entry.employee.email,
+          department: entry.employee.department,
+          position: entry.employee.position,
+          profilePhoto: entry.employee.profilePhoto,
+        },
         status: entry.status,
         attendance: entry.attendance ? serializeAttendance(entry.attendance) : null,
       })),

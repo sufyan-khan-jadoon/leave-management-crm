@@ -8,6 +8,7 @@ import {
   Clock,
   House,
   Palmtree,
+  UserRoundX,
   XCircle,
 } from "lucide-react";
 
@@ -153,6 +154,27 @@ export function ReportSummary({ report }: { report: ReportView }) {
             nothing at all — no check-ins and no leave for anybody in the company. Nobody is counted
             absent for {report.coverage.noRecordDays === 1 ? "it" : "them"}, and{" "}
             {report.coverage.noRecordDays === 1 ? "it appears" : "they appear"} in no record below.
+          </p>
+        </div>
+      )}
+
+      {/*
+        Said out loud for the reason the note above it is. The working-days tile
+        has already had these days taken out, so a reader counting the calendar
+        for themselves would otherwise find it short with nothing on screen to
+        account for the difference.
+      */}
+      {report.coverage.preEmploymentDays > 0 && (
+        <div className="glass-inset text-muted-foreground flex items-start gap-2 rounded-xl p-3 text-sm">
+          <UserRoundX className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            This period begins before some of the people it covers had accounts.{" "}
+            {report.coverage.preEmploymentDays}{" "}
+            {report.coverage.preEmploymentDays === 1 ? "day falls" : "days fall"} before the first
+            person&rsquo;s registration date. Days before somebody registered are not theirs to have
+            missed, so {report.coverage.preEmploymentDays === 1 ? "it is" : "they are"} counted as
+            neither present nor absent, appear in no record below, and are already out of that
+            person&rsquo;s working days.
           </p>
         </div>
       )}

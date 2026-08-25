@@ -115,6 +115,13 @@ export type AttendanceDayStatus =
   | "ABSENT"
   /** A working day holding no check-in and no leave for anybody — see `dayHoldsRecord`. */
   | "NO_RECORD"
+  /**
+   * Earlier than this person's own account, so none of it is theirs to answer
+   * for. Not absent, and not a variety of `NO_RECORD`: that one says the company
+   * holds nothing about the date, this says the date was never theirs to hold
+   * anything about. See `attendance.service.ts` and `src/lib/employment.ts`.
+   */
+  | "PRE_EMPLOYMENT"
   | "UPCOMING";
 
 export type AttendanceTodayView = {
@@ -391,6 +398,8 @@ export type ReportCoverageView = {
   closedDays: number;
   noRecordDays: number;
   upcomingDays: number;
+  /** Days in the period earlier than this person's account — already out of `workingDays`. */
+  preEmploymentDays: number;
   /** Working days spent on an arranged remote period — still inside `workingDays`. */
   remoteDays: number;
   /**

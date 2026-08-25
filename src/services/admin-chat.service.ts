@@ -115,6 +115,10 @@ const STATUS_WORD: Record<AttendanceDayStatus, string> = {
   CLOSED: "Office closed",
   NON_WORKING: "Non-working day",
   NO_RECORD: "No record",
+  // Stated as a fact about the account rather than about the person. The system
+  // knows when it began holding a record for them and nothing more — "had not
+  // joined" would be a claim about their history with the company.
+  PRE_EMPLOYMENT: "Not registered yet",
   UPCOMING: "Upcoming",
 };
 

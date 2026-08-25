@@ -233,6 +233,20 @@ function summaryEntries(
     { label: "Working days in period (per person)", value: String(report.coverage.workingDays) },
     { label: "Days off in period (per person)", value: String(report.coverage.daysOff) },
     { label: "Office closures in period", value: String(report.coverage.closedDays) },
+    // Printed only where the period actually reaches back past somebody's
+    // account, on the same rule the remote lines follow: a line reading "0"
+    // beside a working-day figure it did not change is the `Absent: 0` problem
+    // this file refuses elsewhere. Where it *is* printed it has to be — the
+    // working days above have already had it taken out, and a reader counting
+    // the calendar for themselves would otherwise find them unexplainably short.
+    ...(report.coverage.preEmploymentDays > 0
+      ? [
+          {
+            label: "Days before registration (first person, not counted)",
+            value: String(report.coverage.preEmploymentDays),
+          },
+        ]
+      : []),
     ...(anyRemote
       ? [
           // §12's arithmetic, printed rather than left to be inferred. The
@@ -304,6 +318,12 @@ function notesFor(report: ReportResult): string[] {
     );
   }
 
+  if (report.coverage.preEmploymentDays > 0) {
+    notes.push(
+      `This period begins before some of the people it covers had accounts. ${report.coverage.preEmploymentDays} ${plural(report.coverage.preEmploymentDays, "day", "days")} fall before the first person's registration date; days before somebody registered are not theirs to have missed, so they are counted as neither present nor absent, appear in no record below, and are already excluded from that person's working days.`,
+    );
+  }
+
   if (report.coverage.remoteDays > 0 || report.totals.remote > 0) {
     notes.push(
       "Remote days are days worked away from the office under an arranged period. They are exempt from attendance: nobody is present or absent for them and they cost no leave, so any attendance percentage taken from this report must be measured against the attendance-eligible days rather than the working days.",
@@ -327,6 +347,11 @@ function individualsTable(summaries: ReportPersonSummary[], shows: Shows): Repor
   // numbers add up.
   const anyRemote = summaries.some((summary) => summary.coverage.remoteDays > 0);
 
+  // Same rule, same reason: a row reading "12 working days" for somebody whose
+  // colleagues all have 22 is a row that has to be able to say why, and the
+  // column is the only place in this table that can.
+  const anyPreEmployment = summaries.some((summary) => summary.coverage.preEmploymentDays > 0);
+
   const columns: ReportColumn[] = [
     { header: "Name", align: "left", width: 24 },
     { header: "Email", align: "left", width: 28 },
@@ -334,6 +359,7 @@ function individualsTable(summaries: ReportPersonSummary[], shows: Shows): Repor
     { header: "Department", align: "left", width: 18 },
     { header: "Working days", align: "right", width: 13 },
     { header: "Days off", align: "right", width: 10 },
+    ...(anyPreEmployment ? [right("Before registration", 18)] : []),
     ...(anyRemote ? [right("Remote", 10), right("Eligible", 10)] : []),
     ...(shows("ATTENDANCE") ? [right("Present", 10)] : []),
     ...(shows("ABSENT") ? [right("Absent", 10)] : []),
@@ -352,6 +378,7 @@ function individualsTable(summaries: ReportPersonSummary[], shows: Shows): Repor
       summary.employee.department ?? "",
       String(summary.coverage.workingDays),
       String(summary.coverage.daysOff),
+      ...(anyPreEmployment ? [String(summary.coverage.preEmploymentDays)] : []),
       ...(anyRemote
         ? [String(summary.coverage.remoteDays), String(summary.coverage.attendanceEligibleDays)]
         : []),
@@ -361,10 +388,12 @@ function individualsTable(summaries: ReportPersonSummary[], shows: Shows): Repor
       ...(shows("ATTENDANCE")
         ? [String(summary.totals.late), String(summary.totals.lateMinutes)]
         : []),
-      // Reported, never acted on — `describeDay` takes no notice of when somebody
-      // started, so a day before their first one reads exactly as it does on the
-      // attendance roster. Naming the date lets a reader account for a short
-      // first month rather than reading it as absence.
+      // Their **joining date**, which is a profile field they filled in — not
+      // the registration date the column beside it is derived from. Reported and
+      // never acted on: `describeDay` takes no notice of it, so a day before it
+      // reads exactly as it does on the attendance roster. See
+      // `src/lib/employment.ts` for why the register is bounded by the account's
+      // creation instead, and this is left as the note it always was.
       summary.joinedDuringPeriod ? toIsoDate(summary.joinedDuringPeriod) : "",
     ]),
     emptyNote: "This report covers nobody. The selection matched no accounts.",

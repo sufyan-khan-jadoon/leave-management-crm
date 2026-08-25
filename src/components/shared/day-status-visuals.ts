@@ -51,7 +51,7 @@ export const DAY_STATUS_VISUAL: Record<AttendanceDayStatus, DayStatusVisual> = {
     cell: "bg-[var(--brand-deep)]/12 border-[var(--brand-deep)]/40",
   },
   /**
-   * The four that are the *absence* of a record, as a ladder of one neutral.
+   * The five that are the *absence* of a record, as a ladder of one neutral.
    *
    * **They were one colour each and three of them were the same colour**, which
    * a calendar cell hid and nothing else did: the cells differ by border style,
@@ -62,9 +62,10 @@ export const DAY_STATUS_VISUAL: Record<AttendanceDayStatus, DayStatusVisual> = {
    *
    * The ladder is **how much the system knows**, heaviest first: a declared
    * closure is a positive fact about the date, a weekly day off is standing
-   * configuration, `NO_RECORD` is nothing known, and `UPCOMING` has not
-   * happened. None of them is a verdict on anybody, so all four stay inside the
-   * one muted hue rather than borrowing a status colour — fading, not competing.
+   * configuration, `NO_RECORD` is nothing known, `UPCOMING` has not happened,
+   * and `PRE_EMPLOYMENT` was never this person's date to begin with. None of
+   * them is a verdict on anybody, so all five stay inside the one muted hue
+   * rather than borrowing a status colour — fading, not competing.
    */
   CLOSED: {
     color: "var(--color-muted-foreground)",
@@ -85,13 +86,21 @@ export const DAY_STATUS_VISUAL: Record<AttendanceDayStatus, DayStatusVisual> = {
     color: "color-mix(in oklab, var(--color-muted-foreground) 20%, transparent)",
     cell: "border-border/50 bg-transparent",
   },
+  // Faintest rung of the ladder, below even `UPCOMING`: a day still to come is
+  // at least theirs to come, where these were never theirs at all. Dashed and
+  // unfilled for the reason `NO_RECORD` is — a tint of any weight reads as a
+  // claim about the date, and making no claim is the whole of this status.
+  PRE_EMPLOYMENT: {
+    color: "color-mix(in oklab, var(--color-muted-foreground) 12%, transparent)",
+    cell: "border-dashed border-border/40 bg-transparent",
+  },
 };
 
 /**
  * The order these read in, wherever they are listed together.
  *
  * Records first, in the order the report's own tiles and columns take them, then
- * the four that are the absence of a record. A legend that reordered itself by
+ * the five that are the absence of a record. A legend that reordered itself by
  * count would make two months of the same person's attendance look like two
  * different charts.
  */
@@ -104,4 +113,5 @@ export const DAY_STATUS_ORDER: AttendanceDayStatus[] = [
   "NON_WORKING",
   "NO_RECORD",
   "UPCOMING",
+  "PRE_EMPLOYMENT",
 ];

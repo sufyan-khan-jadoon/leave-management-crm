@@ -2,6 +2,7 @@ import { Role } from "@prisma/client";
 
 import { countConsecutiveMissed, hasCutoffPassed, type DayVerdict } from "@/lib/attendance-policy";
 import { addUtcDays, todayUtc, toIsoDate } from "@/lib/date";
+import { attendanceStartOf, isBeforeEmployment } from "@/lib/employment";
 import { coversDate } from "@/lib/remote-work";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { attendanceRepository } from "@/repositories/attendance.repository";
@@ -152,7 +153,7 @@ async function countStreaks(
 ): Promise<Map<string, number>> {
   const earliest = addUtcDays(date, -LOOKBACK_DAYS);
 
-  const [attendance, leaves, closures, remoteSpans, joiningDates] = await Promise.all([
+  const [attendance, leaves, closures, remoteSpans, joiningDates, registeredAt] = await Promise.all([
     attendanceRepository.listForEmployeesBetween(employeeIds, earliest, date),
     leaveRepository.approvedForEmployeesBetween(employeeIds, earliest, date),
     holidayRepository.closedDatesBetween(earliest, addUtcDays(date, 1)),
@@ -163,6 +164,12 @@ async function countStreaks(
     // in a letter, so getting it wrong is not something a later read corrects.
     remoteWorkRepository.coveringBetween(employeeIds, earliest, date),
     employeeRepository.joiningDatesFor(employeeIds),
+    // The harder floor of the two, and the one that is always there. A joining
+    // date is optional and its owner can edit it; the account's creation day is
+    // neither, and it is the same boundary `describeDay` now stops the roster
+    // at — so the streak quoted in a letter cannot count days the register
+    // itself refuses to call absent. See `src/lib/employment.ts`.
+    employeeRepository.registrationDatesFor(employeeIds),
   ]);
 
   const key = (id: string, day: Date) => `${id}|${toIsoDate(day)}`;
@@ -179,11 +186,19 @@ async function countStreaks(
 
   for (const employeeId of employeeIds) {
     const joined = joiningDates.get(employeeId) ?? null;
+    const registered = registeredAt.get(employeeId);
+    const start = registered ? attendanceStartOf(registered) : null;
     const remote = remoteByPerson.get(employeeId) ?? [];
     const verdicts: DayVerdict[] = [];
 
     for (let offset = 0; offset <= LOOKBACK_DAYS; offset += 1) {
       const day = addUtcDays(date, -offset);
+
+      // Nothing before the account existed is theirs to have missed, and the
+      // roster agrees — those days read `PRE_EMPLOYMENT` there rather than
+      // `ABSENT`, so counting them here would put a figure in a letter that no
+      // screen would corroborate.
+      if (start && isBeforeEmployment(day, start)) break;
 
       // Nothing before somebody's first day is theirs to have missed.
       if (joined && day.getTime() < joined.getTime()) break;

@@ -521,6 +521,67 @@ checking in clears it, and a total no-show is an outage or a fire drill rather t
 to the whole company about. **Don't reintroduce a bare `ABSENT` for empty days to "fix" the warning
 sweep** — that is the accusation the status exists to withhold, and it is where this came in.
 
+### The register begins when the account does
+
+`PRE_EMPLOYMENT` is the same lesson one level further in, and it arrived the same way: somebody
+registered on 22 August was showing **Absent = 5**, for the five working days before their account
+existed. Every one of those days was a working day, held no check-in and no leave, and belonged to a
+date the company was plainly being watched on — so absence, as defined, was exactly what the walk
+computed. What it had no way to know was that the person was not there to be watched.
+
+The boundary is `Employee.createdAt`, read on the **company's** clock through `attendanceStartOf` in
+`src/lib/employment.ts` — Prisma-free and tested alone like `geo.ts`, `working-days.ts`,
+`lateness.ts` and `remote-work.ts`, and passing under `TZ=America/New_York`. Reading the instant as a
+UTC date would start the register a day early for every account created before 05:00 in Karachi,
+which is the one thing an attendance floor must never do.
+
+**`joiningDate` is the wrong field and was rejected on purpose.** It is a profile field its owner
+fills in from `/profile`, nullable, and routinely *earlier* than the account — somebody who has
+worked here three years still registers on the day the system reaches them. Pinning the register to
+it would both hand every employee a way out of it (set a joining date in the future; the absences
+vanish) and reinstate the very absences this removes. The warning sweep's separate use of it to
+shorten a streak is untouched: shortening a number quoted in a letter is not the same power as
+excusing a day. `report.service.ts` still reports `joinedDuringPeriod` and still acts on none of it.
+
+**It sits directly below `PRESENT` and above every calendar fact**, and both halves of that are
+load-bearing. Below the check-in, because a row dated before the account — a seeded history, an
+import, a correction — is evidence somebody was there, and evidence outranks an inference drawn from
+a timestamp; **no existing employee loses a recorded day to this.** Above the closure and the working
+week, because it is the more specific fact and because it is what keeps the arithmetic honest: a
+pre-registration stretch reading as a mix of `CLOSED`, `NON_WORKING` and this would leave
+`coverageOf` counting some of those days as days off the person had, and a calendar giving three
+explanations for one thing. Ranked here, every day before somebody's first is exactly one status,
+subtracted from `workingDays` exactly once, and a record in nothing.
+
+**Nothing was migrated and no column was added**, which is the return on absence being derived. There
+were no pre-registration rows to clean up — absence has never been storable — and
+`attendance_warnings` cannot hold one either, since `dispatchAttendanceWarnings` only ever sweeps
+`todayUtc()` and today can never precede an account that exists. The whole change is one clause in
+`describeDay` and the two reads that feed it: `attendanceRosterSelect` carries `createdAt` (stripped
+at the wire in `/api/admin/attendance`, since the screen has no use for it), and `buildHistories`
+takes one more bulk read, `registrationDatesFor`, because it is handed ids rather than rows.
+
+Everything downstream followed for free, exactly as it did for remote work: the roster, the tiles,
+the warning sweep, the assistant, the trend chart, the calendar, the attendance rate and all three
+exported files re-read `describeDay`, and `recordTypeOf` returns null for it so no row is printed
+anywhere. `ReportCoverage.preEmploymentDays` is **already out of `workingDays`**, unlike
+`noRecordDays` and `upcomingDays`, which are subsets of it — and it is person-dependent like
+`remoteDays`, so the whole-report figure is the first subject's. It is stated on screen and in every
+export rather than silently subtracted, because a working-day count that has quietly shrunk is one a
+reader cannot reconcile against a calendar.
+
+**Both write paths refuse it, as a source and as a target.** `markPresentFor` and `editHistoricalDay`
+judge the day through `refusalFor` like every other calendar status, so nobody can assert attendance
+at an office before they existed in the system — the false record the boundary exists to stop.
+`EDITABLE_DAY_STATUSES` is still the same three and `attendanceEditSchema` still refuses anything
+else, so the parser turns it away before a service has to explain itself.
+
+Verified against the real database: the reported account reads `PRE_EMPLOYMENT` on all five days and
+`ABSENT = 0` for the month, its August report shows 21 pre-registration days with `workingDays` short
+by exactly that and `calendarDays = workingDays + daysOff + preEmploymentDays`, the CSV holds no row
+for any of the five and names them instead, the rate is `null` rather than 0%, an account registered
+weeks earlier is unchanged over the same window, and both write paths refuse the date.
+
 The project has **no working hours that judge anybody**, so `LATE` and `HALF_DAY` are deliberately
 absent rather than write-dead in the way `LeaveStatus.PENDING` became. The `status` column exists so
 they have somewhere to land once working hours are actually defined; don't invent them to fill it.
@@ -1281,9 +1342,8 @@ have missed.
 Without it the sweep would write to the entire company every Saturday and Sunday and the streak
 would climb through them. It also feeds the roster, where a non-working day reads `NON_WORKING`
 rather than `ABSENT`, and the admin screen says so above the table so a weekend roster cannot read
-as a day everybody failed to turn up. It deliberately does **not** block checking in: the working
-week governs who is *expected* and who is *chased*, not who is permitted to record a day — somebody
-who comes in on a Saturday can still mark it, and it still costs them no leave.
+as a day everybody failed to turn up. **It blocks checking in too** — see "A day off outranks the
+geofence" below, which reverses what this paragraph used to say.
 
 **The row is the claim, not the receipt.** `attendanceWarningRepository.claim` inserts before a word
 is written, so the unique index on `(employeeId, date)` picks one winner out of any number of racing
@@ -1331,6 +1391,71 @@ rows while people were genuinely absent past the deadline. **The empty table is 
 recognise**: `claim` inserts *before* anything is mailed, so even a total SMTP outage still leaves
 rows behind with `sentAt` null. No rows at all means the sweep never ran, and the fault is upstream
 of every rule in this section. Check `vercel env ls production` before reading any of the logic.
+
+### A day off outranks the geofence
+
+`markPresent` asked about a declared closure and then went straight to `judgePosition`, so **the
+ordinary working week never reached the check-in path at all**. Somebody standing inside the office
+on a Saturday was recorded present: the fence agreed they were there, and nothing after it had an
+opinion about what day it was. `todayFor` computed its own `canMark` from its own ternary, which also
+never mentioned the week — so the dashboard card offered the button, and a hand-written `POST` would
+have been accepted even if it had not. **The live database held one such row when this was fixed**: a
+self check-in on Saturday 2026-08-22, 57m from the door.
+
+**This reverses a rule the notes previously argued for**, and the reversal is the interesting part.
+The old wording said the week governs who is *expected* and who is *chased* rather than who is
+*permitted*, so somebody coming in on a Saturday should be able to record it. What that missed is
+that every other surface had already settled the question the other way: `describeDay` calls the day
+`NON_WORKING`, `refusalFor` refuses an administrator recording it *in those words*,
+`editHistoricalDay` refuses it, `planLeave` charges nothing for it and no report counts it. The
+check-in button was the single door onto a day the whole rest of the codebase says holds no
+attendance — and the row it wrote then outranked `NON_WORKING` in `describeDay`, so it landed in that
+person's attendance rate as a working day their colleagues did not have.
+
+`selfCheckInRefusal` in `src/lib/self-check-in.ts` is the whole rule, free of Prisma so it reads and
+tests alone exactly as `geo.ts`, `working-days.ts`, `lateness.ts` and `employment.ts` do. It takes
+three booleans and **cannot be handed a position at all** — there is no argument that would let a day
+off through, which is the fix expressed as a type rather than as a check somebody has to remember.
+
+**Closure, then the ordinary week, then leave — `describeDay`'s own order**, deliberately, so the
+reason given for refusing a day can never differ from the reason the roster gives for the same day. A
+closure outranks the week because it is the more specific fact; the week outranks leave because a day
+off booked across a weekend cost nobody anything. `self-check-in.test.ts` enumerates all eight
+combinations rather than sampling them, so a fourth fact added later cannot leave one unhandled.
+
+**One rule, both surfaces.** `markPresent` throws it as a `ConflictError` and `todayFor` renders it as
+`blockedReason`; `canMark` is now `!attendance && refusal === null`. That is the point of the shared
+function — a card saying "today is a day off" beside an endpoint that accepts the request is the
+shape of the defect being closed, and two copies of the ordering is how it comes back. The card is
+the courtesy, the service is the rule, exactly as `ProfileForm` and `updateOwnProfile` split.
+
+**409, not 403.** The request was well-formed and the day was simply not one to record — a different
+answer from "you are somewhere else" (403) and from "we cannot tell where you are" (422). The calendar
+is asked *before* the position, so a day off and an outside-the-fence attempt return the **same**
+sentence: location cannot change what day it is.
+
+**Leave was the same bypass and is closed with it.** `todayFor` already refused it and `markPresent`
+never checked it, so an employee on approved leave could record a day through the API that the screen
+would not offer. Both admin paths refuse it too. Note this is a genuine behaviour change beyond the
+day-off case, made because a shared refusal function with a deliberate hole in it is the defect again.
+
+**A remote day is still not blocked, and the distinction survives.** Remote genuinely does decide who
+is expected rather than who is permitted: it is an arrangement about a person on an ordinary working
+day, not a statement that the day is not one. Somebody arranged to work from home who walks in anyway
+was there and the geofence can prove it. The card keeps its optional button — and now shows the
+blocked reason in its place when the day is also a day off, which it previously left blank.
+
+**Administrative correction is untouched.** `markPresentFor` and `editHistoricalDay` judge the day
+through the roster and already refused `NON_WORKING`; this changes neither, so authorised corrections
+work exactly as before. The new rule is the *self*-attendance path alone.
+
+Verified against the real database with nothing written: today being a Saturday under a Mon–Fri week,
+a check-in dead centre of the geofence refused as a day off with 409, the same refusal word for word
+from a kilometre outside, six forged bodies (`isInsideOffice`, `distance`, `isPresent`, `date`,
+`isWorkingDay`, `status`) refused by `strictObject` before any of it, six different accounts all
+refused, `todayFor` reporting `canMark: false` with wording identical to the endpoint's, the admin
+path still refusing in the roster's own words, past working days still editable, and every table
+count unchanged.
 
 **Marking present happens on the dashboard and nowhere else.** `/attendance` is history, read-only:
 two places to press the same button read as two different actions, and the one that matters is the

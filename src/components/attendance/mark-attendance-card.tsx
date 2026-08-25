@@ -189,7 +189,7 @@ export function MarkAttendanceCard({ today, onMarked }: Props) {
               <p className="text-muted-foreground text-xs">Reason on record: {today.remote.reason}</p>
             </div>
 
-            {today.canMark && (
+            {today.canMark ? (
               <>
                 <Button
                   onClick={() => void markPresent()}
@@ -206,6 +206,21 @@ export function MarkAttendanceCard({ today, onMarked }: Props) {
                   skipping it.
                 </p>
               </>
+            ) : (
+              /*
+                A remote period is an arrangement about a person; a day off is a
+                fact about the calendar, and it outranks the arrangement. Without
+                this the optional button simply vanished on a day off while the
+                panel above went on describing the remote period — somebody
+                looking at a control that had disappeared, with nothing saying
+                why, which is the silence this whole change exists to remove.
+              */
+              today.blockedReason && (
+                <p className="text-muted-foreground flex items-start gap-2 text-xs">
+                  <CalendarOff className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  {today.blockedReason}
+                </p>
+              )
             )}
           </div>
         ) : today.canMark ? (

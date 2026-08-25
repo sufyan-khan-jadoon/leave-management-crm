@@ -28,7 +28,9 @@ import {
   todayUtc,
   type DayScope,
 } from "@/lib/date";
+import { attendanceStartOf, isBeforeEmployment } from "@/lib/employment";
 import { minutesLate } from "@/lib/lateness";
+import { selfCheckInRefusal } from "@/lib/self-check-in";
 import { coversDate, describeRemotePeriod } from "@/lib/remote-work";
 import { isWorkingWeekday } from "@/lib/working-days";
 import { isSuperAdminRole, rolesInPopulation } from "@/lib/enums";
@@ -117,6 +119,23 @@ export type AttendanceDayStatus =
    * something nobody has evidence for.
    */
   | "NO_RECORD"
+  /**
+   * The day is earlier than the person's own account.
+   *
+   * **Not a softer word for absent, and not a variety of `NO_RECORD` either.**
+   * That one says the *company* holds nothing about a date; this says the date
+   * was not this person's to hold anything about. Somebody who registered on 22
+   * August cannot have missed the 21st, however busy the office was that day —
+   * they were not on the books, no letter could have reached them, and no
+   * denominator has any business counting it.
+   *
+   * Derived from `Employee.createdAt` on every read, exactly as absence,
+   * closures and remote periods are, so nothing had to be written or migrated to
+   * make the pre-registration stretch stop reading as a run of missed days. See
+   * `src/lib/employment.ts` for why the boundary is the account's own creation
+   * day and deliberately not `joiningDate`.
+   */
+  | "PRE_EMPLOYMENT"
   /** The day has not happened yet, so there is nothing to be absent from. */
   | "UPCOMING";
 
@@ -575,6 +594,15 @@ function refusalFor(status: AttendanceDayStatus, date: Date): string | null {
     case "UPCOMING":
       return "That day has not happened yet, so there is nothing to correct.";
 
+    // Refused as both a source and a target, exactly as the calendar's own
+    // statuses are. The day is earlier than the account, so there is no wrong
+    // record here to put right — nobody was marked absent for it and nobody was
+    // chased about it. Writing one would assert that somebody attended an office
+    // before they existed in the system, which is the false record this boundary
+    // was added to stop.
+    case "PRE_EMPLOYMENT":
+      return `${toIsoDate(date)} is before this person registered, so no attendance is expected for it and nobody is marked absent. Their record starts on the day their account was created.`;
+
     // The interesting refusal, and the reason it is a refusal rather than a
     // convenience. On a day holding no check-in and no leave for *anybody*, the
     // whole company reads NO_RECORD — the system was not watching, so nobody is
@@ -651,6 +679,10 @@ async function buildRoster(
         isRemote: remote.has(employee.id),
         isFuture,
         holdsRecord,
+        // Read off the row the roster already fetched rather than through a
+        // second query — `attendanceRosterSelect` carries `createdAt` for this
+        // one purpose, so the boundary costs nothing over listing the people.
+        beforeEmployment: isBeforeEmployment(date, attendanceStartOf(employee.createdAt)),
       }),
     };
   });
@@ -677,18 +709,23 @@ async function buildHistories(
 
   const today = todayUtc();
 
-  const [checkIns, leaves, closures, remoteSpans, recordedDates, leaveDates, policy] = await Promise.all([
-    attendanceRepository.listRowsForEmployeesBetween(employeeIds, from, to),
-    leaveRepository.approvedForEmployeesBetween(employeeIds, from, to),
-    holidayRepository.closedDatesBetween(from, addUtcDays(to, 1)),
-    // Fetched as intervals rather than expanded into dates, because an
-    // open-ended period has no end to expand to. One query for the whole
-    // rectangle, like every other read here.
-    remoteWorkRepository.coveringBetween(employeeIds, from, to),
-    attendanceRepository.datesWithCheckInsBetween(from, to),
-    leaveRepository.datesWithApprovedLeaveBetween(from, to),
-    attendancePolicyService.get(),
-  ]);
+  const [checkIns, leaves, closures, remoteSpans, recordedDates, leaveDates, registeredAt, policy] =
+    await Promise.all([
+      attendanceRepository.listRowsForEmployeesBetween(employeeIds, from, to),
+      leaveRepository.approvedForEmployeesBetween(employeeIds, from, to),
+      holidayRepository.closedDatesBetween(from, addUtcDays(to, 1)),
+      // Fetched as intervals rather than expanded into dates, because an
+      // open-ended period has no end to expand to. One query for the whole
+      // rectangle, like every other read here.
+      remoteWorkRepository.coveringBetween(employeeIds, from, to),
+      attendanceRepository.datesWithCheckInsBetween(from, to),
+      leaveRepository.datesWithApprovedLeaveBetween(from, to),
+      // One more bulk read for the whole rectangle, in the shape of every other
+      // one here. Unlike the roster, this walk is handed ids rather than rows,
+      // so there is nothing already fetched to read the registration day off.
+      employeeRepository.registrationDatesFor(employeeIds),
+      attendancePolicyService.get(),
+    ]);
 
   const key = (employeeId: string, day: Date) => `${employeeId}|${toIsoDate(day)}`;
 
@@ -723,6 +760,15 @@ async function buildHistories(
   for (const employeeId of employeeIds) {
     const spans = remoteByPerson.get(employeeId) ?? [];
 
+    // Resolved once per person rather than once per cell: `attendanceStartOf`
+    // goes through `Intl`, and a month for a hundred people is three thousand
+    // cells. Null only for an id that resolved to nobody, which `historiesFor`
+    // is handed by a caller that has already looked them up — treated as no
+    // boundary rather than as everything being before it, since inventing a
+    // start date for a person who is not there would blank their whole report.
+    const start = registeredAt.get(employeeId);
+    const attendanceStart = start ? attendanceStartOf(start) : null;
+
     histories.set(
       employeeId,
       calendar.map((day) => {
@@ -736,6 +782,8 @@ async function buildHistories(
             officeClosed: closed.has(day.iso),
             isWorkingDay: day.isWorkingDay,
             onLeave: onLeave.has(key(employeeId, day.date)),
+            beforeEmployment:
+              attendanceStart !== null && isBeforeEmployment(day.date, attendanceStart),
             // `coversDate` is the same pure rule the SQL predicate mirrors, so
             // the two are checked against each other on every cell of every
             // report rather than only where somebody remembered to.
@@ -787,6 +835,8 @@ function describeDay(options: {
   isFuture: boolean;
   /** Whether anybody at all checked in or booked leave — see `dayHoldsRecord`. */
   holdsRecord: boolean;
+  /** Earlier than this person's own account — see `PRE_EMPLOYMENT`. */
+  beforeEmployment: boolean;
 }): AttendanceDayStatus {
   // Order matters. A check-in that exists is a fact about the day and outranks
   // anything derived — including a closure declared afterwards, which would
@@ -797,6 +847,23 @@ function describeDay(options: {
   // and the building is the stronger evidence. Nothing is taken from them for
   // it — remote costs nothing either way.
   if (options.attendance) return "PRESENT";
+
+  // Immediately below the check-in, and above every calendar fact.
+  //
+  // **Below `PRESENT` because that is what protects existing employees.** A row
+  // dated before the account — a seeded history, an import, a correction made
+  // through the historical editor — is evidence that somebody was there, and it
+  // outranks an inference drawn from a timestamp. Nobody's recorded past
+  // disappears because of this ordering; only the invented absences do.
+  //
+  // **Above the closure and the working week because it is the more specific
+  // fact, and because it is the only one that keeps the arithmetic honest.**
+  // A pre-registration stretch reading as a mix of "office closed", "non-working
+  // day" and this would leave `coverageOf` counting some of those days as days
+  // off the person had, and a calendar showing three explanations for one thing.
+  // Ranked here, every day before somebody's first is exactly one status, is
+  // subtracted from `workingDays` once, and is a record in nothing.
+  if (options.beforeEmployment) return "PRE_EMPLOYMENT";
 
   // A declared closure before the ordinary week, because it is the more specific
   // fact: "closed for Eid" tells you more than "it's a Sunday".
@@ -847,17 +914,45 @@ export const attendanceService = {
    * Idempotent on purpose. A second tap returns the check-in already recorded
    * rather than an error, because "you are already marked present, at 9:12" is
    * the answer to what was being asked, not a failure to do it.
+   *
+   * **The calendar is asked before the fence, and that ordering is the rule
+   * rather than a tidiness.** A day off is a fact about the date; being inside
+   * the office is a fact about a position, and no amount of standing in the
+   * right place changes what day it is. Judging the position first — or, as this
+   * did, judging it without ever asking the working week — let somebody inside
+   * the geofence record a Saturday, on a day every other surface here already
+   * called `NON_WORKING` and refused. See `src/lib/self-check-in.ts`.
    */
   async markPresent(employeeId: string, input: MarkAttendanceInput): Promise<MarkResult> {
+    // The date is the **server's**, resolved on the company's calendar. The
+    // request body has no field for one — `markAttendanceSchema` is a
+    // `strictObject` carrying three numbers — so a client cannot nominate a
+    // working day to be judged against.
     const date = todayUtc();
 
-    // Asked first: on a closed day there is no attendance to take, so judging
-    // the position at all would be answering a question nobody asked.
-    if (await officeClosedOn(date)) {
-      throw new ConflictError(
-        "The office is closed today, so there is no attendance to mark. The day costs nobody a leave.",
-      );
-    }
+    // Every calendar fact, resolved before the position is so much as looked at.
+    // Fetched together because they are one question: is today a day this person
+    // can record at all.
+    const [officeClosed, onLeaveIds, policy] = await Promise.all([
+      officeClosedOn(date),
+      leaveRepository.employeeIdsOnApprovedLeave(date),
+      attendancePolicyService.get(),
+    ]);
+
+    // The whole of the eligibility rule, from the one place that states it — the
+    // same function `todayFor` builds the dashboard card's notice from, so the
+    // screen and this endpoint cannot come to say different things about one
+    // morning. A refusal here is a `ConflictError` (409): the request was
+    // well-formed and the day was simply not one to record, which is a different
+    // answer from "you are somewhere else" (403) and from "we cannot tell where
+    // you are" (422).
+    const refusal = selfCheckInRefusal({
+      officeClosed,
+      isWorkingDay: isWorkingWeekday(date, policy.workingDays),
+      onLeave: onLeaveIds.includes(employeeId),
+    });
+
+    if (refusal) throw new ConflictError(refusal);
 
     const existing = await attendanceRepository.findByEmployeeAndDate(employeeId, date);
     if (existing) return { attendance: existing, alreadyMarked: true };
@@ -872,11 +967,10 @@ export const attendanceService = {
       throw new ForbiddenError(OUTSIDE_MESSAGE);
     }
 
-    // Frozen onto the row exactly as the manual path freezes it, so an ordinary
-    // check-in and a corrected day are judged by the same rule and neither moves
-    // when the deadline is next changed.
-    const policy = await attendancePolicyService.get();
-
+    // `policy` was read above with the calendar facts rather than here. It is
+    // the same singleton either way; fetching it once keeps the deadline frozen
+    // onto the row below the very one the eligibility check was judged against,
+    // so a policy edit landing mid-request cannot produce a row judged by two.
     const attendance = await attendanceRepository.create({
       employeeId,
       date,
@@ -1300,35 +1394,47 @@ export const attendanceService = {
       isRemote: remoteAssignment !== null,
       isFuture: false,
       holdsRecord: dayHoldsRecord(checkIns, onLeaveIds.length),
+      // Always false, and it costs a query to prove otherwise. Today cannot
+      // precede the creation of an account that is signed in and asking, so the
+      // boundary has nothing to say here — passed explicitly rather than left
+      // to a default, so `describeDay` keeps every caller stating every fact.
+      beforeEmployment: false,
     });
 
-    const blockedReason = attendance
-      ? null
-      : officeClosed
-        ? "The office is closed today. Nobody is expected in, and the day costs nobody a leave."
-        : onLeave
-          ? "You are on approved leave today, so there is no attendance to mark."
-          : null;
+    // The same function `markPresent` refuses with, rather than a ternary of its
+    // own. It used to be one, and it did not mention the working week at all —
+    // so the card offered a button on a Saturday and the endpoint accepted it.
+    // One rule read by both is what stops the screen and the server describing
+    // one morning differently.
+    const refusal = selfCheckInRefusal({ officeClosed, isWorkingDay, onLeave });
+    const blockedReason = attendance ? null : refusal;
 
     return {
       date,
       attendance,
       status,
-      // A day outside the working week is deliberately *not* blocked. The
-      // working week governs who is expected and who gets warned, not who is
-      // permitted to check in — somebody who comes in on a Saturday should be
-      // able to record it, and simply is not chased for missing it.
+      // **A day outside the working week is blocked, and this note used to say
+      // the opposite.** The old rule let anybody record a Saturday on the
+      // reasoning that the week decides who is *expected* rather than who is
+      // *permitted*. Every other surface here had already answered that the
+      // other way — `describeDay` calls the day `NON_WORKING`, `refusalFor`
+      // refuses an administrator recording it, `editHistoricalDay` refuses it,
+      // and no report counts it — so the check-in button was the one door onto a
+      // day the rest of the system says holds no attendance. See
+      // `src/lib/self-check-in.ts`.
       //
-      // **A remote day is not blocked either, for exactly that reason.** Remote
-      // decides who is *expected*, not who is *permitted*: somebody arranged to
-      // work from home who nonetheless walks into the office was there, the
-      // geofence can prove it, and refusing them would have the system calling a
-      // fact it could verify a mistake. The check-in then outranks the remote
-      // status in `describeDay` and the day reads PRESENT, which is true. What
-      // it never becomes is a requirement — nothing chases them for skipping it,
-      // and `remote` below is what lets the card say so instead of showing a
-      // bare button.
-      canMark: !attendance && !officeClosed && !onLeave,
+      // **A remote day is still not blocked, and the distinction survives.**
+      // Remote genuinely does decide who is expected rather than who is
+      // permitted: it is an arrangement about a person on an ordinary working
+      // day, not a statement that the day is not one. Somebody arranged to work
+      // from home who nonetheless walks into the office was there, the geofence
+      // can prove it, and refusing them would have the system calling a fact it
+      // could verify a mistake. The check-in then outranks the remote status in
+      // `describeDay` and the day reads PRESENT, which is true. What it never
+      // becomes is a requirement — nothing chases them for skipping it, and
+      // `remote` below is what lets the card say so instead of showing a bare
+      // button.
+      canMark: !attendance && refusal === null,
       blockedReason,
       cutoffMinutes: policy.cutoffMinutes,
       isWorkingDay,

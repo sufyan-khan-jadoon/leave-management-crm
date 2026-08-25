@@ -148,6 +148,22 @@ export type ReportCoverage = {
   /** Working days still to come, which nobody can yet have missed. */
   upcomingDays: number;
   /**
+   * Days in the period earlier than this person's own account.
+   *
+   * **Already taken out of `workingDays`**, unlike `noRecordDays` and
+   * `upcomingDays`, which are subsets of it. Those are days the register applied
+   * to and holds nothing about; these are days it did not apply to this person
+   * at all. Leaving them in the denominator would charge somebody who registered
+   * on the 22nd for the whole month — which is the defect this figure exists to
+   * make visible rather than only to correct silently.
+   *
+   * Person-dependent, like `remoteDays` and unlike the rest of this type: two
+   * people in one report joined on different days. `ReportResult.coverage`
+   * therefore reports the *first* subject's, the individual summaries each
+   * report their own, and the screen and the exports label it accordingly.
+   */
+  preEmploymentDays: number;
+  /**
    * Working days this person spent on an arranged remote period.
    *
    * Unlike every other figure here, this one is **not** a fact about the period
@@ -187,14 +203,22 @@ export type ReportPersonSummary = {
   totals: ReportTotals;
   coverage: ReportCoverage;
   /**
-   * Their joining date, when it falls inside the period.
+   * Their **joining date**, when it falls inside the period.
    *
-   * Surfaced rather than acted on. `describeDay` takes no notice of when
-   * somebody started, so a day before their first one reads exactly as it does
-   * on the attendance roster — and quietly reclassifying it here would be this
-   * service forming an opinion about a date, which is the one thing it must not
-   * do. Naming the date lets the screen mark the section instead, which is what
-   * an administrator reading a short first month actually needs.
+   * Deliberately not the same thing as the registration boundary that produces
+   * `PRE_EMPLOYMENT`, and the distinction is worth keeping straight. This is
+   * `Employee.joiningDate` — a profile field its owner fills in, nullable, and
+   * frequently *earlier* than the account, since somebody who has worked here
+   * three years still registers on the day the system reaches them. It is
+   * surfaced and never acted on: `describeDay` takes no notice of it, so a day
+   * before it reads exactly as it does on the attendance roster, and quietly
+   * reclassifying one here would be this service forming an opinion about a
+   * date. Naming it lets the screen mark the section, which is what an
+   * administrator reading a short first month actually needs.
+   *
+   * The register's own lower bound is `Employee.createdAt`, applied in
+   * `describeDay` and reported through `coverage.preEmploymentDays` — see
+   * `src/lib/employment.ts` for why the editable field could not be it.
    */
   joinedDuringPeriod: Date | null;
 };
@@ -399,11 +423,15 @@ async function resolveSubjects(
  * Which record type a day's verdict amounts to, or nothing at all.
  *
  * The whole mapping between what the roster decides and what a report prints,
- * and it is deliberately partial. `CLOSED`, `NON_WORKING`, `NO_RECORD` and
- * `UPCOMING` return null because none of them is a record: they are the absence
- * of one, stated precisely, and printing a row for each would fill an absence
- * report for August with weekends. They are counted in `ReportCoverage` instead,
- * where they belong — the office being shut is a fact about the period.
+ * and it is deliberately partial. `CLOSED`, `NON_WORKING`, `NO_RECORD`,
+ * `UPCOMING` and `PRE_EMPLOYMENT` return null because none of them is a record:
+ * they are the absence of one, stated precisely, and printing a row for each
+ * would fill an absence report for August with weekends. They are counted in
+ * `ReportCoverage` instead, where they belong — the office being shut is a fact
+ * about the period, and a date earlier than somebody's account is a fact about
+ * them. **This is the whole of why no export prints a pre-registration day:**
+ * the CSV, the workbook and the PDF are three views of the rows, and a day that
+ * is not a record produces no row to view.
  */
 function recordTypeOf(status: AttendanceDayStatus): ReportRecordType | null {
   switch (status) {
@@ -432,7 +460,14 @@ function coverageOf(days: DayRecord[]): ReportCoverage {
   const closedDays = count((status) => status === "CLOSED");
   const weeklyOff = count((status) => status === "NON_WORKING");
   const remoteDays = count((status) => status === "REMOTE");
-  const workingDays = days.length - closedDays - weeklyOff;
+  // Subtracted from `workingDays` rather than counted inside it. A day before
+  // somebody registered is not a working day *of theirs*, so it belongs in
+  // neither the numerator nor the denominator of anything — and it is not a day
+  // off either, which is why it is kept out of `daysOff` as well. `describeDay`
+  // ranks this above the closure and the working week precisely so that every
+  // such day lands here exactly once and cannot be double-subtracted.
+  const preEmploymentDays = count((status) => status === "PRE_EMPLOYMENT");
+  const workingDays = days.length - closedDays - weeklyOff - preEmploymentDays;
 
   return {
     calendarDays: days.length,
@@ -446,6 +481,7 @@ function coverageOf(days: DayRecord[]): ReportCoverage {
     closedDays,
     noRecordDays: count((status) => status === "NO_RECORD"),
     upcomingDays: count((status) => status === "UPCOMING"),
+    preEmploymentDays,
     remoteDays,
     attendanceEligibleDays: workingDays - remoteDays,
   };
@@ -910,6 +946,7 @@ function emptyCoverage(period: ReportPeriod): ReportCoverage {
     closedDays: 0,
     noRecordDays: 0,
     upcomingDays: 0,
+    preEmploymentDays: 0,
     remoteDays: 0,
     attendanceEligibleDays: 0,
   };

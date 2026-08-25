@@ -14,6 +14,25 @@ export function toUtcDay(value: Date | string): Date {
 }
 
 /**
+ * Which calendar day an instant fell on, on the company's clock.
+ *
+ * Not `toUtcDay(instant)`: the server runs in UTC, so an account created at
+ * 02:00 in Karachi carries a `createdAt` whose UTC date is the *previous* day.
+ * Reading it that way would put somebody's first day one day early — which is
+ * the whole of what an attendance boundary must not do.
+ */
+export function appZoneDay(instant: Date): Date {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: APP_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+
+  return new Date(`${parts}T00:00:00.000Z`);
+}
+
+/**
  * Today's calendar day in the company's timezone, as UTC midnight.
  *
  * Not `toUtcDay(new Date())`: the server runs in UTC, so for the five hours
@@ -21,14 +40,7 @@ export function toUtcDay(value: Date | string): Date {
  * which made "3 days from today" start on the wrong day.
  */
 export function todayUtc(): Date {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: APP_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-
-  return new Date(`${parts}T00:00:00.000Z`);
+  return appZoneDay(new Date());
 }
 
 /**

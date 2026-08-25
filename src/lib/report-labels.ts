@@ -58,16 +58,17 @@ export function roleLabel(role: string): string {
 /**
  * A day's verdict, in the one wording every surface uses.
  *
- * **All eight**, and `AttendanceStatusBadge` reads them from here rather than
+ * **All nine**, and `AttendanceStatusBadge` reads them from here rather than
  * keeping its own copy — a spreadsheet reading `ON_LEAVE` beside a screen
  * reading "On leave" is the same day described twice, and the badge and the
  * calendar cell beside it saying different words about one date is the same
  * mistake one level down.
  *
  * The exports only ever reach four of them: `recordTypeOf` maps closures, weekly
- * days off, empty days and the future to nothing, because each is the *absence*
- * of a record and is counted in the coverage instead. The calendar reaches all
- * eight, because a month with the weekends missing is not a month.
+ * days off, empty days, days before somebody registered, and the future to
+ * nothing, because each is the *absence* of a record and is counted in the
+ * coverage instead. The calendar reaches all nine, because a month with the
+ * weekends missing is not a month.
  */
 export const DAY_STATUS_LABELS: Record<string, string> = {
   PRESENT: "Present",
@@ -81,6 +82,10 @@ export const DAY_STATUS_LABELS: Record<string, string> = {
   CLOSED: "Office closed",
   NON_WORKING: "Non-working day",
   NO_RECORD: "No record",
+  // Worded for the boundary it actually is. "Not employed" would be a claim
+  // about somebody's history with the company, which this cannot know; all the
+  // system holds is that its own account for them did not exist yet.
+  PRE_EMPLOYMENT: "Before registration",
   UPCOMING: "Not yet",
 };
 
